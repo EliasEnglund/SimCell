@@ -14,6 +14,8 @@ var detail_panel: VBoxContainer
 var map_layer: Control
 var queue_box: VBoxContainer
 var event_log: RichTextLabel
+var music_player: AudioStreamPlayer
+var music_button: Button
 
 var designer_tool := "lyase"
 var designer_target := -1
@@ -23,6 +25,7 @@ var designer_canvas: Control
 func _ready() -> void:
 	sim.changed.connect(_refresh)
 	sim.event_logged.connect(_log_event)
+	_setup_music()
 	_build_shell()
 	_show_view("metabolism")
 
@@ -48,6 +51,11 @@ func _build_shell() -> void:
 	status_label = Label.new()
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(status_label)
+	music_button = Button.new()
+	music_button.text = "♫"
+	music_button.custom_minimum_size = Vector2(42, 34)
+	music_button.pressed.connect(_toggle_music)
+	header.add_child(music_button)
 	for def in [["Ⅱ", func(): sim.toggle_pause()], ["-", func(): sim.set_speed(sim.speed - 0.25)], ["+", func(): sim.set_speed(sim.speed + 0.25)]]:
 		var button := Button.new()
 		button.text = def[0]
@@ -75,6 +83,27 @@ func _build_shell() -> void:
 		button.custom_minimum_size = Vector2(132, 58)
 		button.pressed.connect(func(view_id = item[2]): _show_view(view_id))
 		bottom_nav.add_child(button)
+
+func _setup_music() -> void:
+	music_player = AudioStreamPlayer.new()
+	var stream := AudioStreamMP3.new()
+	stream.data = FileAccess.get_file_as_bytes("res://assets/audio/enzymatic_waltz.mp3")
+	stream.loop = true
+	music_player.stream = stream
+	music_player.volume_db = -12.0
+	music_player.autoplay = true
+	add_child(music_player)
+	music_player.play()
+
+func _toggle_music() -> void:
+	if music_player == null:
+		return
+	if music_player.playing:
+		music_player.stop()
+		music_button.text = "♪"
+	else:
+		music_player.play()
+		music_button.text = "♫"
 
 func _show_view(view_id: String) -> void:
 	sim.active_view = view_id
