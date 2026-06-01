@@ -47,33 +47,48 @@ func _draw_atoms(transform: Transform2D) -> void:
 	for atom in atoms:
 		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
 		var element: String = atom.get("element", "C")
-		var radius := 26.0 if element == "C" else 22.0
-		var base := Color("69787c") if element == "C" else Color("e95058")
-		draw_circle(pos, radius + 5.0, Color("02080c"))
-		draw_circle(pos, radius, base.darkened(0.16))
-		draw_circle(pos + Vector2(-4, -4), radius * 0.72, base.lightened(0.12))
-		draw_circle(pos + Vector2(radius * 0.28, -radius * 0.36), radius * 0.22, Color(1, 1, 1, 0.34))
+		var radius := 28.0 if element == "C" else 24.0
+		var base := Color("728186") if element == "C" else Color("e85058")
+		_draw_atom(pos, radius, base)
 
 func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool) -> void:
 	var dir := (b - a).normalized()
 	var normal := Vector2(-dir.y, dir.x)
-	var color := Color("e9f6f7")
-	var outline := Color("02080c")
-	var width := 7.0
+	var color := Color("dbeff2")
+	var outline := Color("02070b")
+	var inner := Color("f4fbff")
+	var width := 8.0
 	if highlight:
 		color = Color("73e6ff")
-		width = 8.0
+		inner = Color("c8fbff")
+		width = 9.0
 	if selected:
 		color = Color("8cff6a")
-		width = 9.0
+		inner = Color("e7ffd8")
+		width = 10.0
 	var offsets := [0.0]
 	if order == 2:
-		offsets = [-6.0, 6.0]
+		offsets = [-7.0, 7.0]
 	for offset in offsets:
 		var start: Vector2 = a + dir * 22.0 + normal * offset
 		var end: Vector2 = b - dir * 22.0 + normal * offset
-		draw_line(start, end, outline, width + 5.0, true)
-		draw_line(start, end, color, width, true)
+		draw_line(start, end, outline, width + 7.0, true)
+		draw_line(start, end, color.darkened(0.08), width + 2.0, true)
+		draw_line(start + normal * 0.7, end + normal * 0.7, inner, maxf(2.0, width * 0.32), true)
+
+func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
+	draw_circle(pos, radius + 6.0, Color("02070b"))
+	draw_circle(pos, radius + 2.0, base.lightened(0.34))
+	draw_circle(pos, radius - 1.0, base.darkened(0.20))
+	var steps := 8
+	for i in steps:
+		var t := float(i) / float(steps - 1)
+		var r := lerpf(radius * 0.84, radius * 0.20, t)
+		var offset := Vector2(-radius * 0.16, -radius * 0.15) * (1.0 - t)
+		var shade := base.darkened(0.12).lerp(base.lightened(0.28), t)
+		draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.28))
+	draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
+	draw_circle(pos + Vector2(radius * 0.31, -radius * 0.43), radius * 0.10, Color(1, 1, 1, 0.22))
 
 func _nearest_valid_bond(point: Vector2) -> int:
 	var atoms: Array = molecule.get("atoms", [])
