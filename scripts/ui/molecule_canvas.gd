@@ -70,7 +70,7 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 	if order == 2:
 		offsets = [-7.0, 7.0]
 	for offset in offsets:
-		var trim := 34.0
+		var trim := 32.0
 		var start: Vector2 = a + dir * trim + normal * offset
 		var end: Vector2 = b - dir * trim + normal * offset
 		draw_line(start, end, outline, width + 7.0, true)
@@ -123,10 +123,10 @@ func _graph_transform() -> Transform2D:
 		min_pos = min_pos.min(pos)
 		max_pos = max_pos.max(pos)
 	var graph_size := (max_pos - min_pos).max(Vector2(1.0, 1.0))
-	var available := (size - Vector2(80, 80)).max(Vector2(80, 80))
+	var available := (size - Vector2(42, 42)).max(Vector2(24, 24))
 	var zoom = minf(available.x / graph_size.x, available.y / graph_size.y)
 	if not scale_to_fit:
 		zoom = 1.0
-	zoom = clampf(zoom, 0.45, 1.8)
+	zoom = clampf(zoom, 0.12, 1.8)
 	var center_offset: Vector2 = size * 0.5 - (min_pos + graph_size * 0.5) * zoom
 	return Transform2D(0.0, Vector2(zoom, zoom), 0.0, center_offset)

@@ -212,10 +212,15 @@ func _draw_metabolism_map() -> void:
 	map_layer.add_child(title)
 	var ids := sim.present_molecule_ids()
 	var positions := {}
+	var map_width: float = maxf(760.0, map_layer.size.x)
 	for i in ids.size():
 		var id := ids[i]
-		var x := 170.0 + float(i % 3) * 280.0
-		var y := 100.0 + float(i / 3) * 210.0
+		var x: float = map_width * 0.5 - 130.0
+		var y: float = 72.0
+		if i > 0:
+			var branch: int = i - 1
+			x = 110.0 + float(branch % 3) * 285.0
+			y = 300.0 + float(branch / 3) * 220.0
 		positions[id] = Vector2(x, y)
 		map_layer.add_child(_map_molecule_node(id, positions[id]))
 	for reaction in sim.reactions:

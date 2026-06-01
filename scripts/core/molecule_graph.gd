@@ -14,9 +14,9 @@ static func initial_glucose_like() -> Dictionary:
 			"element": CARBON,
 			"pos": Vector2(x, y)
 		})
-		var oxygen_pos := Vector2(x, y - 132.0) if i % 2 == 0 else Vector2(x, y + 132.0)
+		var oxygen_pos := Vector2(x, y - 190.0) if i % 2 == 0 else Vector2(x, y + 190.0)
 		if i == 5:
-			oxygen_pos = Vector2(x + 132.0, y + 64.0)
+			oxygen_pos = Vector2(x + 190.0, y + 92.0)
 		atoms.append({
 			"element": OXYGEN,
 			"pos": oxygen_pos
