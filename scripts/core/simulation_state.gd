@@ -58,7 +58,7 @@ func reset() -> void:
 	molecule_types[glucose_id] = glucose
 	molecule_amounts[glucose_id] = 24.0
 	molecule_rates[glucose_id] = {"production": GLUCOSE_IMPORT_PER_SECOND, "consumption": 0.0}
-	selected_molecule = glucose_id
+	selected_molecule = ""
 	emit_signal("event_logged", "New culture started with glucose import at 8 molecules/s.")
 	emit_signal("changed")
 
@@ -86,6 +86,10 @@ func select_molecule(id: String) -> void:
 	if not molecule_types.has(id):
 		return
 	selected_molecule = id
+	emit_signal("changed")
+
+func deselect_molecule() -> void:
+	selected_molecule = ""
 	emit_signal("changed")
 
 func present_molecule_ids() -> Array[String]:

@@ -9,6 +9,7 @@ var interactive := false
 var selected_target := -1
 var scale_to_fit := true
 var fixed_zoom := 1.0
+var selection_glow := false
 
 func set_molecule(value: Dictionary) -> void:
 	molecule = value
@@ -30,8 +31,26 @@ func _draw() -> void:
 		return
 	var transform := _graph_transform()
 	var zoom := _graph_zoom(transform)
+	if selection_glow:
+		_draw_selection_glow(transform, zoom)
 	_draw_bonds(transform, zoom)
 	_draw_atoms(transform, zoom)
+
+func _draw_selection_glow(transform: Transform2D, zoom: float) -> void:
+	var atoms: Array = molecule.get("atoms", [])
+	var bonds: Array = molecule.get("bonds", [])
+	var glow := Color(0.35, 1.0, 0.78, 0.28)
+	for bond in bonds:
+		var a: Vector2 = transform * atoms[int(bond.get("a", 0))].get("pos", Vector2.ZERO)
+		var b: Vector2 = transform * atoms[int(bond.get("b", 0))].get("pos", Vector2.ZERO)
+		var dir := (b - a).normalized()
+		draw_line(a + dir * 22.0 * zoom, b - dir * 22.0 * zoom, glow, 28.0 * zoom, true)
+	for atom in atoms:
+		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+		var element: String = atom.get("element", "C")
+		var radius := (_atom_radius(element) + 12.0) * zoom
+		draw_circle(pos, radius + 10.0 * zoom, Color(0.35, 1.0, 0.78, 0.08))
+		draw_circle(pos, radius + 4.0 * zoom, glow)
 
 func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])

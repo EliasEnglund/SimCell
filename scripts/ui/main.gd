@@ -37,6 +37,10 @@ func _process(delta: float) -> void:
 		sim.toggle_pause()
 	sim.tick(delta)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		get_tree().quit()
+
 func _build_shell() -> void:
 	root = VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -55,7 +59,7 @@ func _build_shell() -> void:
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(status_label)
 	music_button = Button.new()
-	music_button.text = "♫"
+	music_button.text = "♪"
 	music_button.custom_minimum_size = Vector2(42, 34)
 	music_button.pressed.connect(_toggle_music)
 	header.add_child(music_button)
@@ -94,9 +98,8 @@ func _setup_music() -> void:
 	stream.loop = true
 	music_player.stream = stream
 	music_player.volume_db = -12.0
-	music_player.autoplay = true
+	music_player.autoplay = false
 	add_child(music_player)
-	music_player.play()
 
 func _toggle_music() -> void:
 	if music_player == null:
@@ -152,11 +155,14 @@ func _build_metabolism_view() -> void:
 	map_layer = Control.new()
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map_layer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_layer.clip_contents = true
 	layout.add_child(map_layer)
 	metabolism_workspace = MetabolismWorkspaceScript.new()
 	metabolism_workspace.simulation = sim
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
+	metabolism_workspace.clip_contents = true
 	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
+	metabolism_workspace.empty_requested.connect(_handle_empty_metabolism_click)
 	map_layer.add_child(metabolism_workspace)
 
 func _build_protein_view() -> void:
@@ -217,6 +223,7 @@ func _molecule_list_button(id: String) -> Button:
 func _refresh_selection_detail() -> void:
 	_clear(detail_panel)
 	if not sim.molecule_types.has(sim.selected_molecule):
+		detail_panel.add_child(_title("No molecule selected", "Click a molecule once to select it, then click it again to design an enzyme."))
 		return
 	var molecule: Dictionary = sim.molecule_types[sim.selected_molecule]
 	var amount := float(sim.molecule_amounts.get(sim.selected_molecule, 0.0))
@@ -331,6 +338,9 @@ func _handle_molecule_click(molecule_id: String) -> void:
 		_open_enzyme_designer(molecule_id)
 	else:
 		sim.select_molecule(molecule_id)
+
+func _handle_empty_metabolism_click() -> void:
+	sim.deselect_molecule()
 
 func _tool_button(id: String, icon: String, label_text: String) -> Button:
 	var button := Button.new()

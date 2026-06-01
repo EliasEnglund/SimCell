@@ -2,6 +2,7 @@ extends Control
 class_name MetabolismWorkspace
 
 signal molecule_requested(molecule_id: String)
+signal empty_requested
 
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 
@@ -12,6 +13,9 @@ var _last_mouse := Vector2.ZERO
 var _drag_distance := 0.0
 var _fixed_zoom := 0.72
 var _layout_positions := {}
+var _visible_positions := {}
+var _visible_sizes := {}
+var _press_started_in_workspace := false
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
@@ -22,9 +26,17 @@ func _input(event: InputEvent) -> void:
 			_dragging = true
 			_drag_distance = 0.0
 			_last_mouse = event.position
+			_press_started_in_workspace = true
 			mouse_default_cursor_shape = Control.CURSOR_MOVE
 		elif not event.pressed:
+			if _press_started_in_workspace and _drag_distance <= 6.0 and get_global_rect().has_point(event.position):
+				var molecule_id := _molecule_at(event.position - global_position)
+				if molecule_id.is_empty():
+					emit_signal("empty_requested")
+				else:
+					emit_signal("molecule_requested", molecule_id)
 			_dragging = false
+			_press_started_in_workspace = false
 			mouse_default_cursor_shape = Control.CURSOR_DRAG
 	elif event is InputEventMouseMotion and _dragging:
 		pan_offset += event.position - _last_mouse
@@ -60,9 +72,18 @@ func _rebuild() -> void:
 		var item: Dictionary = layout[id]
 		positions[id] = item["position"] + pan_offset
 		sizes[id] = item["size"]
+	_visible_positions = positions
+	_visible_sizes = sizes
 	_draw_reaction_arrows(positions, sizes)
 	for id in ids:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
+
+func _molecule_at(local_position: Vector2) -> String:
+	for id in _visible_positions.keys():
+		var rect := Rect2(_visible_positions[id], _visible_sizes[id])
+		if rect.has_point(local_position):
+			return id
+	return ""
 
 func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 	for reaction in simulation.pathway_arrows():
@@ -174,55 +195,28 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	box.position = pos
 	box.custom_minimum_size = node_size
 	box.size = node_size
-	if simulation.selected_molecule == id:
-		var highlight := SelectionHighlight.new()
-		highlight.position = Vector2(-12, -12)
-		highlight.custom_minimum_size = node_size + Vector2(24, 24)
-		highlight.size = node_size + Vector2(24, 24)
-		highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		box.add_child(highlight)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(node_size.x, maxf(90.0, node_size.y - 48.0))
 	canvas.size = canvas.custom_minimum_size
+	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.scale_to_fit = false
 	canvas.fixed_zoom = _fixed_zoom
+	canvas.selection_glow = simulation.selected_molecule == id
 	canvas.set_molecule(simulation.molecule_types[id])
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
 		canvas.modulate = Color(1, 1, 1, 0.48)
-	var pressed_on_molecule := false
-	canvas.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				pressed_on_molecule = true
-			elif pressed_on_molecule and _drag_distance <= 6.0:
-				pressed_on_molecule = false
-				emit_signal("molecule_requested", id)
-			elif not event.pressed:
-				pressed_on_molecule = false
-	)
 	box.add_child(canvas)
 	var label := Button.new()
 	label.position = Vector2(0, canvas.custom_minimum_size.y)
 	label.size = Vector2(node_size.x, 42.0)
 	label.custom_minimum_size = label.size
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
 		label.text = "%s  preview" % simulation.molecule_types[id].get("formula", "")
-	label.pressed.connect(func():
-		if _drag_distance <= 6.0:
-			emit_signal("molecule_requested", id)
-	)
 	box.add_child(label)
 	return box
-
-class SelectionHighlight:
-	extends Control
-
-	func _draw() -> void:
-		var rect := Rect2(Vector2.ZERO, size)
-		draw_rect(rect, Color("10292d"), true)
-		draw_rect(rect, Color("8cff6a"), false, 4.0)
-		draw_rect(rect.grow(-5.0), Color("76f4ff"), false, 1.5)
 
 class ArrowLine:
 	extends Control
