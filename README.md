@@ -14,4 +14,4 @@ Run the smoke test with:
 godot --headless --path . --script tests/simulation_smoke_test.gd
 ```
 
-The current prototype focuses on the first vertical slice: membrane transport, enzyme transformations, protein synthesis, DNA research, and a 2.5D cell view.
+The current prototype focuses on the enzyme/metabolism core: graph-rendered molecules, a generated metabolic landscape, full-screen enzyme designer, lyase/reductase target selection, blueprint auto-queueing, and a numeric metabolism simulation running at 4 ticks/sec.

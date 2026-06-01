@@ -13,10 +13,13 @@ Status: started.
 ## Milestone 1: Core Biochemistry Loop
 
 - Status: started.
-- Molecule selection and reaction preview are implemented in the first debug-playable UI.
-- Clear enzyme design flow now exists: select molecule, choose compatible transformation, preview input/output/cost/missing resources, design enzyme, run reaction.
-- The action panel no longer rebuilds on every simulation tick; it refreshes only when action-relevant state changes.
-- Membrane, protein, and DNA views now show affordability/availability before the player clicks.
+- Molecules are now structural atom/bond graphs, starting with a glucose-like C₆O₆ molecule.
+- Metabolism view shows current in-cell molecule pools and a generated metabolic landscape.
+- Enzyme designer is a full-screen separate view opened from a selected molecule.
+- Lyase highlights valid C-C bonds and previews split products.
+- Reductase highlights valid C-O bonds and previews single/double bond toggles.
+- Confirming a design creates an enzyme blueprint, auto-queues it in protein builder, and activates it after a short build time.
+- Numeric metabolism runs on fixed 4 ticks/sec and uses a simplified Michaelis-Menten style rate.
 - First balance pass for ATP drain, import rate, and protein costs.
 
 ## Milestone 2: Membrane And Environment
