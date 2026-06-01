@@ -48,8 +48,8 @@ func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 	for atom in atoms:
 		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
 		var element: String = atom.get("element", "C")
-		var radius := (26.0 if element == "C" else 23.0) * zoom
-		var base := Color("728186") if element == "C" else Color("e85058")
+		var radius := _atom_radius(element) * zoom
+		var base := _atom_color(element)
 		_draw_atom(pos, radius, base)
 
 func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float) -> void:
@@ -79,9 +79,9 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
-	draw_circle(pos, radius + 6.0, Color("02070b"))
-	draw_circle(pos, radius + 2.0, base.lightened(0.34))
-	draw_circle(pos, radius - 1.0, base.darkened(0.20))
+	draw_circle(pos, radius + 5.0, Color("02070b"))
+	draw_circle(pos, radius + 1.5, base.lightened(0.35))
+	draw_circle(pos, radius - 1.0, base.darkened(0.16))
 	var steps := 8
 	for i in steps:
 		var t := float(i) / float(steps - 1)
@@ -91,6 +91,22 @@ func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
 		draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.28))
 	draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
 	draw_circle(pos + Vector2(radius * 0.31, -radius * 0.43), radius * 0.10, Color(1, 1, 1, 0.22))
+
+func _atom_radius(element: String) -> float:
+	if element == "C":
+		return 28.0
+	return 25.0
+
+func _atom_color(element: String) -> Color:
+	if element == "O":
+		return Color("e95058")
+	if element == "P":
+		return Color("a34ed0")
+	if element == "N":
+		return Color("4a90df")
+	if element == "S":
+		return Color("ffe064")
+	return Color("728186")
 
 func _nearest_valid_bond(point: Vector2) -> int:
 	var atoms: Array = molecule.get("atoms", [])

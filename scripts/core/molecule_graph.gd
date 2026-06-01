@@ -7,19 +7,30 @@ const OXYGEN := "O"
 static func initial_glucose_like() -> Dictionary:
 	var atoms: Array[Dictionary] = []
 	var bonds: Array[Dictionary] = []
+	var carbon_positions := [
+		Vector2(-230.0, 28.0),
+		Vector2(-150.0, -26.0),
+		Vector2(-68.0, 26.0),
+		Vector2(18.0, -24.0),
+		Vector2(104.0, 24.0),
+		Vector2(190.0, -20.0)
+	]
+	var oxygen_offsets := [
+		Vector2(-50.0, 40.0),
+		Vector2(0.0, -86.0),
+		Vector2(0.0, 82.0),
+		Vector2(0.0, -82.0),
+		Vector2(0.0, 82.0),
+		Vector2(78.0, -46.0)
+	]
 	for i in 6:
-		var x := (i - 2.5) * 152.0
-		var y := -58.0 if i % 2 == 0 else 58.0
 		atoms.append({
 			"element": CARBON,
-			"pos": Vector2(x, y)
+			"pos": carbon_positions[i]
 		})
-		var oxygen_pos := Vector2(x, y - 190.0) if i % 2 == 0 else Vector2(x, y + 190.0)
-		if i == 5:
-			oxygen_pos = Vector2(x + 190.0, y + 92.0)
 		atoms.append({
 			"element": OXYGEN,
-			"pos": oxygen_pos
+			"pos": carbon_positions[i] + oxygen_offsets[i]
 		})
 	for i in 5:
 		bonds.append({"a": i * 2, "b": (i + 1) * 2, "order": 1})
