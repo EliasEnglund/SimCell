@@ -28,10 +28,11 @@ func _draw() -> void:
 	if molecule.is_empty():
 		return
 	var transform := _graph_transform()
-	_draw_bonds(transform)
-	_draw_atoms(transform)
+	var zoom := _graph_zoom(transform)
+	_draw_bonds(transform, zoom)
+	_draw_atoms(transform, zoom)
 
-func _draw_bonds(transform: Transform2D) -> void:
+func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])
 	var bonds: Array = molecule.get("bonds", [])
 	for i in bonds.size():
@@ -40,42 +41,42 @@ func _draw_bonds(transform: Transform2D) -> void:
 		var b: Vector2 = transform * atoms[int(bond.get("b", 0))].get("pos", Vector2.ZERO)
 		var highlight := valid_targets.has(i)
 		var selected := selected_target == i
-		_draw_bond(a, b, int(bond.get("order", 1)), highlight, selected)
+		_draw_bond(a, b, int(bond.get("order", 1)), highlight, selected, zoom)
 
-func _draw_atoms(transform: Transform2D) -> void:
+func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])
 	for atom in atoms:
 		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
 		var element: String = atom.get("element", "C")
-		var radius := 26.0 if element == "C" else 23.0
+		var radius := (26.0 if element == "C" else 23.0) * zoom
 		var base := Color("728186") if element == "C" else Color("e85058")
 		_draw_atom(pos, radius, base)
 
-func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool) -> void:
+func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float) -> void:
 	var dir := (b - a).normalized()
 	var normal := Vector2(-dir.y, dir.x)
 	var color := Color("dbeff2")
 	var outline := Color("02070b")
 	var inner := Color("f4fbff")
-	var width := 8.0
+	var width := 8.0 * zoom
 	if highlight:
 		color = Color("73e6ff")
 		inner = Color("c8fbff")
-		width = 9.0
+		width = 9.0 * zoom
 	if selected:
 		color = Color("8cff6a")
 		inner = Color("e7ffd8")
-		width = 10.0
+		width = 10.0 * zoom
 	var offsets := [0.0]
 	if order == 2:
-		offsets = [-7.0, 7.0]
+		offsets = [-7.0 * zoom, 7.0 * zoom]
 	for offset in offsets:
-		var trim := 32.0
+		var trim := 32.0 * zoom
 		var start: Vector2 = a + dir * trim + normal * offset
 		var end: Vector2 = b - dir * trim + normal * offset
-		draw_line(start, end, outline, width + 7.0, true)
-		draw_line(start, end, color.darkened(0.08), width + 2.0, true)
-		draw_line(start + normal * 0.7, end + normal * 0.7, inner, maxf(2.0, width * 0.32), true)
+		draw_line(start, end, outline, width + 7.0 * zoom, true)
+		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom, true)
+		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
 	draw_circle(pos, radius + 6.0, Color("02070b"))
@@ -96,7 +97,7 @@ func _nearest_valid_bond(point: Vector2) -> int:
 	var bonds: Array = molecule.get("bonds", [])
 	var transform := _graph_transform()
 	var best := -1
-	var best_distance := 26.0
+	var best_distance := 26.0 * _graph_zoom(transform)
 	for i in valid_targets:
 		var bond: Dictionary = bonds[i]
 		var a: Vector2 = transform * atoms[int(bond.get("a", 0))].get("pos", Vector2.ZERO)
@@ -130,3 +131,6 @@ func _graph_transform() -> Transform2D:
 	zoom = clampf(zoom, 0.12, 1.8)
 	var center_offset: Vector2 = size * 0.5 - (min_pos + graph_size * 0.5) * zoom
 	return Transform2D(0.0, Vector2(zoom, zoom), 0.0, center_offset)
+
+func _graph_zoom(transform: Transform2D) -> float:
+	return transform.x.length()

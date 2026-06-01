@@ -185,7 +185,7 @@ func _refresh_selection_detail() -> void:
 		float(rates.get("consumption", 0.0))
 	]))
 	var canvas = MoleculeCanvasScript.new()
-	canvas.custom_minimum_size = Vector2(260, 170)
+	canvas.custom_minimum_size = Vector2(220, 135)
 	canvas.set_molecule(molecule)
 	canvas.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -215,7 +215,7 @@ func _draw_metabolism_map() -> void:
 	var map_width: float = maxf(760.0, map_layer.size.x)
 	for i in ids.size():
 		var id := ids[i]
-		var x: float = map_width * 0.5 - 130.0
+		var x: float = map_width * 0.5 - 260.0
 		var y: float = 72.0
 		if i > 0:
 			var branch: int = i - 1
@@ -229,9 +229,9 @@ func _draw_metabolism_map() -> void:
 func _map_molecule_node(id: String, pos: Vector2) -> Control:
 	var box := VBoxContainer.new()
 	box.position = pos
-	box.custom_minimum_size = Vector2(180, 150)
+	box.custom_minimum_size = Vector2(520, 300)
 	var canvas = MoleculeCanvasScript.new()
-	canvas.custom_minimum_size = Vector2(180, 110)
+	canvas.custom_minimum_size = Vector2(520, 250)
 	canvas.set_molecule(sim.molecule_types[id])
 	canvas.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
