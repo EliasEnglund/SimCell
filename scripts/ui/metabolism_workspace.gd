@@ -8,6 +8,7 @@ const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 
 var simulation
 var pan_offset := Vector2.ZERO
+var zoom := 1.0
 var _dragging := false
 var _last_mouse := Vector2.ZERO
 var _drag_distance := 0.0
@@ -21,7 +22,13 @@ func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+	if event is InputEventMagnifyGesture and get_global_rect().has_point(event.position):
+		_zoom_at(event.factor, event.position - global_position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_WHEEL_UP and get_global_rect().has_point(event.position) and event.ctrl_pressed:
+		_zoom_at(1.08, event.position - global_position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_WHEEL_DOWN and get_global_rect().has_point(event.position) and event.ctrl_pressed:
+		_zoom_at(1.0 / 1.08, event.position - global_position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed and get_global_rect().has_point(event.position):
 			_dragging = true
 			_drag_distance = 0.0
@@ -43,6 +50,15 @@ func _input(event: InputEvent) -> void:
 		_drag_distance += event.position.distance_to(_last_mouse)
 		_last_mouse = event.position
 		_rebuild()
+
+func _zoom_at(factor: float, local_focus: Vector2) -> void:
+	var previous_zoom := zoom
+	zoom = clampf(zoom * factor, 0.5, 2.0)
+	if is_equal_approx(previous_zoom, zoom):
+		return
+	var world_focus := (local_focus - pan_offset) / previous_zoom
+	pan_offset = local_focus - world_focus * zoom
+	_rebuild()
 
 func rebuild() -> void:
 	_rebuild()
@@ -70,8 +86,8 @@ func _rebuild() -> void:
 	var sizes := {}
 	for id in ids:
 		var item: Dictionary = layout[id]
-		positions[id] = item["position"] + pan_offset
-		sizes[id] = item["size"]
+		positions[id] = item["position"] * zoom + pan_offset
+		sizes[id] = item["size"] * zoom
 	_visible_positions = positions
 	_visible_sizes = sizes
 	_draw_reaction_arrows(positions, sizes)
@@ -201,7 +217,7 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	canvas.size = canvas.custom_minimum_size
 	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.scale_to_fit = false
-	canvas.fixed_zoom = _fixed_zoom
+	canvas.fixed_zoom = _fixed_zoom * zoom
 	canvas.selection_glow = simulation.selected_molecule == id
 	canvas.set_molecule(simulation.molecule_types[id])
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
@@ -211,6 +227,7 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	label.position = Vector2(0, canvas.custom_minimum_size.y)
 	label.size = Vector2(node_size.x, 42.0)
 	label.custom_minimum_size = label.size
+	label.scale = Vector2.ONE
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
