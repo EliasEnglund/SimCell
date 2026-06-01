@@ -47,7 +47,7 @@ func _draw_atoms(transform: Transform2D) -> void:
 	for atom in atoms:
 		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
 		var element: String = atom.get("element", "C")
-		var radius := 28.0 if element == "C" else 24.0
+		var radius := 26.0 if element == "C" else 23.0
 		var base := Color("728186") if element == "C" else Color("e85058")
 		_draw_atom(pos, radius, base)
 
@@ -70,8 +70,9 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 	if order == 2:
 		offsets = [-7.0, 7.0]
 	for offset in offsets:
-		var start: Vector2 = a + dir * 22.0 + normal * offset
-		var end: Vector2 = b - dir * 22.0 + normal * offset
+		var trim := 34.0
+		var start: Vector2 = a + dir * trim + normal * offset
+		var end: Vector2 = b - dir * trim + normal * offset
 		draw_line(start, end, outline, width + 7.0, true)
 		draw_line(start, end, color.darkened(0.08), width + 2.0, true)
 		draw_line(start + normal * 0.7, end + normal * 0.7, inner, maxf(2.0, width * 0.32), true)
