@@ -5,7 +5,7 @@ const SimulationStateScript := preload("res://scripts/core/simulation_state.gd")
 func _init() -> void:
 	var sim = SimulationStateScript.new()
 	var glucose_id: String = sim.selected_molecule
-	assert(sim.present_molecule_ids().size() >= 4)
+	assert(sim.present_molecule_ids().size() == 1)
 	assert(sim.molecule_types[glucose_id].get("formula", "") == "C₆O₆")
 	assert(sim.valid_targets("lyase", glucose_id).size() > 0)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)

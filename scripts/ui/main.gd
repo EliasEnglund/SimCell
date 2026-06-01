@@ -2,6 +2,7 @@ extends Control
 
 const CellViewScript := preload("res://scripts/ui/cell_view.gd")
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
+const MetabolismWorkspaceScript := preload("res://scripts/ui/metabolism_workspace.gd")
 const SimulationStateScript := preload("res://scripts/core/simulation_state.gd")
 
 var sim = SimulationStateScript.new()
@@ -12,6 +13,7 @@ var status_label: Label
 var molecule_list: VBoxContainer
 var detail_panel: VBoxContainer
 var map_layer: Control
+var metabolism_workspace: Control
 var queue_box: VBoxContainer
 var event_log: RichTextLabel
 var music_player: AudioStreamPlayer
@@ -147,6 +149,11 @@ func _build_metabolism_view() -> void:
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map_layer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	layout.add_child(map_layer)
+	metabolism_workspace = MetabolismWorkspaceScript.new()
+	metabolism_workspace.simulation = sim
+	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
+	metabolism_workspace.molecule_requested.connect(_select_and_open_designer)
+	map_layer.add_child(metabolism_workspace)
 
 func _build_protein_view() -> void:
 	var box := VBoxContainer.new()
@@ -183,7 +190,8 @@ func _refresh_metabolism() -> void:
 	for id in sim.present_molecule_ids():
 		molecule_list.add_child(_molecule_list_button(id))
 	_refresh_selection_detail()
-	_draw_metabolism_map()
+	if metabolism_workspace != null:
+		metabolism_workspace.rebuild()
 
 func _molecule_list_button(id: String) -> Button:
 	var molecule: Dictionary = sim.molecule_types[id]
@@ -226,99 +234,6 @@ func _refresh_selection_detail() -> void:
 	button.custom_minimum_size = Vector2(0, 42)
 	button.pressed.connect(func(): _open_enzyme_designer(sim.selected_molecule))
 	detail_panel.add_child(button)
-
-func _draw_metabolism_map() -> void:
-	_clear(map_layer)
-	var background := ColorRect.new()
-	background.color = Color("10292d")
-	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	map_layer.add_child(background)
-	var title := Label.new()
-	title.text = "METABOLIC LANDSCAPE"
-	title.add_theme_font_size_override("font_size", 24)
-	title.modulate = Color("76f4ff")
-	title.position = Vector2(28, 18)
-	map_layer.add_child(title)
-	var ids := sim.present_molecule_ids()
-	var positions := {}
-	var map_width: float = maxf(760.0, map_layer.size.x)
-	var layout := _metabolism_layout(ids, map_width)
-	for i in ids.size():
-		var id := ids[i]
-		var item: Dictionary = layout[id]
-		positions[id] = item["position"]
-		map_layer.add_child(_map_molecule_node(id, item["position"], item["size"]))
-	for reaction in sim.reactions:
-		map_layer.add_child(_reaction_node(reaction, positions))
-
-func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
-	var result := {}
-	var fixed_zoom := 0.72
-	var gap := Vector2(74.0, 82.0)
-	var top_y := 72.0
-	var row_y := 360.0
-	var row_x := 82.0
-	var row_height := 0.0
-	for i in ids.size():
-		var id := ids[i]
-		var size := _molecule_canvas_size(sim.molecule_types[id], fixed_zoom)
-		var pos := Vector2(map_width * 0.5 - size.x * 0.5, top_y)
-		if i > 0:
-			if row_x + size.x > map_width - 60.0:
-				row_x = 82.0
-				row_y += row_height + gap.y
-				row_height = 0.0
-			pos = Vector2(row_x, row_y)
-			row_x += size.x + gap.x
-			row_height = maxf(row_height, size.y)
-		result[id] = {"position": pos, "size": size}
-	return result
-
-func _molecule_canvas_size(molecule: Dictionary, zoom: float) -> Vector2:
-	var atoms: Array = molecule.get("atoms", [])
-	if atoms.is_empty():
-		return Vector2(180, 140)
-	var min_pos := Vector2(INF, INF)
-	var max_pos := Vector2(-INF, -INF)
-	for atom in atoms:
-		var pos: Vector2 = atom.get("pos", Vector2.ZERO)
-		min_pos = min_pos.min(pos)
-		max_pos = max_pos.max(pos)
-	var graph_size := (max_pos - min_pos).max(Vector2(80.0, 80.0))
-	return graph_size * zoom + Vector2(88.0, 116.0)
-
-func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control:
-	var box := VBoxContainer.new()
-	box.position = pos
-	box.custom_minimum_size = node_size
-	var canvas = MoleculeCanvasScript.new()
-	canvas.custom_minimum_size = Vector2(node_size.x, maxf(90.0, node_size.y - 48.0))
-	canvas.scale_to_fit = false
-	canvas.fixed_zoom = 0.72
-	canvas.set_molecule(sim.molecule_types[id])
-	canvas.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_select_and_open_designer(id)
-	)
-	box.add_child(canvas)
-	var label := Button.new()
-	label.text = "%s  %.0f" % [sim.molecule_types[id].get("formula", ""), float(sim.molecule_amounts.get(id, 0.0))]
-	label.pressed.connect(func(): _select_and_open_designer(id))
-	box.add_child(label)
-	return box
-
-func _reaction_node(reaction: Dictionary, positions: Dictionary) -> Control:
-	var substrate: String = reaction.get("substrate", "")
-	var products: Array = reaction.get("products", [])
-	var source: Vector2 = positions.get(substrate, Vector2(180, 120))
-	var target := source + Vector2(250, 90)
-	if not products.is_empty():
-		target = positions.get(products[0], target)
-	var label := Label.new()
-	label.text = "%s\n%.2f/s" % [reaction.get("name", "Enzyme"), float(reaction.get("rate", 0.0))]
-	label.position = source.lerp(target, 0.5) + Vector2(0, 42)
-	label.modulate = Color("f4f8ff")
-	return label
 
 func _open_enzyme_designer(molecule_id: String) -> void:
 	sim.select_molecule(molecule_id)

@@ -59,11 +59,6 @@ func reset() -> void:
 	molecule_amounts[glucose_id] = 24.0
 	molecule_rates[glucose_id] = {"production": GLUCOSE_IMPORT_PER_SECOND, "consumption": 0.0}
 	selected_molecule = glucose_id
-	for demo in Graph.demo_molecules():
-		var demo_id: String = demo["signature"]
-		molecule_types[demo_id] = demo
-		molecule_amounts[demo_id] = 8.0
-		molecule_rates[demo_id] = {"production": 0.0, "consumption": 0.0}
 	emit_signal("event_logged", "New culture started with glucose import at 8 molecules/s.")
 	emit_signal("changed")
 
