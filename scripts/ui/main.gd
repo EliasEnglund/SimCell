@@ -169,7 +169,7 @@ func _molecule_list_button(id: String) -> Button:
 	button.toggle_mode = true
 	button.button_pressed = sim.selected_molecule == id
 	button.custom_minimum_size = Vector2(0, 62)
-	button.pressed.connect(func(): sim.select_molecule(id))
+	button.pressed.connect(func(): _select_and_open_designer(id))
 	return button
 
 func _refresh_selection_detail() -> void:
@@ -187,6 +187,10 @@ func _refresh_selection_detail() -> void:
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(260, 170)
 	canvas.set_molecule(molecule)
+	canvas.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_open_enzyme_designer(sim.selected_molecule)
+	)
 	detail_panel.add_child(canvas)
 	var button := Button.new()
 	button.text = "Design Enzyme"
@@ -224,10 +228,14 @@ func _map_molecule_node(id: String, pos: Vector2) -> Control:
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(180, 110)
 	canvas.set_molecule(sim.molecule_types[id])
+	canvas.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_and_open_designer(id)
+	)
 	box.add_child(canvas)
 	var label := Button.new()
 	label.text = "%s  %.0f" % [sim.molecule_types[id].get("formula", ""), float(sim.molecule_amounts.get(id, 0.0))]
-	label.pressed.connect(func(): sim.select_molecule(id))
+	label.pressed.connect(func(): _select_and_open_designer(id))
 	box.add_child(label)
 	return box
 
@@ -286,6 +294,10 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	designer_preview.add_theme_constant_override("separation", 12)
 	center.add_child(designer_preview)
 	_refresh_designer()
+
+func _select_and_open_designer(molecule_id: String) -> void:
+	sim.select_molecule(molecule_id)
+	_open_enzyme_designer(molecule_id)
 
 func _tool_button(id: String, icon: String, label_text: String) -> Button:
 	var button := Button.new()
