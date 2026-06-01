@@ -12,6 +12,7 @@ var bottom_nav: HBoxContainer
 var status_label: Label
 var molecule_list: VBoxContainer
 var detail_panel: VBoxContainer
+var pathway_box: VBoxContainer
 var map_layer: Control
 var metabolism_workspace: Control
 var queue_box: VBoxContainer
@@ -144,6 +145,9 @@ func _build_metabolism_view() -> void:
 	side.add_child(_section_label("Selection"))
 	detail_panel = VBoxContainer.new()
 	side.add_child(detail_panel)
+	side.add_child(_section_label("Pathways"))
+	pathway_box = VBoxContainer.new()
+	side.add_child(pathway_box)
 
 	map_layer = Control.new()
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -190,6 +194,7 @@ func _refresh_metabolism() -> void:
 	for id in sim.present_molecule_ids():
 		molecule_list.add_child(_molecule_list_button(id))
 	_refresh_selection_detail()
+	_refresh_pathways()
 	if metabolism_workspace != null:
 		metabolism_workspace.rebuild()
 
@@ -234,6 +239,49 @@ func _refresh_selection_detail() -> void:
 	button.custom_minimum_size = Vector2(0, 42)
 	button.pressed.connect(func(): _open_enzyme_designer(sim.selected_molecule))
 	detail_panel.add_child(button)
+
+func _refresh_pathways() -> void:
+	_clear(pathway_box)
+	var pathways := sim.pathway_list()
+	if pathways.is_empty():
+		pathway_box.add_child(_title("No enzyme pathway", "Click glucose, choose an enzyme class, select a highlighted bond, then queue the blueprint."))
+		return
+	for pathway in pathways:
+		pathway_box.add_child(_pathway_card(pathway))
+
+func _pathway_card(pathway: Dictionary) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var name := Label.new()
+	name.text = pathway.get("name", "Enzyme")
+	name.add_theme_font_size_override("font_size", 16)
+	name.modulate = Color("76f4ff")
+	box.add_child(name)
+	var product_labels: Array[String] = []
+	for product_id in pathway.get("products", []):
+		if sim.molecule_types.has(product_id):
+			product_labels.append(sim.molecule_types[product_id].get("formula", "Product"))
+	var status := Label.new()
+	status.text = "%s | %s -> %s" % [
+		pathway.get("status", "Designed"),
+		sim.molecule_types[pathway.get("substrate", "")].get("formula", "Substrate") if sim.molecule_types.has(pathway.get("substrate", "")) else "Substrate",
+		" + ".join(product_labels)
+	]
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.modulate = Color(0.78, 0.88, 0.86)
+	box.add_child(status)
+	var details := Label.new()
+	var build_text := ""
+	if int(pathway.get("queued_count", 0)) > 0:
+		build_text = " | build %.1fs" % float(pathway.get("next_build_remaining", 0.0))
+	details.text = "Rate %.2f/s | Enzymes %d%s" % [
+		float(pathway.get("rate", 0.0)),
+		int(pathway.get("active_count", 0)),
+		build_text
+	]
+	details.modulate = Color(0.68, 0.78, 0.76)
+	box.add_child(details)
+	return box
 
 func _open_enzyme_designer(molecule_id: String) -> void:
 	sim.select_molecule(molecule_id)

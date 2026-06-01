@@ -45,7 +45,7 @@ func _rebuild() -> void:
 	title.position = Vector2(28, 18)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(title)
-	var ids: Array[String] = simulation.present_molecule_ids()
+	var ids: Array[String] = simulation.metabolism_molecule_ids()
 	var layout := _metabolism_layout(ids, maxf(760.0, size.x))
 	var positions := {}
 	var sizes := {}
@@ -58,7 +58,7 @@ func _rebuild() -> void:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
 
 func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
-	for reaction in simulation.reactions:
+	for reaction in simulation.pathway_arrows():
 		var substrate: String = reaction.get("substrate", "")
 		var products: Array = reaction.get("products", [])
 		if not positions.has(substrate):
@@ -71,9 +71,20 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			var arrow := ArrowLine.new()
 			arrow.start = source_center
 			arrow.end = target_center
-			arrow.label = "%.2f/s" % float(reaction.get("rate", 0.0))
+			arrow.rate = float(reaction.get("rate", 0.0))
+			arrow.active = int(reaction.get("active_count", 0)) > 0
+			arrow.queued = int(reaction.get("queued_count", 0)) > 0
+			arrow.label = _arrow_label(reaction)
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
+
+func _arrow_label(pathway: Dictionary) -> String:
+	var rate := float(pathway.get("rate", 0.0))
+	if int(pathway.get("active_count", 0)) > 0:
+		return "%.2f/s" % rate
+	if int(pathway.get("queued_count", 0)) > 0:
+		return "building"
+	return "designed"
 
 func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	var result := {}
@@ -119,6 +130,8 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	canvas.scale_to_fit = false
 	canvas.fixed_zoom = _fixed_zoom
 	canvas.set_molecule(simulation.molecule_types[id])
+	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
+		canvas.modulate = Color(1, 1, 1, 0.48)
 	canvas.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			emit_signal("molecule_requested", id)
@@ -126,6 +139,8 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	box.add_child(canvas)
 	var label := Button.new()
 	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
+	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
+		label.text = "%s  preview" % simulation.molecule_types[id].get("formula", "")
 	label.pressed.connect(func(): emit_signal("molecule_requested", id))
 	box.add_child(label)
 	return box
@@ -136,6 +151,9 @@ class ArrowLine:
 	var start := Vector2.ZERO
 	var end := Vector2.ZERO
 	var label := ""
+	var rate := 0.0
+	var active := false
+	var queued := false
 
 	func _draw() -> void:
 		var delta := end - start
@@ -145,9 +163,16 @@ class ArrowLine:
 		var normal := Vector2(-dir.y, dir.x)
 		var from := start + dir * 90.0
 		var to := end - dir * 90.0
+		var line_color := Color("f4fbff")
+		if active:
+			line_color = Color("8cff6a")
+		elif queued:
+			line_color = Color("76f4ff")
+		else:
+			line_color = Color("8aa1a7")
 		draw_line(from, to, Color("02070b"), 9.0, true)
-		draw_line(from, to, Color("f4fbff"), 4.0, true)
+		draw_line(from, to, line_color, 4.0, true)
 		var left := to - dir * 18.0 + normal * 9.0
 		var right := to - dir * 18.0 - normal * 9.0
-		draw_colored_polygon(PackedVector2Array([to, left, right]), Color("f4fbff"))
-		draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("f4fbff"))
+		draw_colored_polygon(PackedVector2Array([to, left, right]), line_color)
+		draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, line_color)

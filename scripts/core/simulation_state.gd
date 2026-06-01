@@ -98,6 +98,65 @@ func present_molecule_ids() -> Array[String]:
 	)
 	return ids
 
+func metabolism_molecule_ids() -> Array[String]:
+	var ids := present_molecule_ids()
+	var seen := {}
+	for id in ids:
+		seen[id] = true
+	for blueprint in enzyme_blueprints.values():
+		var substrate_id: String = blueprint.get("substrate", "")
+		if molecule_types.has(substrate_id) and not seen.has(substrate_id):
+			ids.append(substrate_id)
+			seen[substrate_id] = true
+		for product_id in blueprint.get("products", []):
+			if molecule_types.has(product_id) and not seen.has(product_id):
+				ids.append(product_id)
+				seen[product_id] = true
+	return ids
+
+func pathway_list() -> Array[Dictionary]:
+	var output: Array[Dictionary] = []
+	for blueprint_id in enzyme_blueprints.keys():
+		var blueprint: Dictionary = enzyme_blueprints[blueprint_id].duplicate(true)
+		var active_count := int(active_enzymes.get(blueprint_id, 0))
+		var queued_count := 0
+		var shortest_remaining := INF
+		for item in protein_queue:
+			if item.get("id", "") == blueprint_id:
+				queued_count += 1
+				shortest_remaining = minf(shortest_remaining, float(item.get("remaining", 0.0)))
+		var rate := 0.0
+		for reaction in reactions:
+			if reaction.get("blueprint_id", "") == blueprint_id:
+				rate = float(reaction.get("rate", 0.0))
+				break
+		blueprint["active_count"] = active_count
+		blueprint["queued_count"] = queued_count
+		blueprint["next_build_remaining"] = shortest_remaining if queued_count > 0 else 0.0
+		blueprint["rate"] = rate
+		blueprint["status"] = "Active" if active_count > 0 else ("Building" if queued_count > 0 else "Designed")
+		output.append(blueprint)
+	output.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("name", "")) < str(b.get("name", ""))
+	)
+	return output
+
+func pathway_arrows() -> Array[Dictionary]:
+	var output: Array[Dictionary] = []
+	for pathway in pathway_list():
+		output.append({
+			"blueprint_id": pathway.get("id", ""),
+			"name": pathway.get("name", "Enzyme"),
+			"tool": pathway.get("tool", ""),
+			"substrate": pathway.get("substrate", ""),
+			"products": pathway.get("products", []),
+			"rate": float(pathway.get("rate", 0.0)),
+			"active_count": int(pathway.get("active_count", 0)),
+			"queued_count": int(pathway.get("queued_count", 0)),
+			"status": pathway.get("status", "Designed")
+		})
+	return output
+
 func design_enzyme(tool: String, substrate_id: String, target_index: int) -> bool:
 	if not molecule_types.has(substrate_id):
 		return false
@@ -214,6 +273,7 @@ func _tick_metabolism(dt: float) -> void:
 					molecule_rates[product_id] = {"production": 0.0, "consumption": 0.0}
 				molecule_rates[product_id]["production"] = float(molecule_rates[product_id].get("production", 0.0)) + actual_rate
 		reactions.append({
+			"blueprint_id": blueprint.get("id", ""),
 			"name": blueprint.get("name", "Enzyme"),
 			"tool": blueprint.get("tool", ""),
 			"substrate": substrate_id,
