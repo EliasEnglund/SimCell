@@ -5,6 +5,8 @@ signal molecule_requested(molecule_id: String)
 signal empty_requested
 
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
+const WORLD_BOUNDS := Rect2(Vector2(-1500.0, 22.0), Vector2(4200.0, 3200.0))
+const EDGE_VISIBLE_MARGIN := Vector2(96.0, 120.0)
 
 var simulation
 var pan_offset := Vector2.ZERO
@@ -49,6 +51,7 @@ func _input(event: InputEvent) -> void:
 		pan_offset += event.position - _last_mouse
 		_drag_distance += event.position.distance_to(_last_mouse)
 		_last_mouse = event.position
+		_clamp_pan()
 		_rebuild()
 
 func _zoom_at(factor: float, local_focus: Vector2) -> void:
@@ -58,7 +61,24 @@ func _zoom_at(factor: float, local_focus: Vector2) -> void:
 		return
 	var world_focus := (local_focus - pan_offset) / previous_zoom
 	pan_offset = local_focus - world_focus * zoom
+	_clamp_pan()
 	_rebuild()
+
+func _clamp_pan() -> void:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
+	var min_x := size.x - (WORLD_BOUNDS.position.x + WORLD_BOUNDS.size.x) * zoom - EDGE_VISIBLE_MARGIN.x
+	var max_x := -WORLD_BOUNDS.position.x * zoom + EDGE_VISIBLE_MARGIN.x
+	var min_y := size.y - (WORLD_BOUNDS.position.y + WORLD_BOUNDS.size.y) * zoom - EDGE_VISIBLE_MARGIN.y
+	var max_y := -WORLD_BOUNDS.position.y * zoom + EDGE_VISIBLE_MARGIN.y
+	if min_x > max_x:
+		pan_offset.x = (min_x + max_x) * 0.5
+	else:
+		pan_offset.x = clampf(pan_offset.x, min_x, max_x)
+	if min_y > max_y:
+		pan_offset.y = (min_y + max_y) * 0.5
+	else:
+		pan_offset.y = clampf(pan_offset.y, min_y, max_y)
 
 func rebuild() -> void:
 	_rebuild()
@@ -69,10 +89,17 @@ func _rebuild() -> void:
 	if simulation == null:
 		return
 	var background := ColorRect.new()
-	background.color = Color("10292d")
+	background.color = Color("07181c")
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(background)
+	var boundary := BoundaryLayer.new()
+	boundary.world_bounds = WORLD_BOUNDS
+	boundary.pan_offset = pan_offset
+	boundary.zoom = zoom
+	boundary.set_anchors_preset(Control.PRESET_FULL_RECT)
+	boundary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(boundary)
 	var title := Label.new()
 	title.text = "METABOLIC LANDSCAPE"
 	title.add_theme_font_size_override("font_size", 24)
@@ -266,3 +293,17 @@ class ArrowLine:
 		var right := to - dir * 18.0 - normal * 9.0
 		draw_colored_polygon(PackedVector2Array([to, left, right]), line_color)
 		draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, line_color)
+
+class BoundaryLayer:
+	extends Control
+
+	var world_bounds := Rect2()
+	var pan_offset := Vector2.ZERO
+	var zoom := 1.0
+
+	func _draw() -> void:
+		var rect := Rect2(world_bounds.position * zoom + pan_offset, world_bounds.size * zoom)
+		draw_rect(rect, Color("10292d"), true)
+		draw_rect(rect, Color("0d3a42"), false, 5.0)
+		draw_line(rect.position, rect.position + Vector2(rect.size.x, 0.0), Color("76f4ff"), 4.0, true)
+		draw_line(rect.position + Vector2(0.0, 8.0), rect.position + Vector2(rect.size.x, 8.0), Color(0.55, 1.0, 0.9, 0.35), 2.0, true)
