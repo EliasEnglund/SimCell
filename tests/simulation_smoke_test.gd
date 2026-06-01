@@ -16,6 +16,7 @@ func _init() -> void:
 	assert(sim.protein_queue.size() == 1)
 	assert(sim.pathway_list().size() == 1)
 	assert(sim.pathway_list()[0].get("status", "") == "Building")
+	assert(sim.pathway_list()[0].get("products", []).size() == 1)
 	assert(sim.metabolism_molecule_ids().size() > sim.present_molecule_ids().size())
 	for i in 40:
 		sim.tick(0.1)

@@ -167,8 +167,14 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		return false
 	var product_ids: Array[String] = []
 	for graph in products:
+		if _escapes_as_carbon_dioxide(graph):
+			emit_signal("event_logged", "One-carbon fragment escaped as CO2 gas.")
+			continue
 		var product_id := _register_molecule(graph)
 		product_ids.append(product_id)
+	if product_ids.is_empty():
+		emit_signal("event_logged", "Reaction product escaped the cell as gas.")
+		return false
 	var blueprint_id := "%s:%s:%d" % [tool, substrate_id.md5_text(), target_index]
 	var blueprint := {
 		"id": blueprint_id,
@@ -300,6 +306,13 @@ func _register_molecule(graph: Dictionary) -> String:
 		molecule_rates[id] = {"production": 0.0, "consumption": 0.0}
 		emit_signal("event_logged", "New molecule discovered: %s." % normalized.get("formula", "Molecule"))
 	return id
+
+func _escapes_as_carbon_dioxide(graph: Dictionary) -> bool:
+	var carbon_count := 0
+	for atom in graph.get("atoms", []):
+		if atom.get("element", "") == Graph.CARBON:
+			carbon_count += 1
+	return carbon_count == 1
 
 func _glucose_id() -> String:
 	for id in molecule_types.keys():

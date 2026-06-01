@@ -156,7 +156,7 @@ func _build_metabolism_view() -> void:
 	metabolism_workspace = MetabolismWorkspaceScript.new()
 	metabolism_workspace.simulation = sim
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
-	metabolism_workspace.molecule_requested.connect(_select_and_open_designer)
+	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
 	map_layer.add_child(metabolism_workspace)
 
 func _build_protein_view() -> void:
@@ -211,7 +211,7 @@ func _molecule_list_button(id: String) -> Button:
 	button.toggle_mode = true
 	button.button_pressed = sim.selected_molecule == id
 	button.custom_minimum_size = Vector2(0, 62)
-	button.pressed.connect(func(): _select_and_open_designer(id))
+	button.pressed.connect(func(): _handle_molecule_click(id))
 	return button
 
 func _refresh_selection_detail() -> void:
@@ -231,7 +231,7 @@ func _refresh_selection_detail() -> void:
 	canvas.set_molecule(molecule)
 	canvas.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_open_enzyme_designer(sim.selected_molecule)
+			_handle_molecule_click(sim.selected_molecule)
 	)
 	detail_panel.add_child(canvas)
 	var button := Button.new()
@@ -326,9 +326,11 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	center.add_child(designer_preview)
 	_refresh_designer()
 
-func _select_and_open_designer(molecule_id: String) -> void:
-	sim.select_molecule(molecule_id)
-	_open_enzyme_designer(molecule_id)
+func _handle_molecule_click(molecule_id: String) -> void:
+	if sim.selected_molecule == molecule_id:
+		_open_enzyme_designer(molecule_id)
+	else:
+		sim.select_molecule(molecule_id)
 
 func _tool_button(id: String, icon: String, label_text: String) -> Button:
 	var button := Button.new()

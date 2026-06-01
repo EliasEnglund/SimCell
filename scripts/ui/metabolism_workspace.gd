@@ -9,20 +9,27 @@ var simulation
 var pan_offset := Vector2.ZERO
 var _dragging := false
 var _last_mouse := Vector2.ZERO
+var _drag_distance := 0.0
 var _fixed_zoom := 0.72
+var _layout_positions := {}
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
 
-func _gui_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		_dragging = event.pressed
-		_last_mouse = event.position
-		mouse_default_cursor_shape = Control.CURSOR_MOVE if _dragging else Control.CURSOR_DRAG
+		if event.pressed and get_global_rect().has_point(event.position):
+			_dragging = true
+			_drag_distance = 0.0
+			_last_mouse = event.position
+			mouse_default_cursor_shape = Control.CURSOR_MOVE
+		elif not event.pressed:
+			_dragging = false
+			mouse_default_cursor_shape = Control.CURSOR_DRAG
 	elif event is InputEventMouseMotion and _dragging:
 		pan_offset += event.position - _last_mouse
+		_drag_distance += event.position.distance_to(_last_mouse)
 		_last_mouse = event.position
-		queue_redraw()
 		_rebuild()
 
 func rebuild() -> void:
@@ -88,25 +95,66 @@ func _arrow_label(pathway: Dictionary) -> String:
 
 func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	var result := {}
+	var sizes := {}
+	for id in ids:
+		sizes[id] = _molecule_canvas_size(simulation.molecule_types[id], _fixed_zoom)
+	if ids.is_empty():
+		return result
+	var first_id := ids[0]
+	if not _layout_positions.has(first_id):
+		var first_size: Vector2 = sizes[first_id]
+		_layout_positions[first_id] = Vector2(map_width * 0.5 - first_size.x * 0.5, 78.0)
+	for pathway in simulation.pathway_arrows():
+		var substrate_id: String = pathway.get("substrate", "")
+		if not _layout_positions.has(substrate_id):
+			continue
+		var products: Array = pathway.get("products", [])
+		for i in products.size():
+			var product_id: String = products[i]
+			if not sizes.has(product_id) or _layout_positions.has(product_id):
+				continue
+			var source_pos: Vector2 = _layout_positions[substrate_id]
+			var source_size: Vector2 = sizes[substrate_id]
+			var product_size: Vector2 = sizes[product_id]
+			var x_offset := (float(i) - float(products.size() - 1) * 0.5) * (product_size.x + 70.0)
+			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 120.0)
+			_layout_positions[product_id] = _open_position(preferred, product_size, sizes)
 	var gap := Vector2(90.0, 110.0)
-	var top_y := 78.0
 	var row_y := 380.0
 	var row_x := 96.0
 	var row_height := 0.0
 	for i in ids.size():
 		var id := ids[i]
-		var node_size := _molecule_canvas_size(simulation.molecule_types[id], _fixed_zoom)
-		var pos := Vector2(map_width * 0.5 - node_size.x * 0.5, top_y)
-		if i > 0:
+		var node_size: Vector2 = sizes[id]
+		if not _layout_positions.has(id):
 			if row_x + node_size.x > map_width - 80.0:
 				row_x = 96.0
 				row_y += row_height + gap.y
 				row_height = 0.0
-			pos = Vector2(row_x, row_y)
+			_layout_positions[id] = _open_position(Vector2(row_x, row_y), node_size, sizes)
 			row_x += node_size.x + gap.x
 			row_height = maxf(row_height, node_size.y)
-		result[id] = {"position": pos, "size": node_size}
+		result[id] = {"position": _layout_positions[id], "size": node_size}
 	return result
+
+func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary) -> Vector2:
+	var gap := Vector2(84.0, 104.0)
+	var candidate := preferred
+	for attempt in 18:
+		if not _overlaps_existing(candidate, node_size, sizes):
+			return candidate
+		candidate = preferred + Vector2((attempt % 3 - 1) * (node_size.x + gap.x), (attempt / 3 + 1) * (node_size.y + gap.y))
+	return candidate
+
+func _overlaps_existing(pos: Vector2, node_size: Vector2, sizes: Dictionary) -> bool:
+	var rect := Rect2(pos, node_size).grow(34.0)
+	for id in _layout_positions.keys():
+		if not sizes.has(id):
+			continue
+		var other := Rect2(_layout_positions[id], sizes[id]).grow(34.0)
+		if rect.intersects(other):
+			return true
+	return false
 
 func _molecule_canvas_size(molecule: Dictionary, zoom: float) -> Vector2:
 	var atoms: Array = molecule.get("atoms", [])
@@ -122,28 +170,59 @@ func _molecule_canvas_size(molecule: Dictionary, zoom: float) -> Vector2:
 	return graph_size * zoom + Vector2(88.0, 116.0)
 
 func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control:
-	var box := VBoxContainer.new()
+	var box := Control.new()
 	box.position = pos
 	box.custom_minimum_size = node_size
+	box.size = node_size
+	if simulation.selected_molecule == id:
+		var highlight := SelectionHighlight.new()
+		highlight.position = Vector2(-12, -12)
+		highlight.custom_minimum_size = node_size + Vector2(24, 24)
+		highlight.size = node_size + Vector2(24, 24)
+		highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(highlight)
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(node_size.x, maxf(90.0, node_size.y - 48.0))
+	canvas.size = canvas.custom_minimum_size
 	canvas.scale_to_fit = false
 	canvas.fixed_zoom = _fixed_zoom
 	canvas.set_molecule(simulation.molecule_types[id])
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
 		canvas.modulate = Color(1, 1, 1, 0.48)
+	var pressed_on_molecule := false
 	canvas.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			emit_signal("molecule_requested", id)
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				pressed_on_molecule = true
+			elif pressed_on_molecule and _drag_distance <= 6.0:
+				pressed_on_molecule = false
+				emit_signal("molecule_requested", id)
+			elif not event.pressed:
+				pressed_on_molecule = false
 	)
 	box.add_child(canvas)
 	var label := Button.new()
+	label.position = Vector2(0, canvas.custom_minimum_size.y)
+	label.size = Vector2(node_size.x, 42.0)
+	label.custom_minimum_size = label.size
 	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
 		label.text = "%s  preview" % simulation.molecule_types[id].get("formula", "")
-	label.pressed.connect(func(): emit_signal("molecule_requested", id))
+	label.pressed.connect(func():
+		if _drag_distance <= 6.0:
+			emit_signal("molecule_requested", id)
+	)
 	box.add_child(label)
 	return box
+
+class SelectionHighlight:
+	extends Control
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size)
+		draw_rect(rect, Color("10292d"), true)
+		draw_rect(rect, Color("8cff6a"), false, 4.0)
+		draw_rect(rect.grow(-5.0), Color("76f4ff"), false, 1.5)
 
 class ArrowLine:
 	extends Control
