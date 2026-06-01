@@ -16,7 +16,7 @@ static func initial_glucose_like() -> Dictionary:
 		Vector2(190.0, -20.0)
 	]
 	var oxygen_offsets := [
-		Vector2(-50.0, 40.0),
+		Vector2(-84.0, 66.0),
 		Vector2(0.0, -86.0),
 		Vector2(0.0, 82.0),
 		Vector2(0.0, -82.0),
@@ -37,6 +37,65 @@ static func initial_glucose_like() -> Dictionary:
 	for i in 6:
 		bonds.append({"a": i * 2, "b": i * 2 + 1, "order": 2 if i == 5 else 1})
 	return normalize({"name": "Glucose", "atoms": atoms, "bonds": bonds})
+
+static func demo_molecules() -> Array[Dictionary]:
+	return [
+		_demo_nitrogen_fragment(),
+		_demo_phosphate_fragment(),
+		_demo_sulfur_fragment()
+	]
+
+static func _demo_nitrogen_fragment() -> Dictionary:
+	return normalize({
+		"name": "Amino Fragment",
+		"atoms": [
+			{"element": CARBON, "pos": Vector2(-82.0, 16.0)},
+			{"element": CARBON, "pos": Vector2(0.0, -24.0)},
+			{"element": CARBON, "pos": Vector2(84.0, 16.0)},
+			{"element": OXYGEN, "pos": Vector2(0.0, -104.0)},
+			{"element": "N", "pos": Vector2(154.0, -44.0)}
+		],
+		"bonds": [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1},
+			{"a": 1, "b": 3, "order": 2},
+			{"a": 2, "b": 4, "order": 1}
+		]
+	})
+
+static func _demo_phosphate_fragment() -> Dictionary:
+	return normalize({
+		"name": "Phosphorylated Fragment",
+		"atoms": [
+			{"element": CARBON, "pos": Vector2(-70.0, 22.0)},
+			{"element": CARBON, "pos": Vector2(18.0, -18.0)},
+			{"element": OXYGEN, "pos": Vector2(102.0, -60.0)},
+			{"element": "P", "pos": Vector2(186.0, -14.0)},
+			{"element": OXYGEN, "pos": Vector2(258.0, -78.0)}
+		],
+		"bonds": [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1},
+			{"a": 2, "b": 3, "order": 1},
+			{"a": 3, "b": 4, "order": 2}
+		]
+	})
+
+static func _demo_sulfur_fragment() -> Dictionary:
+	return normalize({
+		"name": "Sulfur Fragment",
+		"atoms": [
+			{"element": CARBON, "pos": Vector2(-80.0, 18.0)},
+			{"element": CARBON, "pos": Vector2(0.0, -24.0)},
+			{"element": CARBON, "pos": Vector2(82.0, 16.0)},
+			{"element": "S", "pos": Vector2(154.0, 74.0)}
+		],
+		"bonds": [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1},
+			{"a": 2, "b": 3, "order": 1}
+		]
+	})
 
 static func clone(graph: Dictionary) -> Dictionary:
 	var atoms: Array[Dictionary] = []
