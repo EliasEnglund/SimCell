@@ -7,7 +7,8 @@ signal changed
 signal event_logged(message: String)
 
 const METABOLISM_TICK := 0.25
-const GLUCOSE_IMPORT_PER_SECOND := 8.0
+const TRANSPORTER_RATE_PER_SECOND := 2.0
+const STARTING_GLUCOSE_TRANSPORTERS := 4
 
 var time_seconds := 0.0
 var paused := false
@@ -20,6 +21,9 @@ var tick_accumulator := 0.0
 var molecule_types: Dictionary = {}
 var molecule_amounts: Dictionary = {}
 var molecule_rates: Dictionary = {}
+var outside_amounts: Dictionary = {}
+var outside_rates: Dictionary = {}
+var transporters: Dictionary = {}
 var enzyme_blueprints: Dictionary = {}
 var active_enzymes: Dictionary = {}
 var protein_queue: Array[Dictionary] = []
@@ -43,6 +47,9 @@ func reset() -> void:
 	molecule_types = {}
 	molecule_amounts = {}
 	molecule_rates = {}
+	outside_amounts = {}
+	outside_rates = {}
+	transporters = {}
 	enzyme_blueprints = {}
 	active_enzymes = {}
 	protein_queue = []
@@ -57,9 +64,18 @@ func reset() -> void:
 	glucose["name"] = "Glucose"
 	molecule_types[glucose_id] = glucose
 	molecule_amounts[glucose_id] = 24.0
-	molecule_rates[glucose_id] = {"production": GLUCOSE_IMPORT_PER_SECOND, "consumption": 0.0}
+	molecule_rates[glucose_id] = {"production": 0.0, "consumption": 0.0}
+	outside_amounts[glucose_id] = 10000.0
+	outside_rates[glucose_id] = {"production": 0.0, "consumption": 0.0}
+	transporters[_transporter_id("import", glucose_id)] = {
+		"id": _transporter_id("import", glucose_id),
+		"direction": "import",
+		"molecule": glucose_id,
+		"count": STARTING_GLUCOSE_TRANSPORTERS,
+		"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND
+	}
 	selected_molecule = ""
-	emit_signal("event_logged", "New culture started with glucose import at 8 molecules/s.")
+	emit_signal("event_logged", "New culture started with glucose importers at 8 molecules/s.")
 	emit_signal("changed")
 
 func tick(delta: float) -> void:
@@ -101,6 +117,76 @@ func present_molecule_ids() -> Array[String]:
 		return molecule_types[a].get("formula", "") < molecule_types[b].get("formula", "")
 	)
 	return ids
+
+func outside_molecule_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for id in outside_amounts.keys():
+		if molecule_types.has(id) and float(outside_amounts.get(id, 0.0)) > 0.001:
+			ids.append(id)
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return molecule_types[a].get("formula", "") < molecule_types[b].get("formula", "")
+	)
+	return ids
+
+func known_molecule_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for id in molecule_types.keys():
+		ids.append(id)
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return molecule_types[a].get("formula", "") < molecule_types[b].get("formula", "")
+	)
+	return ids
+
+func transporter_list() -> Array[Dictionary]:
+	var output: Array[Dictionary] = []
+	for id in transporters.keys():
+		var transporter: Dictionary = transporters[id].duplicate(true)
+		var count := int(transporter.get("count", 0))
+		if count <= 0:
+			continue
+		transporter["rate"] = count * float(transporter.get("rate_per_transporter", TRANSPORTER_RATE_PER_SECOND))
+		output.append(transporter)
+	output.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_key := "%s:%s" % [a.get("direction", ""), molecule_types.get(a.get("molecule", ""), {}).get("formula", "")]
+		var b_key := "%s:%s" % [b.get("direction", ""), molecule_types.get(b.get("molecule", ""), {}).get("formula", "")]
+		return a_key < b_key
+	)
+	return output
+
+func transporter_count(direction: String, molecule_id: String) -> int:
+	var id := _transporter_id(direction, molecule_id)
+	return int(transporters.get(id, {}).get("count", 0))
+
+func transporter_rate(direction: String, molecule_id: String) -> float:
+	return transporter_count(direction, molecule_id) * TRANSPORTER_RATE_PER_SECOND
+
+func build_transporter(direction: String, molecule_id: String) -> bool:
+	if not molecule_types.has(molecule_id) or not ["import", "export"].has(direction):
+		return false
+	if direction == "import" and not outside_amounts.has(molecule_id):
+		return false
+	var id := _transporter_id(direction, molecule_id)
+	if not transporters.has(id):
+		transporters[id] = {
+			"id": id,
+			"direction": direction,
+			"molecule": molecule_id,
+			"count": 0,
+			"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND
+		}
+	transporters[id]["count"] = int(transporters[id].get("count", 0)) + 1
+	emit_signal("event_logged", "Built %s transporter for %s." % [direction, molecule_types[molecule_id].get("formula", "molecule")])
+	emit_signal("changed")
+	return true
+
+func destroy_transporter(direction: String, molecule_id: String) -> bool:
+	var id := _transporter_id(direction, molecule_id)
+	if not transporters.has(id) or int(transporters[id].get("count", 0)) <= 0:
+		return false
+	transporters[id]["count"] = int(transporters[id].get("count", 0)) - 1
+	emit_signal("event_logged", "Removed %s transporter for %s." % [direction, molecule_types[molecule_id].get("formula", "molecule")])
+	emit_signal("changed")
+	return true
 
 func metabolism_molecule_ids() -> Array[String]:
 	var ids := present_molecule_ids()
@@ -240,12 +326,12 @@ func pressure_label() -> String:
 	return "Stable"
 
 func _tick_metabolism(dt: float) -> void:
-	var previous_amounts := molecule_amounts.duplicate(true)
 	for id in molecule_types.keys():
 		molecule_rates[id] = {"production": 0.0, "consumption": 0.0}
-	var glucose_id := _glucose_id()
-	molecule_amounts[glucose_id] = float(molecule_amounts.get(glucose_id, 0.0)) + GLUCOSE_IMPORT_PER_SECOND * dt
-	molecule_rates[glucose_id]["production"] = GLUCOSE_IMPORT_PER_SECOND
+	for id in outside_amounts.keys():
+		outside_rates[id] = {"production": 0.0, "consumption": 0.0}
+	_apply_membrane_transport(dt)
+	var previous_amounts := molecule_amounts.duplicate(true)
 
 	var demand_by_substrate := {}
 	var reaction_demands: Array[Dictionary] = []
@@ -311,6 +397,42 @@ func _register_molecule(graph: Dictionary) -> String:
 		emit_signal("event_logged", "New molecule discovered: %s." % normalized.get("formula", "Molecule"))
 	return id
 
+func _apply_membrane_transport(dt: float) -> void:
+	for transporter in transporter_list():
+		var molecule_id: String = transporter.get("molecule", "")
+		if not molecule_types.has(molecule_id):
+			continue
+		var direction: String = transporter.get("direction", "")
+		var requested_rate := float(transporter.get("rate", 0.0))
+		if direction == "import":
+			var available := float(outside_amounts.get(molecule_id, 0.0))
+			var moved := minf(requested_rate * dt, available)
+			if moved <= 0.0:
+				continue
+			var actual_rate := moved / dt
+			outside_amounts[molecule_id] = available - moved
+			molecule_amounts[molecule_id] = float(molecule_amounts.get(molecule_id, 0.0)) + moved
+			_ensure_rate_entries(molecule_id)
+			molecule_rates[molecule_id]["production"] = float(molecule_rates[molecule_id].get("production", 0.0)) + actual_rate
+			outside_rates[molecule_id]["consumption"] = float(outside_rates[molecule_id].get("consumption", 0.0)) + actual_rate
+		elif direction == "export":
+			var available_inside := float(molecule_amounts.get(molecule_id, 0.0))
+			var exported := minf(requested_rate * dt, available_inside)
+			if exported <= 0.0:
+				continue
+			var export_rate := exported / dt
+			molecule_amounts[molecule_id] = available_inside - exported
+			outside_amounts[molecule_id] = float(outside_amounts.get(molecule_id, 0.0)) + exported
+			_ensure_rate_entries(molecule_id)
+			molecule_rates[molecule_id]["consumption"] = float(molecule_rates[molecule_id].get("consumption", 0.0)) + export_rate
+			outside_rates[molecule_id]["production"] = float(outside_rates[molecule_id].get("production", 0.0)) + export_rate
+
+func _ensure_rate_entries(molecule_id: String) -> void:
+	if not molecule_rates.has(molecule_id):
+		molecule_rates[molecule_id] = {"production": 0.0, "consumption": 0.0}
+	if not outside_rates.has(molecule_id):
+		outside_rates[molecule_id] = {"production": 0.0, "consumption": 0.0}
+
 func _escapes_as_carbon_dioxide(graph: Dictionary) -> bool:
 	var carbon_count := 0
 	for atom in graph.get("atoms", []):
@@ -323,6 +445,9 @@ func _glucose_id() -> String:
 		if molecule_types[id].get("name", "") == "Glucose":
 			return id
 	return selected_molecule
+
+func _transporter_id(direction: String, molecule_id: String) -> String:
+	return "%s:%s" % [direction, molecule_id.md5_text()]
 
 func _enzyme_name(tool: String, substrate: Dictionary) -> String:
 	var enzyme_name := "Lyase" if tool == "lyase" else "Reductase"

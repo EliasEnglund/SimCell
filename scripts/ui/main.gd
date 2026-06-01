@@ -19,6 +19,12 @@ var queue_box: VBoxContainer
 var event_log: RichTextLabel
 var music_player: AudioStreamPlayer
 var music_button: Button
+var membrane_outside_list: VBoxContainer
+var membrane_inside_list: VBoxContainer
+var membrane_transporter_list: VBoxContainer
+var membrane_detail: VBoxContainer
+var selected_membrane_molecule := ""
+var selected_membrane_direction := "import"
 
 var designer_tool := "lyase"
 var designer_target := -1
@@ -119,7 +125,7 @@ func _show_view(view_id: String) -> void:
 	elif view_id == "metabolism":
 		_build_metabolism_view()
 	elif view_id == "membrane":
-		_build_placeholder("MEMBRANE TRANSPORT", "Transporters will control which external molecules enter the cell.")
+		_build_membrane_view()
 	elif view_id == "proteins":
 		_build_protein_view()
 	elif view_id == "dna":
@@ -174,6 +180,38 @@ func _build_protein_view() -> void:
 	queue_box = VBoxContainer.new()
 	box.add_child(queue_box)
 
+func _build_membrane_view() -> void:
+	var layout := HBoxContainer.new()
+	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layout.add_theme_constant_override("separation", 14)
+	content.add_child(layout)
+
+	var outside_panel := _panel_container("OUTSIDE")
+	outside_panel.custom_minimum_size = Vector2(300, 0)
+	layout.add_child(outside_panel)
+	membrane_outside_list = VBoxContainer.new()
+	membrane_outside_list.add_theme_constant_override("separation", 8)
+	outside_panel.add_child(membrane_outside_list)
+
+	var membrane_panel := _panel_container("MEMBRANE")
+	membrane_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(membrane_panel)
+	membrane_panel.add_child(_membrane_band())
+	membrane_detail = VBoxContainer.new()
+	membrane_detail.add_theme_constant_override("separation", 10)
+	membrane_panel.add_child(membrane_detail)
+	membrane_panel.add_child(_section_label("Active Transporters"))
+	membrane_transporter_list = VBoxContainer.new()
+	membrane_transporter_list.add_theme_constant_override("separation", 8)
+	membrane_panel.add_child(membrane_transporter_list)
+
+	var inside_panel := _panel_container("INSIDE CELL")
+	inside_panel.custom_minimum_size = Vector2(300, 0)
+	layout.add_child(inside_panel)
+	membrane_inside_list = VBoxContainer.new()
+	membrane_inside_list.add_theme_constant_override("separation", 8)
+	inside_panel.add_child(membrane_inside_list)
+
 func _build_placeholder(title: String, subtitle: String) -> void:
 	var box := CenterContainer.new()
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -192,8 +230,110 @@ func _refresh() -> void:
 	]
 	if sim.active_view == "metabolism" and molecule_list != null:
 		_refresh_metabolism()
+	if sim.active_view == "membrane" and membrane_outside_list != null:
+		_refresh_membrane()
 	if sim.active_view == "proteins" and queue_box != null:
 		_refresh_protein_queue()
+
+func _refresh_membrane() -> void:
+	if selected_membrane_molecule.is_empty():
+		var outside_ids := sim.outside_molecule_ids()
+		if not outside_ids.is_empty():
+			selected_membrane_molecule = outside_ids[0]
+			selected_membrane_direction = "import"
+	_clear(membrane_outside_list)
+	for id in sim.outside_molecule_ids():
+		membrane_outside_list.add_child(_membrane_molecule_button(id, "outside"))
+	_clear(membrane_inside_list)
+	for id in sim.present_molecule_ids():
+		membrane_inside_list.add_child(_membrane_molecule_button(id, "inside"))
+	_refresh_membrane_detail()
+	_refresh_transporter_list()
+
+func _membrane_molecule_button(id: String, location: String) -> Button:
+	var molecule: Dictionary = sim.molecule_types[id]
+	var amount := float(sim.outside_amounts.get(id, 0.0)) if location == "outside" else float(sim.molecule_amounts.get(id, 0.0))
+	var rates: Dictionary = sim.outside_rates.get(id, {"production": 0.0, "consumption": 0.0}) if location == "outside" else sim.molecule_rates.get(id, {"production": 0.0, "consumption": 0.0})
+	var direction := "import" if location == "outside" else "export"
+	var button := Button.new()
+	button.text = "%s  %.0f\n+%.1f/s  -%.1f/s" % [
+		molecule.get("formula", "Molecule"),
+		amount,
+		float(rates.get("production", 0.0)),
+		float(rates.get("consumption", 0.0))
+	]
+	button.toggle_mode = true
+	button.button_pressed = selected_membrane_molecule == id and selected_membrane_direction == direction
+	button.custom_minimum_size = Vector2(0, 68)
+	button.pressed.connect(func():
+		selected_membrane_molecule = id
+		selected_membrane_direction = direction
+		_refresh_membrane()
+	)
+	return button
+
+func _refresh_membrane_detail() -> void:
+	_clear(membrane_detail)
+	if not sim.molecule_types.has(selected_membrane_molecule):
+		membrane_detail.add_child(_title("No molecule selected", "Select an outside molecule to build an importer or an inside molecule to build an exporter."))
+		return
+	var molecule: Dictionary = sim.molecule_types[selected_membrane_molecule]
+	var count := sim.transporter_count(selected_membrane_direction, selected_membrane_molecule)
+	var rate := sim.transporter_rate(selected_membrane_direction, selected_membrane_molecule)
+	var action := "Importer" if selected_membrane_direction == "import" else "Exporter"
+	membrane_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d transporters | %.1f molecules/s" % [count, rate]))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var build := Button.new()
+	build.text = "+ Build"
+	build.custom_minimum_size = Vector2(128, 44)
+	build.pressed.connect(func():
+		sim.build_transporter(selected_membrane_direction, selected_membrane_molecule)
+	)
+	row.add_child(build)
+	var remove := Button.new()
+	remove.text = "- Destroy"
+	remove.custom_minimum_size = Vector2(128, 44)
+	remove.disabled = count <= 0
+	remove.pressed.connect(func():
+		sim.destroy_transporter(selected_membrane_direction, selected_membrane_molecule)
+	)
+	row.add_child(remove)
+	membrane_detail.add_child(row)
+	var canvas = MoleculeCanvasScript.new()
+	canvas.custom_minimum_size = Vector2(260, 150)
+	canvas.set_molecule(molecule)
+	membrane_detail.add_child(canvas)
+
+func _refresh_transporter_list() -> void:
+	_clear(membrane_transporter_list)
+	var list := sim.transporter_list()
+	if list.is_empty():
+		membrane_transporter_list.add_child(_title("No transporters", "Build importers or exporters from the molecule lists."))
+		return
+	for transporter in list:
+		membrane_transporter_list.add_child(_transporter_card(transporter))
+
+func _transporter_card(transporter: Dictionary) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var molecule_id: String = transporter.get("molecule", "")
+	var molecule: Dictionary = sim.molecule_types.get(molecule_id, {})
+	var name := Label.new()
+	name.text = "%s %s" % [str(transporter.get("direction", "transport")).capitalize(), molecule.get("formula", "Molecule")]
+	name.add_theme_font_size_override("font_size", 16)
+	name.modulate = Color("76f4ff")
+	box.add_child(name)
+	var detail := Label.new()
+	detail.text = "%d units | %.1f/s total" % [int(transporter.get("count", 0)), float(transporter.get("rate", 0.0))]
+	detail.modulate = Color(0.72, 0.84, 0.82)
+	box.add_child(detail)
+	return box
+
+func _membrane_band() -> Control:
+	var band := MembraneBand.new()
+	band.custom_minimum_size = Vector2(0, 96)
+	return band
 
 func _refresh_metabolism() -> void:
 	_clear(molecule_list)
@@ -405,6 +545,16 @@ func _refresh_protein_queue() -> void:
 		var duration := maxf(0.01, float(item.get("duration", 1.0)))
 		queue_box.add_child(_title(item.get("name", "Enzyme"), "%.0f%% complete" % ((1.0 - float(item.get("remaining", 0.0)) / duration) * 100.0)))
 
+func _panel_container(title_text: String) -> VBoxContainer:
+	var panel := VBoxContainer.new()
+	panel.add_theme_constant_override("separation", 10)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 18)
+	title.modulate = Color("76f4ff")
+	panel.add_child(title)
+	return panel
+
 func _title(title_text: String, subtitle: String) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	var title := Label.new()
@@ -433,3 +583,19 @@ func _log_event(message: String) -> void:
 	if event_log == null:
 		return
 	event_log.append_text("[%05.1f] %s\n" % [sim.time_seconds, message])
+
+class MembraneBand:
+	extends Control
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size)
+		draw_rect(rect, Color("10292d"), true)
+		var center_y := size.y * 0.5
+		var top := center_y - 18.0
+		var bottom := center_y + 18.0
+		draw_line(Vector2(0, top), Vector2(size.x, top), Color("76f4ff"), 2.0, true)
+		draw_line(Vector2(0, bottom), Vector2(size.x, bottom), Color("76f4ff"), 2.0, true)
+		for x in range(20, int(size.x), 34):
+			draw_circle(Vector2(x, top), 8.0, Color("4a90df"))
+			draw_circle(Vector2(x + 16, bottom), 8.0, Color("a34ed0"))
+		draw_string(ThemeDB.fallback_font, Vector2(18, center_y + 5), "TRANSPORTER MEMBRANE", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("f4fbff"))
