@@ -8,6 +8,7 @@ var valid_targets: Array[int] = []
 var interactive := false
 var selected_target := -1
 var scale_to_fit := true
+var fixed_zoom := 1.0
 
 func set_molecule(value: Dictionary) -> void:
 	molecule = value
@@ -143,7 +144,7 @@ func _graph_transform() -> Transform2D:
 	var available := (size - Vector2(42, 42)).max(Vector2(24, 24))
 	var zoom = minf(available.x / graph_size.x, available.y / graph_size.y)
 	if not scale_to_fit:
-		zoom = 1.0
+		zoom = fixed_zoom
 	zoom = clampf(zoom, 0.12, 1.8)
 	var center_offset: Vector2 = size * 0.5 - (min_pos + graph_size * 0.5) * zoom
 	return Transform2D(0.0, Vector2(zoom, zoom), 0.0, center_offset)
