@@ -56,36 +56,56 @@ func _build_title_screen() -> void:
 	var title_root := Control.new()
 	title_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(title_root)
-	var background := TitleBackground.new()
-	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_root.add_child(background)
-	var frame := DesignerTitleFrame.new()
+	var artwork := TextureRect.new()
+	var title_image := Image.load_from_file("res://assets/reference/title-art-v2.png")
+	if title_image != null:
+		artwork.texture = ImageTexture.create_from_image(title_image)
+	artwork.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	artwork.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	artwork.set_anchors_preset(Control.PRESET_FULL_RECT)
+	artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_root.add_child(artwork)
+	var shade := TitleShade.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_root.add_child(shade)
+	var frame := TitleTopFrame.new()
 	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title_root.add_child(frame)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	title_root.add_child(center)
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 74)
+	margin.add_theme_constant_override("margin_top", 104)
+	margin.add_theme_constant_override("margin_right", 74)
+	margin.add_theme_constant_override("margin_bottom", 78)
+	title_root.add_child(margin)
 	var menu := VBoxContainer.new()
-	menu.custom_minimum_size = Vector2(420, 320)
+	menu.custom_minimum_size = Vector2(510, 360)
+	menu.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	menu.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	menu.alignment = BoxContainer.ALIGNMENT_CENTER
-	menu.add_theme_constant_override("separation", 18)
-	center.add_child(menu)
+	menu.add_theme_constant_override("separation", 16)
+	margin.add_child(menu)
 	var title := Label.new()
 	title.text = "SIM CELL"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 56)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.add_theme_font_size_override("font_size", 72)
 	title.modulate = Color("76f4ff")
 	menu.add_child(title)
 	var subtitle := Label.new()
-	subtitle.text = "Build metabolism. Design enzymes. Shape the cell."
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.text = "Build metabolism. Design enzymes. Shape a living cell."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	subtitle.add_theme_font_size_override("font_size", 20)
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	subtitle.modulate = Color(0.78, 0.9, 0.88)
 	menu.add_child(subtitle)
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 16)
+	menu.add_child(spacer)
 	var play := Button.new()
 	play.text = "PLAY"
-	play.custom_minimum_size = Vector2(280, 54)
+	play.custom_minimum_size = Vector2(300, 58)
 	play.add_theme_font_size_override("font_size", 22)
 	play.add_theme_stylebox_override("normal", _nav_style(false))
 	play.add_theme_stylebox_override("hover", _nav_style(true))
@@ -98,7 +118,7 @@ func _build_title_screen() -> void:
 	menu.add_child(play)
 	var quit := Button.new()
 	quit.text = "QUIT"
-	quit.custom_minimum_size = Vector2(280, 54)
+	quit.custom_minimum_size = Vector2(300, 52)
 	quit.add_theme_font_size_override("font_size", 22)
 	quit.add_theme_stylebox_override("normal", _nav_style(false))
 	quit.add_theme_stylebox_override("hover", _nav_style(true))
@@ -1504,6 +1524,32 @@ class DesignerTitleFrame:
 		draw_polyline(points, cyan, 3.0, true)
 		draw_string(ThemeDB.fallback_font, Vector2(center_x - 145.0, 21.0), "ENZYME DESIGNER", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, cyan)
 
+class TitleTopFrame:
+	extends Control
+
+	func _draw() -> void:
+		var cyan := Color("76f4ff")
+		var glow := Color(0.45, 0.95, 1.0, 0.22)
+		var y := 34.0
+		var tab_width := 430.0
+		var center_x := size.x * 0.5
+		var tab_left := center_x - tab_width * 0.5
+		var tab_right := center_x + tab_width * 0.5
+		var points := PackedVector2Array([
+			Vector2(0, y),
+			Vector2(tab_left - 42.0, y),
+			Vector2(tab_left - 22.0, y + 18.0),
+			Vector2(tab_left + 16.0, y + 22.0),
+			Vector2(tab_right - 16.0, y + 22.0),
+			Vector2(tab_right + 22.0, y + 18.0),
+			Vector2(tab_right + 42.0, y),
+			Vector2(size.x, y)
+		])
+		draw_polyline(points, Color("02070b"), 9.0, true)
+		draw_polyline(points, glow, 7.0, true)
+		draw_polyline(points, cyan, 3.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(center_x - 88.0, 28.0), "SIM CELL", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, cyan)
+
 class TitleBackground:
 	extends Control
 
@@ -1524,3 +1570,22 @@ class TitleBackground:
 				draw_line(Vector2(previous_x, previous_y), Vector2(x, y), Color("dbeff2"), 6.0, true)
 		draw_line(Vector2(0, size.y - 88.0), Vector2(size.x, size.y - 88.0), Color(0.45, 0.95, 1.0, 0.18), 3.0, true)
 		draw_string(ThemeDB.fallback_font, Vector2(36, size.y - 42.0), "SIMULATION PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, cyan)
+
+class TitleShade:
+	extends Control
+
+	func _draw() -> void:
+		var left := Rect2(Vector2.ZERO, Vector2(size.x * 0.54, size.y))
+		draw_rect(left, Color(0.01, 0.05, 0.07, 0.62), true)
+		for i in 18:
+			var t := float(i) / 17.0
+			var x := lerpf(size.x * 0.34, size.x * 0.70, t)
+			draw_rect(Rect2(Vector2(x, 0), Vector2(size.x * 0.03, size.y)), Color(0.01, 0.05, 0.07, 0.28 * (1.0 - t)), true)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, 0.18), true)
+		for y in range(0, int(size.y), 6):
+			draw_line(Vector2(0, y), Vector2(size.x, y), Color(0.5, 1.0, 1.0, 0.025), 1.0)
+		var cyan := Color("76f4ff")
+		draw_line(Vector2(0, 34), Vector2(size.x * 0.38, 34), Color(cyan.r, cyan.g, cyan.b, 0.7), 3.0, true)
+		draw_line(Vector2(size.x * 0.62, 34), Vector2(size.x, 34), Color(cyan.r, cyan.g, cyan.b, 0.7), 3.0, true)
+		draw_line(Vector2(0, size.y - 54), Vector2(size.x, size.y - 54), Color(cyan.r, cyan.g, cyan.b, 0.22), 2.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(74, size.y - 24), "SIMULATION PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(cyan.r, cyan.g, cyan.b, 0.85))
