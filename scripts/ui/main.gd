@@ -31,6 +31,7 @@ var designer_tool := "lyase"
 var designer_target := -1
 var designer_preview: HBoxContainer
 var designer_canvas: Control
+var designer_info_panel: VBoxContainer
 
 func _ready() -> void:
 	sim.changed.connect(_refresh)
@@ -444,35 +445,60 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 func _open_enzyme_designer(molecule_id: String) -> void:
 	sim.select_molecule(molecule_id)
 	_clear(root)
+	var designer_root := Control.new()
+	designer_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	designer_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(designer_root)
+	var background := ColorRect.new()
+	background.color = Color("10292d")
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	designer_root.add_child(background)
+	var title_bar := DesignerTitleFrame.new()
+	title_bar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	title_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	designer_root.add_child(title_bar)
+
 	var shell := HBoxContainer.new()
 	shell.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shell.add_theme_constant_override("separation", 18)
-	root.add_child(shell)
+	shell.offset_left = 24
+	shell.offset_top = 54
+	shell.offset_right = -24
+	shell.offset_bottom = -22
+	shell.add_theme_constant_override("separation", 34)
+	designer_root.add_child(shell)
+
+	var tools_panel := PanelContainer.new()
+	tools_panel.custom_minimum_size = Vector2(360, 0)
+	tools_panel.add_theme_stylebox_override("panel", _glow_panel_style(Color("101927"), Color("7adfff"), 3.0, 10))
+	shell.add_child(tools_panel)
 	var tools := VBoxContainer.new()
-	tools.custom_minimum_size = Vector2(330, 0)
-	tools.add_theme_constant_override("separation", 12)
-	shell.add_child(tools)
-	tools.add_child(_title("ENZYME FUNCTION", "Choose enzyme class, then click a highlighted target."))
+	tools.add_theme_constant_override("separation", 13)
+	tools.offset_left = 18
+	tools.offset_top = 18
+	tools.offset_right = -18
+	tools.offset_bottom = -18
+	tools_panel.add_child(tools)
+	var tools_title := Label.new()
+	tools_title.text = "ENZYME FUNCTION"
+	tools_title.add_theme_font_size_override("font_size", 26)
+	tools_title.modulate = Color("76f4ff")
+	tools.add_child(tools_title)
 	tools.add_child(_tool_button("lyase", "✂", "LYASE"))
 	tools.add_child(_tool_button("reductase", "=", "REDUCTASE"))
+	tools.add_child(_locked_tool_card("DECARBOXYLASE"))
+	tools.add_child(_locked_tool_card("SULFUR TRANSFERASE"))
+
 	var center := VBoxContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.add_theme_constant_override("separation", 12)
 	shell.add_child(center)
-	var header := HBoxContainer.new()
-	center.add_child(header)
-	var title := Label.new()
-	title.text = "ENZYME DESIGNER"
-	title.add_theme_font_size_override("font_size", 28)
-	title.modulate = Color("76f4ff")
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
-	var back := Button.new()
-	back.text = "Back"
-	back.pressed.connect(func(): _restore_main_shell())
-	header.add_child(back)
+	var top_spacer := HBoxContainer.new()
+	top_spacer.custom_minimum_size = Vector2(0, 30)
+	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.add_child(top_spacer)
 	designer_canvas = MoleculeCanvasScript.new()
-	designer_canvas.custom_minimum_size = Vector2(760, 430)
+	designer_canvas.custom_minimum_size = Vector2(760, 490)
 	designer_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	designer_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	designer_canvas.interactive = true
@@ -482,6 +508,19 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	designer_preview.custom_minimum_size = Vector2(0, 210)
 	designer_preview.add_theme_constant_override("separation", 12)
 	center.add_child(designer_preview)
+
+	var info_stack := VBoxContainer.new()
+	info_stack.custom_minimum_size = Vector2(300, 0)
+	info_stack.add_theme_constant_override("separation", 14)
+	shell.add_child(info_stack)
+	var back := Button.new()
+	back.text = "Back"
+	back.custom_minimum_size = Vector2(0, 40)
+	back.pressed.connect(func(): _restore_main_shell())
+	info_stack.add_child(back)
+	designer_info_panel = VBoxContainer.new()
+	designer_info_panel.add_theme_constant_override("separation", 9)
+	info_stack.add_child(designer_info_panel)
 	_refresh_designer()
 
 func _handle_molecule_click(molecule_id: String) -> void:
@@ -499,11 +538,25 @@ func _tool_button(id: String, icon: String, label_text: String) -> Button:
 	button.custom_minimum_size = Vector2(0, 112)
 	button.toggle_mode = true
 	button.button_pressed = designer_tool == id
+	button.add_theme_font_size_override("font_size", 22)
+	button.add_theme_stylebox_override("normal", _tool_style(false))
+	button.add_theme_stylebox_override("hover", _tool_style(true))
+	button.add_theme_stylebox_override("pressed", _tool_style(true))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	button.pressed.connect(func():
 		designer_tool = id
 		designer_target = -1
 		_refresh_designer()
 	)
+	return button
+
+func _locked_tool_card(label_text: String) -> Button:
+	var button := Button.new()
+	button.text = "\n%s" % label_text
+	button.disabled = true
+	button.custom_minimum_size = Vector2(0, 112)
+	button.add_theme_font_size_override("font_size", 20)
+	button.add_theme_stylebox_override("disabled", _tool_style(false))
 	return button
 
 func _designer_target_selected(index: int) -> void:
@@ -518,6 +571,7 @@ func _refresh_designer() -> void:
 	designer_canvas.valid_targets = sim.valid_targets(designer_tool, sim.selected_molecule)
 	designer_canvas.selected_target = designer_target
 	designer_canvas.queue_redraw()
+	_refresh_designer_info(molecule)
 	_clear(designer_preview)
 	if designer_target < 0:
 		designer_preview.add_child(_title("Select Target", "%d highlighted bonds can be modified by %s." % [designer_canvas.valid_targets.size(), designer_tool.capitalize()]))
@@ -567,6 +621,74 @@ func _refresh_designer() -> void:
 		_restore_main_shell()
 	)
 	designer_preview.add_child(confirm)
+
+func _refresh_designer_info(molecule: Dictionary) -> void:
+	if designer_info_panel == null:
+		return
+	_clear(designer_info_panel)
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _glow_panel_style(Color("263b4a"), Color("7adfff"), 2.0, 8))
+	designer_info_panel.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.offset_left = 16
+	box.offset_top = 14
+	box.offset_right = -16
+	box.offset_bottom = -14
+	card.add_child(box)
+	var formula := Label.new()
+	formula.text = molecule.get("formula", "Molecule")
+	formula.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	formula.add_theme_font_size_override("font_size", 32)
+	formula.modulate = Color("f4fbff")
+	formula.add_theme_stylebox_override("normal", _formula_badge_style())
+	box.add_child(formula)
+	var name := Label.new()
+	name.text = "NAME: %s" % str(molecule.get("name", "Molecule")).to_upper()
+	name.add_theme_font_size_override("font_size", 18)
+	box.add_child(name)
+	var amount := Label.new()
+	amount.text = "Nr: %.0f" % float(sim.molecule_amounts.get(sim.selected_molecule, 0.0))
+	amount.add_theme_font_size_override("font_size", 18)
+	box.add_child(amount)
+	var rates: Dictionary = sim.molecule_rates.get(sim.selected_molecule, {"production": 0.0, "consumption": 0.0})
+	var change := Label.new()
+	change.text = "Change: %+.1f/s" % (float(rates.get("production", 0.0)) - float(rates.get("consumption", 0.0)))
+	change.add_theme_font_size_override("font_size", 18)
+	box.add_child(change)
+	var toxicity_label := Label.new()
+	toxicity_label.text = "Toxicity: None"
+	toxicity_label.add_theme_font_size_override("font_size", 18)
+	box.add_child(toxicity_label)
+
+func _glow_panel_style(fill: Color, border: Color, width: float, radius: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = border
+	style.set_border_width_all(width)
+	style.set_corner_radius_all(radius)
+	style.shadow_color = Color(border.r, border.g, border.b, 0.35)
+	style.shadow_size = 10
+	style.content_margin_left = 18
+	style.content_margin_top = 18
+	style.content_margin_right = 18
+	style.content_margin_bottom = 18
+	return style
+
+func _tool_style(active: bool) -> StyleBoxFlat:
+	var style := _glow_panel_style(Color("243b4b") if active else Color("253747"), Color("73dfff"), 1.5, 8)
+	style.shadow_size = 8 if active else 4
+	return style
+
+func _formula_badge_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("c8c8c8")
+	style.set_corner_radius_all(5)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 3
+	style.content_margin_bottom = 3
+	return style
 
 func _restore_main_shell() -> void:
 	_clear(root)
@@ -656,3 +778,30 @@ class MembraneBand:
 			var right := to - dir * 12.0 - Vector2(-dir.y, dir.x) * 7.0
 			draw_colored_polygon(PackedVector2Array([to, left, right]), color)
 			draw_string(ThemeDB.fallback_font, Vector2(x - 22.0, center_y + 36.0), "%s x%d" % [arrow.get("formula", ""), int(arrow.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+
+class DesignerTitleFrame:
+	extends Control
+
+	func _draw() -> void:
+		var cyan := Color("76f4ff")
+		var glow := Color(0.45, 0.95, 1.0, 0.22)
+		var y := 26.0
+		var tab_width := 360.0
+		var tab_half := tab_width * 0.5
+		var center_x := size.x * 0.5
+		var tab_left := center_x - tab_half
+		var tab_right := center_x + tab_half
+		var points := PackedVector2Array([
+			Vector2(0, y),
+			Vector2(tab_left - 34.0, y),
+			Vector2(tab_left - 18.0, y + 17.0),
+			Vector2(tab_left + 14.0, y + 20.0),
+			Vector2(tab_right - 14.0, y + 20.0),
+			Vector2(tab_right + 18.0, y + 17.0),
+			Vector2(tab_right + 34.0, y),
+			Vector2(size.x, y)
+		])
+		draw_polyline(points, Color("02070b"), 9.0, true)
+		draw_polyline(points, glow, 7.0, true)
+		draw_polyline(points, cyan, 3.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(center_x - 145.0, 21.0), "ENZYME DESIGNER", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, cyan)
