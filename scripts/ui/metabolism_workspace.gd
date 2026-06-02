@@ -155,31 +155,48 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout
 		if not positions.has(substrate):
 			continue
 		var source_center: Vector2 = positions[substrate] + sizes[substrate] * 0.5
+		var source_bottom: Vector2 = positions[substrate] + Vector2(sizes[substrate].x * 0.5, sizes[substrate].y)
 		var step_rect: Rect2 = step_layout.get(step_key, {}).get("rect", Rect2())
 		var step_center := step_rect.get_center()
 		if step_rect.size.x > 0.0:
-			var enzyme_arrow := ArrowLine.new()
-			enzyme_arrow.start = source_center
-			enzyme_arrow.end = step_center
+			var enzyme_arrow := RoutedArrowLine.new()
+			var step_top := Vector2(step_center.x, step_rect.position.y)
+			enzyme_arrow.points = [source_bottom, step_top]
 			enzyme_arrow.rate = float(reaction.get("rate", 0.0))
 			enzyme_arrow.active = int(reaction.get("active_count", 0)) > 0
 			enzyme_arrow.queued = int(reaction.get("queued_count", 0)) > 0
 			enzyme_arrow.label = _arrow_label(reaction)
 			enzyme_arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(enzyme_arrow)
+		var product_index := 0
+		var visible_product_count := 0
+		for product_id in products:
+			if positions.has(product_id):
+				visible_product_count += 1
 		for product_id in products:
 			if not positions.has(product_id):
 				continue
-			var target_center: Vector2 = positions[product_id] + sizes[product_id] * 0.5
-			var arrow := ArrowLine.new()
-			arrow.start = step_center if step_rect.size.x > 0.0 else source_center
-			arrow.end = target_center
+			var target_top: Vector2 = positions[product_id] + Vector2(sizes[product_id].x * 0.5, 0.0)
+			var arrow := RoutedArrowLine.new()
+			if step_rect.size.x > 0.0:
+				var lane_offset := (float(product_index) - float(visible_product_count - 1) * 0.5) * minf(44.0 * zoom, step_rect.size.x * 0.26)
+				var start := Vector2(step_center.x + lane_offset, step_rect.end.y)
+				var split_y := start.y + maxf(36.0 * zoom, minf(92.0 * zoom, (target_top.y - start.y) * 0.42))
+				arrow.points = [
+					start,
+					Vector2(start.x, split_y),
+					Vector2(target_top.x, split_y),
+					target_top
+				]
+			else:
+				arrow.points = [source_bottom, target_top]
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
 			arrow.queued = int(reaction.get("queued_count", 0)) > 0
 			arrow.label = ""
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
+			product_index += 1
 
 func _draw_membrane_transport_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 	for transport in simulation.membrane_transport_arrows():
@@ -391,6 +408,45 @@ class ArrowLine:
 		if not label.is_empty():
 			draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(7, -7), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, line_color)
 
+class RoutedArrowLine:
+	extends Control
+
+	var points: Array[Vector2] = []
+	var label := ""
+	var rate := 0.0
+	var active := false
+	var queued := false
+
+	func _draw() -> void:
+		if points.size() < 2:
+			return
+		var line_color := Color("f4fbff")
+		if active:
+			line_color = Color("8cff6a")
+		elif queued:
+			line_color = Color("76f4ff")
+		else:
+			line_color = Color("8aa1a7")
+		for i in points.size() - 1:
+			var a: Vector2 = points[i]
+			var b: Vector2 = points[i + 1]
+			if a.distance_to(b) < 4.0:
+				continue
+			draw_line(a, b, Color("02070b"), 7.0, true)
+			draw_line(a, b, line_color, 3.0, true)
+		var end: Vector2 = points[points.size() - 1]
+		var previous: Vector2 = points[points.size() - 2]
+		var dir := (end - previous).normalized()
+		if dir.length() <= 0.0:
+			return
+		var normal := Vector2(-dir.y, dir.x)
+		var left := end - dir * 14.0 + normal * 7.0
+		var right := end - dir * 14.0 - normal * 7.0
+		draw_colored_polygon(PackedVector2Array([end, left, right]), line_color)
+		if not label.is_empty():
+			var label_pos: Vector2 = points[0].lerp(points[1], 0.55) + Vector2(7, -7)
+			draw_string(ThemeDB.fallback_font, label_pos, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, line_color)
+
 class EnzymeStepBox:
 	extends Control
 
@@ -418,14 +474,14 @@ class EnzymeStepBox:
 			return
 		var molecule: Dictionary = simulation.molecule_types[substrate_id]
 		var transform := _molecule_transform(molecule)
-		_draw_molecule(molecule, transform)
 		var target_index := _reaction_target_index()
 		if str(reaction.get("tool", "")) == "lyase" and target_index >= 0:
-			_draw_breaking_bond(molecule, transform, target_index)
+			_draw_lyase_cycle(molecule, transform, target_index, rect)
 		else:
+			_draw_molecule(molecule, transform)
 			_draw_reaction_pulse(rect)
-		_draw_product_preview(rect)
-		_draw_enzyme_icon(rect)
+			_draw_product_preview(rect)
+			_draw_enzyme_icon(rect)
 		_draw_step_label(rect)
 
 	func _molecule_transform(molecule: Dictionary) -> Transform2D:
@@ -496,6 +552,85 @@ class EnzymeStepBox:
 		draw_polyline(sparks, Color("76f4ff"), 5.0 * intensity, true)
 		draw_polyline(sparks, Color("fff1a8"), maxf(1.0, 2.0 * intensity), true)
 
+	func _draw_lyase_cycle(molecule: Dictionary, transform: Transform2D, target_index: int, rect: Rect2) -> void:
+		var cycle := fmod(Time.get_ticks_msec() * 0.00036, 1.0)
+		var break_amount := smoothstep(0.18, 0.52, cycle) * (1.0 - smoothstep(0.66, 0.84, cycle))
+		var substrate_alpha := 1.0
+		if cycle > 0.52 and cycle < 0.86:
+			substrate_alpha = 1.0 - smoothstep(0.52, 0.68, cycle)
+		elif cycle >= 0.86:
+			substrate_alpha = smoothstep(0.86, 0.98, cycle)
+		var product_alpha := smoothstep(0.48, 0.62, cycle) * (1.0 - smoothstep(0.76, 0.94, cycle))
+		var drift := smoothstep(0.50, 0.86, cycle)
+		_draw_molecule_break_stage(molecule, transform, target_index, break_amount, substrate_alpha)
+		var bond_center := _bond_screen_center(molecule, transform, target_index)
+		if bond_center != Vector2(INF, INF):
+			var scissors_alpha := smoothstep(0.08, 0.22, cycle) * (1.0 - smoothstep(0.56, 0.74, cycle))
+			var scissors_drop := Vector2(0.0, lerpf(-14.0, 5.0, smoothstep(0.10, 0.48, cycle)))
+			_draw_scissors_alpha(bond_center + Vector2(25.0, -16.0) + scissors_drop, minf(rect.size.x, rect.size.y) / 118.0, scissors_alpha)
+		if product_alpha <= 0.01:
+			return
+		var products := _product_molecules()
+		if products.is_empty():
+			return
+		var count := products.size()
+		var base := Vector2(rect.position.x + rect.size.x * 0.42, rect.position.y + rect.size.y * 0.56)
+		for i in count:
+			var product: Dictionary = products[i]
+			var side := float(i) - float(count - 1) * 0.5
+			var start := base + Vector2(side * rect.size.x * 0.10, 0.0)
+			var end := base + Vector2(side * rect.size.x * 0.36, rect.size.y * 0.20)
+			var origin := start.lerp(end, drift)
+			var product_scale := minf(fixed_zoom * 0.56, 0.31)
+			var product_transform := _product_transform(product, origin, product_scale)
+			_draw_molecule_with_alpha(product, product_transform, product_alpha)
+
+	func _draw_molecule_break_stage(molecule: Dictionary, transform: Transform2D, target_index: int, break_amount: float, alpha: float) -> void:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		for i in bonds.size():
+			var bond: Dictionary = bonds[i]
+			var a_index := int(bond.get("a", 0))
+			var b_index := int(bond.get("b", 0))
+			if a_index >= atoms.size() or b_index >= atoms.size():
+				continue
+			var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+			var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+			if i != target_index or break_amount <= 0.01:
+				_draw_step_bond(a, b, int(bond.get("order", 1)), alpha)
+				continue
+			var dir := (b - a).normalized()
+			var normal := Vector2(-dir.y, dir.x)
+			var center := a.lerp(b, 0.5)
+			var gap := 4.0 + 18.0 * break_amount
+			var cut_alpha := alpha * (0.55 + 0.45 * break_amount)
+			_draw_step_bond(a, center - dir * gap, int(bond.get("order", 1)), cut_alpha, Color("ffe064"))
+			_draw_step_bond(center + dir * gap, b, int(bond.get("order", 1)), cut_alpha, Color("ffe064"))
+			var sparks := PackedVector2Array()
+			for spark_index in 7:
+				var p := center + dir * lerpf(-gap, gap, float(spark_index) / 6.0)
+				var wave := sin(float(spark_index) * 2.2 + Time.get_ticks_msec() * 0.011) * 7.0 * break_amount
+				sparks.append(p + normal * wave)
+			draw_polyline(sparks, Color(0.45, 0.95, 1.0, 0.50 * break_amount * alpha), 4.0 * break_amount, true)
+			draw_polyline(sparks, Color(1.0, 0.95, 0.55, 0.80 * break_amount * alpha), maxf(1.0, 1.7 * break_amount), true)
+		for atom in atoms:
+			var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+			_draw_step_atom_alpha(pos, str(atom.get("element", "C")), alpha)
+
+	func _bond_screen_center(molecule: Dictionary, transform: Transform2D, target_index: int) -> Vector2:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		if target_index >= bonds.size():
+			return Vector2(INF, INF)
+		var bond: Dictionary = bonds[target_index]
+		var a_index := int(bond.get("a", 0))
+		var b_index := int(bond.get("b", 0))
+		if a_index >= atoms.size() or b_index >= atoms.size():
+			return Vector2(INF, INF)
+		var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+		var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+		return a.lerp(b, 0.5)
+
 	func _draw_reaction_pulse(rect: Rect2) -> void:
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.004)
 		draw_circle(rect.get_center(), 24.0 + 20.0 * pulse, Color(0.45, 0.95, 1.0, 0.10 * (1.0 - pulse)))
@@ -533,17 +668,22 @@ class EnzymeStepBox:
 			draw_line(center + Vector2(-24, 0) * size_scale, center + Vector2(24, 0) * size_scale, Color("f4fbff"), 4.0 * size_scale, true)
 
 	func _draw_scissors(center: Vector2, scale: float) -> void:
+		_draw_scissors_alpha(center, scale, 1.0)
+
+	func _draw_scissors_alpha(center: Vector2, scale: float, alpha: float) -> void:
+		if alpha <= 0.01:
+			return
 		var a := center + Vector2(-30, 26) * scale
 		var b := center + Vector2(20, -28) * scale
 		var c := center + Vector2(-12, 28) * scale
 		var d := center + Vector2(32, -22) * scale
-		draw_line(a, b, Color("02070b"), 6.0 * scale, true)
-		draw_line(c, d, Color("02070b"), 6.0 * scale, true)
-		draw_line(a, b, Color("f4fbff"), 3.0 * scale, true)
-		draw_line(c, d, Color("f4fbff"), 3.0 * scale, true)
+		draw_line(a, b, Color(0.0, 0.0, 0.0, alpha), 6.0 * scale, true)
+		draw_line(c, d, Color(0.0, 0.0, 0.0, alpha), 6.0 * scale, true)
+		draw_line(a, b, Color(0.96, 0.98, 1.0, alpha), 3.0 * scale, true)
+		draw_line(c, d, Color(0.96, 0.98, 1.0, alpha), 3.0 * scale, true)
 		for p in [center + Vector2(28, -28) * scale, center + Vector2(42, -18) * scale]:
-			draw_circle(p, 5.0 * scale, Color("02070b"))
-			draw_circle(p, 3.0 * scale, Color("f4fbff"))
+			draw_circle(p, 5.0 * scale, Color(0.0, 0.0, 0.0, alpha))
+			draw_circle(p, 3.0 * scale, Color(0.96, 0.98, 1.0, alpha))
 
 	func _draw_step_label(rect: Rect2) -> void:
 		var text := str(reaction.get("tool", "enzyme")).to_upper()
