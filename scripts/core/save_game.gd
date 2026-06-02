@@ -42,6 +42,7 @@ static func load_state(sim) -> bool:
 	sim.speed = float(parsed.get("speed", sim.speed))
 	sim.molecule_amounts = parsed.get("molecule_amounts", sim.molecule_amounts)
 	sim.resources = parsed.get("resources", sim.resources)
+	sim.ensure_default_resources()
 	sim.outside_amounts = parsed.get("outside_amounts", sim.outside_amounts)
 	sim.transporters = parsed.get("transporters", sim.transporters)
 	sim.transporter_queue = parsed.get("transporter_queue", [])

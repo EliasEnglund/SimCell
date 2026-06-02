@@ -10,6 +10,14 @@ const METABOLISM_TICK := 0.25
 const TRANSPORTER_RATE_PER_SECOND := 2.0
 const TRANSPORTER_BUILD_TIME := 2.5
 const STARTING_GLUCOSE_TRANSPORTERS := 4
+const RESOURCE_AMINO_ACIDS := "Amino Acids"
+const RESOURCE_ATP := "ATP"
+const RESOURCE_NADH := "NADH"
+const RESOURCE_NITROGEN := "N"
+const STARTING_AMINO_ACIDS := 40.0
+const STARTING_ATP := 80.0
+const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
+const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
 
 var time_seconds := 0.0
 var paused := false
@@ -51,8 +59,14 @@ func reset() -> void:
 	molecule_types = {}
 	molecule_amounts = {}
 	molecule_rates = {}
-	resources = {"NADH": 8.0, "N": 6.0}
-	resource_rates = {"NADH": {"production": 0.0, "consumption": 0.0}, "N": {"production": 0.0, "consumption": 0.0}}
+	resources = {
+		RESOURCE_ATP: STARTING_ATP,
+		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
+		RESOURCE_NADH: 8.0,
+		RESOURCE_NITROGEN: 6.0
+	}
+	resource_rates = {}
+	ensure_default_resources()
 	outside_amounts = {}
 	outside_rates = {}
 	transporters = {}
@@ -84,6 +98,63 @@ func reset() -> void:
 	selected_molecule = ""
 	emit_signal("event_logged", "New culture started with glucose importers at 8 molecules/s.")
 	emit_signal("changed")
+
+func ensure_default_resources() -> void:
+	var defaults := {
+		RESOURCE_ATP: STARTING_ATP,
+		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
+		RESOURCE_NADH: 8.0,
+		RESOURCE_NITROGEN: 6.0
+	}
+	for id in defaults.keys():
+		if not resources.has(id):
+			resources[id] = defaults[id]
+		if not resource_rates.has(id):
+			resource_rates[id] = {"production": 0.0, "consumption": 0.0}
+
+func target_molecule() -> Dictionary:
+	return Graph.amino_acid_target()
+
+func is_target_molecule_id(molecule_id: String) -> bool:
+	return molecule_types.has(molecule_id) and is_target_molecule(molecule_types[molecule_id])
+
+func is_target_molecule(graph: Dictionary) -> bool:
+	var atoms: Array = graph.get("atoms", [])
+	var counts := {Graph.CARBON: 0, Graph.OXYGEN: 0, Graph.NITROGEN: 0}
+	for atom in atoms:
+		var element := str(atom.get("element", ""))
+		if counts.has(element):
+			counts[element] = int(counts[element]) + 1
+		elif not element.is_empty():
+			return false
+	if int(counts[Graph.CARBON]) != 2 or int(counts[Graph.OXYGEN]) != 2 or int(counts[Graph.NITROGEN]) != 1:
+		return false
+	for carbon_index in atoms.size():
+		if atoms[carbon_index].get("element", "") != Graph.CARBON:
+			continue
+		var has_nitrogen := false
+		var carboxyl_carbon := -1
+		for neighbor in Graph._neighbors(graph, carbon_index):
+			var neighbor_index := int(neighbor)
+			var neighbor_element := str(atoms[neighbor_index].get("element", ""))
+			if neighbor_element == Graph.NITROGEN:
+				has_nitrogen = true
+			elif neighbor_element == Graph.CARBON:
+				carboxyl_carbon = neighbor_index
+		if has_nitrogen and carboxyl_carbon >= 0 and Graph._oxygen_neighbor_count(graph, carboxyl_carbon) == 2:
+			return true
+	return false
+
+func redox_balance() -> Dictionary:
+	var rates: Dictionary = resource_rates.get(RESOURCE_NADH, {"production": 0.0, "consumption": 0.0})
+	var production := float(rates.get("production", 0.0))
+	var consumption := float(rates.get("consumption", 0.0))
+	return {
+		"production": production,
+		"consumption": consumption,
+		"net": production - consumption,
+		"balanced": absf(production - consumption) < 0.05
+	}
 
 func tick(delta: float) -> void:
 	if paused:
@@ -189,6 +260,9 @@ func build_transporter(direction: String, molecule_id: String) -> bool:
 	if not molecule_types.has(molecule_id) or not ["import", "export"].has(direction):
 		return false
 	if direction == "import" and not outside_amounts.has(molecule_id):
+		return false
+	if not _spend_build_cost(TRANSPORTER_BUILD_COST):
+		emit_signal("event_logged", "Not enough amino acids or ATP to build transporter.")
 		return false
 	var id := _transporter_id(direction, molecule_id)
 	if not transporters.has(id):
@@ -337,6 +411,7 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"stability": 120.0,
 		"build_time": 3.0,
+		"build_cost": ENZYME_BUILD_COST.duplicate(true),
 		"resource_delta": _resource_delta(tool),
 		"products": kept_products,
 		"gas_products": gas_products
@@ -372,10 +447,14 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"km": 18.0,
 		"stability": 120.0,
-		"build_time": 3.0
+		"build_time": 3.0,
+		"build_cost": ENZYME_BUILD_COST.duplicate(true)
 	}
 	enzyme_blueprints[blueprint_id] = blueprint
-	_queue_protein_build(blueprint_id)
+	if not _queue_protein_build(blueprint_id):
+		emit_signal("event_logged", "Blueprint saved, but not enough amino acids or ATP to build enzyme.")
+		emit_signal("changed")
+		return true
 	emit_signal("event_logged", "Blueprint queued: %s." % blueprint["name"])
 	emit_signal("changed")
 	return true
@@ -383,9 +462,15 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 func queue_enzyme_build(blueprint_id: String, count: int = 1) -> bool:
 	if not enzyme_blueprints.has(blueprint_id) or count <= 0:
 		return false
+	var queued := 0
 	for i in count:
-		_queue_protein_build(blueprint_id)
-	emit_signal("event_logged", "Queued %d enzyme build%s: %s." % [count, "" if count == 1 else "s", enzyme_blueprints[blueprint_id].get("name", "Enzyme")])
+		if _queue_protein_build(blueprint_id):
+			queued += 1
+	if queued <= 0:
+		emit_signal("event_logged", "Not enough amino acids or ATP to queue enzyme build.")
+		emit_signal("changed")
+		return false
+	emit_signal("event_logged", "Queued %d enzyme build%s: %s." % [queued, "" if queued == 1 else "s", enzyme_blueprints[blueprint_id].get("name", "Enzyme")])
 	emit_signal("changed")
 	return true
 
@@ -511,6 +596,7 @@ func _tick_metabolism(dt: float) -> void:
 			"products": blueprint.get("products", []),
 			"rate": actual_rate
 		})
+	_convert_target_molecules(dt)
 
 func _tick_protein_queue(dt: float) -> void:
 	for i in range(protein_queue.size() - 1, -1, -1):
@@ -522,9 +608,11 @@ func _tick_protein_queue(dt: float) -> void:
 			emit_signal("event_logged", "Enzyme built: %s." % item.get("name", id))
 			protein_queue.remove_at(i)
 
-func _queue_protein_build(blueprint_id: String) -> void:
+func _queue_protein_build(blueprint_id: String) -> bool:
 	if not enzyme_blueprints.has(blueprint_id):
-		return
+		return false
+	if not _spend_build_cost(ENZYME_BUILD_COST):
+		return false
 	var blueprint: Dictionary = enzyme_blueprints[blueprint_id]
 	protein_queue.append({
 		"id": blueprint_id,
@@ -532,6 +620,7 @@ func _queue_protein_build(blueprint_id: String) -> void:
 		"remaining": float(blueprint.get("build_time", 3.0)),
 		"duration": float(blueprint.get("build_time", 3.0))
 	})
+	return true
 
 func _tick_transporter_queue(dt: float) -> void:
 	for i in range(transporter_queue.size() - 1, -1, -1):
@@ -616,6 +705,33 @@ func _apply_resource_delta(blueprint: Dictionary, reactions_done: float, dt: flo
 		else:
 			resource_rates[resource_id]["consumption"] = float(resource_rates[resource_id].get("consumption", 0.0)) + rate
 
+func _convert_target_molecules(dt: float) -> void:
+	for molecule_id in molecule_amounts.keys():
+		var amount := float(molecule_amounts.get(molecule_id, 0.0))
+		if amount <= 0.001 or not is_target_molecule_id(molecule_id):
+			continue
+		molecule_amounts[molecule_id] = 0.0
+		ensure_default_resources()
+		resources[RESOURCE_AMINO_ACIDS] = float(resources.get(RESOURCE_AMINO_ACIDS, 0.0)) + amount
+		resource_rates[RESOURCE_AMINO_ACIDS]["production"] = float(resource_rates[RESOURCE_AMINO_ACIDS].get("production", 0.0)) + amount / maxf(dt, 0.0001)
+		if not molecule_rates.has(molecule_id):
+			molecule_rates[molecule_id] = {"production": 0.0, "consumption": 0.0}
+		molecule_rates[molecule_id]["consumption"] = float(molecule_rates[molecule_id].get("consumption", 0.0)) + amount / maxf(dt, 0.0001)
+		emit_signal("event_logged", "Amino acid target converted into %.0f amino acid resource." % amount)
+
+func _spend_build_cost(cost: Dictionary) -> bool:
+	ensure_default_resources()
+	for resource_id in cost.keys():
+		if float(resources.get(resource_id, 0.0)) < float(cost[resource_id]):
+			return false
+	for resource_id in cost.keys():
+		var value := float(cost[resource_id])
+		resources[resource_id] = float(resources.get(resource_id, 0.0)) - value
+		if not resource_rates.has(resource_id):
+			resource_rates[resource_id] = {"production": 0.0, "consumption": 0.0}
+		resource_rates[resource_id]["consumption"] = float(resource_rates[resource_id].get("consumption", 0.0)) + value
+	return true
+
 func _escapes_as_carbon_dioxide(graph: Dictionary) -> bool:
 	var carbon_count := 0
 	for atom in graph.get("atoms", []):
@@ -666,13 +782,15 @@ func _estimate_kcat(tool: String, substrate: Dictionary, target_index: int) -> f
 
 func _resource_delta(tool: String) -> Dictionary:
 	if tool == "reductase":
-		return {"NADH": -1.0}
+		return {RESOURCE_NADH: -1.0}
 	if tool == "dehydrogenase":
-		return {"NADH": 1.0}
+		return {RESOURCE_NADH: 1.0}
 	if tool == "oxygenase":
-		return {"NADH": -1.0}
+		return {RESOURCE_NADH: -1.0}
+	if tool == "decarboxylase":
+		return {RESOURCE_ATP: 1.0}
 	if tool == "aminase":
-		return {"N": -1.0}
+		return {RESOURCE_NITROGEN: -1.0}
 	if tool == "desaturase":
-		return {"NADH": 1.0}
+		return {RESOURCE_NADH: 1.0}
 	return {}

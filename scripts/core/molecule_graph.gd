@@ -5,6 +5,24 @@ const CARBON := "C"
 const OXYGEN := "O"
 const NITROGEN := "N"
 
+static func amino_acid_target() -> Dictionary:
+	return normalize({
+		"name": "Amino Acid Target",
+		"atoms": [
+			{"element": NITROGEN, "pos": Vector2(-126.0, 0.0)},
+			{"element": CARBON, "pos": Vector2(-44.0, 0.0)},
+			{"element": CARBON, "pos": Vector2(42.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(122.0, -42.0)},
+			{"element": OXYGEN, "pos": Vector2(124.0, 42.0)}
+		],
+		"bonds": [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1},
+			{"a": 2, "b": 3, "order": 2},
+			{"a": 2, "b": 4, "order": 1}
+		]
+	})
+
 static func initial_glucose_like() -> Dictionary:
 	var atoms: Array[Dictionary] = [
 		{"element": CARBON, "pos": Vector2(-220.0, 34.0)},

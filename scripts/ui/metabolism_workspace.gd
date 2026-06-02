@@ -131,6 +131,13 @@ func _rebuild() -> void:
 		add_child(_reaction_step_node(step_layout[key]))
 	for id in ids:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
+	var goal_panel := MetabolicGoalPanel.new()
+	goal_panel.simulation = simulation
+	goal_panel.position = Vector2(maxf(18.0, size.x - 336.0), 52.0)
+	goal_panel.size = Vector2(318.0, 184.0)
+	goal_panel.custom_minimum_size = goal_panel.size
+	goal_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(goal_panel)
 
 func _molecule_at(local_position: Vector2) -> String:
 	for id in _visible_positions.keys():
@@ -391,11 +398,94 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	label.scale = Vector2.ONE
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_size_override("font_size", 14)
-	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
+	if simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(id):
+		label.text = "N-C-COOH  -> amino acids"
+	else:
+		label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
-		label.text = "%s  preview" % simulation.molecule_types[id].get("formula", "")
+		label.text = "target sink" if simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(id) else "%s  preview" % simulation.molecule_types[id].get("formula", "")
 	box.add_child(label)
 	return box
+
+class MetabolicGoalPanel:
+	extends Control
+
+	var simulation
+
+	func _ready() -> void:
+		set_process(true)
+
+	func _process(_delta: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size)
+		var border := Color("76f4ff")
+		draw_rect(rect.grow(4.0), Color(border.r, border.g, border.b, 0.07), true)
+		draw_rect(rect, Color(0.04, 0.10, 0.13, 0.88), true)
+		draw_rect(rect, Color(border.r, border.g, border.b, 0.24), false, 8.0)
+		draw_rect(rect, border, false, 1.6)
+		draw_string(ThemeDB.fallback_font, Vector2(14.0, 28.0), "METABOLIC GOAL", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, border)
+		draw_string(ThemeDB.fallback_font, Vector2(14.0, 52.0), "Make N-C-COOH, then convert it to amino acids.", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
+		_draw_target_molecule(Vector2(58.0, 94.0))
+		draw_string(ThemeDB.fallback_font, Vector2(134.0, 88.0), "TARGET", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("8cff6a"))
+		draw_string(ThemeDB.fallback_font, Vector2(134.0, 108.0), "N-C-COOH", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("f4fbff"))
+		if simulation == null:
+			return
+		var redox: Dictionary = simulation.redox_balance() if simulation.has_method("redox_balance") else {"net": 0.0, "production": 0.0, "consumption": 0.0}
+		var y := 136.0
+		_draw_resource_line(Vector2(14.0, y), "ATP", float(simulation.resources.get("ATP", 0.0)), Color("ffe064"))
+		_draw_resource_line(Vector2(110.0, y), "AA", float(simulation.resources.get("Amino Acids", 0.0)), Color("8cff6a"))
+		_draw_resource_line(Vector2(206.0, y), "N", float(simulation.resources.get("N", 0.0)), Color("4a90df"))
+		var net := float(redox.get("net", 0.0))
+		var redox_color := Color("8cff6a") if absf(net) < 0.05 else Color("ffe064")
+		var redox_text := "NADH %.1f  net %+.2f/s" % [float(simulation.resources.get("NADH", 0.0)), net]
+		draw_string(ThemeDB.fallback_font, Vector2(14.0, 170.0), redox_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, redox_color)
+
+	func _draw_resource_line(pos: Vector2, label: String, value: float, color: Color) -> void:
+		draw_circle(pos + Vector2(8.0, -4.0), 7.5, Color("02070b"))
+		draw_circle(pos + Vector2(8.0, -4.0), 5.6, color)
+		draw_string(ThemeDB.fallback_font, pos + Vector2(18.0, 0.0), "%s %.0f" % [label, value], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f4fbff"))
+
+	func _draw_target_molecule(origin: Vector2) -> void:
+		var atoms := [
+			{"element": "N", "pos": origin + Vector2(-40.0, 0.0)},
+			{"element": "C", "pos": origin + Vector2(0.0, 0.0)},
+			{"element": "C", "pos": origin + Vector2(42.0, 0.0)},
+			{"element": "O", "pos": origin + Vector2(76.0, -24.0)},
+			{"element": "O", "pos": origin + Vector2(78.0, 24.0)}
+		]
+		_draw_panel_bond(atoms[0]["pos"], atoms[1]["pos"], 1)
+		_draw_panel_bond(atoms[1]["pos"], atoms[2]["pos"], 1)
+		_draw_panel_bond(atoms[2]["pos"], atoms[3]["pos"], 2)
+		_draw_panel_bond(atoms[2]["pos"], atoms[4]["pos"], 1)
+		for atom in atoms:
+			_draw_panel_atom(atom["pos"], str(atom["element"]))
+
+	func _draw_panel_bond(a: Vector2, b: Vector2, order: int) -> void:
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var offsets := [0.0] if order == 1 else [-2.5, 2.5]
+		for offset in offsets:
+			var start := a + dir * 12.0 + normal * float(offset)
+			var end := b - dir * 12.0 + normal * float(offset)
+			draw_line(start, end, Color("02070b"), 6.0, true)
+			draw_line(start, end, Color("dbeff2"), 2.4, true)
+
+	func _draw_panel_atom(pos: Vector2, element: String) -> void:
+		var radius := 13.0 if element == "C" else 12.0
+		var base := _atom_color(element)
+		draw_circle(pos, radius + 4.0, Color("02070b"))
+		draw_circle(pos, radius + 1.0, base.lightened(0.30))
+		draw_circle(pos, radius - 1.0, base.darkened(0.14))
+		draw_circle(pos + Vector2(radius * 0.25, -radius * 0.36), radius * 0.20, Color(1, 1, 1, 0.42))
+
+	func _atom_color(element: String) -> Color:
+		if element == "O":
+			return Color("e95058")
+		if element == "N":
+			return Color("4a90df")
+		return Color("68777a")
 
 class ArrowLine:
 	extends Control

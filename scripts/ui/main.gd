@@ -345,10 +345,12 @@ func _build_placeholder(title: String, subtitle: String) -> void:
 func _refresh() -> void:
 	if status_label == null:
 		return
-	status_label.text = "Time %.1fs | %s | %.2fx | NADH %.1f | N %.1f | Molecules %d | Enzymes %d" % [
+	status_label.text = "Time %.1fs | %s | %.2fx | ATP %.0f | AA %.0f | NADH %.1f | N %.1f | Molecules %d | Enzymes %d" % [
 		sim.time_seconds,
 		"Paused" if sim.paused else "Running",
 		sim.speed,
+		float(sim.resources.get("ATP", 0.0)),
+		float(sim.resources.get("Amino Acids", 0.0)),
 		float(sim.resources.get("NADH", 0.0)),
 		float(sim.resources.get("N", 0.0)),
 		sim.present_molecule_ids().size(),
@@ -599,6 +601,13 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 		float(pathway.get("stability", 0.0))
 	]
 	detail_panel.add_child(metrics)
+	var build_cost: Dictionary = pathway.get("build_cost", {})
+	if not build_cost.is_empty():
+		var cost_label := Label.new()
+		cost_label.text = "Build cost: %s" % _resource_cost_text(build_cost)
+		cost_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cost_label.modulate = Color("8cff6a")
+		detail_panel.add_child(cost_label)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var build_one := Button.new()
@@ -854,6 +863,13 @@ func _refresh_designer() -> void:
 		resource_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		resource_label.modulate = Color("ffe064")
 		summary_panel.add_child(resource_label)
+	var build_cost: Dictionary = summary.get("build_cost", {})
+	if not build_cost.is_empty():
+		var build_cost_label := Label.new()
+		build_cost_label.text = "Build cost: %s" % _resource_cost_text(build_cost)
+		build_cost_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		build_cost_label.modulate = Color("8cff6a")
+		summary_panel.add_child(build_cost_label)
 	var kept_products: Array = summary.get("products", [])
 	var kept_label := Label.new()
 	kept_label.text = "Products: %s" % (" + ".join(kept_products) if not kept_products.is_empty() else "none")
@@ -939,6 +955,14 @@ func _resource_delta_text(delta: Dictionary) -> String:
 		elif value < 0.0:
 			parts.append("-%.0f %s" % [absf(value), key])
 	return ", ".join(parts) if not parts.is_empty() else "none"
+
+func _resource_cost_text(cost: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key in cost.keys():
+		var value := float(cost[key])
+		if value > 0.0:
+			parts.append("%.0f %s" % [value, key])
+	return ", ".join(parts) if not parts.is_empty() else "free"
 
 func _glow_panel_style(fill: Color, border: Color, width: float, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

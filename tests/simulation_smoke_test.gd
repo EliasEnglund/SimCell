@@ -35,6 +35,18 @@ func _init() -> void:
 		assert(sim.preview_products(tool, glucose_id, tool_target).size() > 0)
 	assert(float(sim.resources.get("NADH", 0.0)) > 0.0)
 	assert(float(sim.resources.get("N", 0.0)) > 0.0)
+	assert(float(sim.resources.get("ATP", 0.0)) > 0.0)
+	assert(float(sim.resources.get("Amino Acids", 0.0)) > 0.0)
+	assert(sim.is_target_molecule(sim.target_molecule()) == true)
+	var target_graph: Dictionary = sim.target_molecule()
+	var target_id: String = target_graph["signature"]
+	sim.molecule_types[target_id] = target_graph
+	sim.molecule_amounts[target_id] = 3.0
+	sim.molecule_rates[target_id] = {"production": 0.0, "consumption": 0.0}
+	var starting_amino_acids := float(sim.resources.get("Amino Acids", 0.0))
+	sim.tick(0.3)
+	assert(float(sim.molecule_amounts.get(target_id, 0.0)) <= 0.001)
+	assert(float(sim.resources.get("Amino Acids", 0.0)) > starting_amino_acids)
 	var aminase_target := int(sim.valid_targets("aminase", glucose_id)[0])
 	var aminase_preview := sim.preview_products("aminase", glucose_id, aminase_target)
 	assert(str(aminase_preview[0].get("formula", "")).contains("N"))
