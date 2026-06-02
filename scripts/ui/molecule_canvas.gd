@@ -15,8 +15,11 @@ var physical_touch := false
 var _visual_offsets: Array[Vector2] = []
 var _visual_velocities: Array[Vector2] = []
 var _grabbed_atom := -1
+var _grabbed_bond := -1
 var _hover_atom := -1
+var _hover_bond := -1
 var _pointer_position := Vector2.ZERO
+var _press_position := Vector2.ZERO
 var _pull_warning := 0.0
 var _release_flash := 0.0
 
@@ -31,7 +34,7 @@ func set_molecule(value: Dictionary) -> void:
 func _process(delta: float) -> void:
 	if molecule.is_empty() or _visual_offsets.is_empty():
 		return
-	if not physical_touch and _grabbed_atom < 0 and _release_flash <= 0.0 and _all_offsets_settled():
+	if not physical_touch and _grabbed_atom < 0 and _grabbed_bond < 0 and _release_flash <= 0.0 and _all_offsets_settled():
 		return
 	_update_physical_touch(delta)
 	queue_redraw()
@@ -42,20 +45,33 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_pointer_position = event.position
 		_hover_atom = _nearest_atom(event.position)
+		_hover_bond = _nearest_valid_bond(event.position) if _hover_atom < 0 else -1
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_pointer_position = event.position
 		if event.pressed:
+			_press_position = event.position
 			if physical_touch:
 				var atom := _nearest_atom(event.position)
 				if atom >= 0:
 					_grabbed_atom = atom
+					_grabbed_bond = -1
 					_hover_atom = atom
+					_pull_warning = 0.0
+					queue_redraw()
+					return
+				var bond := _nearest_valid_bond(event.position)
+				if bond >= 0:
+					_grabbed_bond = bond
+					_grabbed_atom = -1
+					_hover_bond = bond
 					_pull_warning = 0.0
 					queue_redraw()
 					return
 			_select_bond_target(event.position)
 		else:
-			_release_atom(false)
+			if _grabbed_bond >= 0 and event.position.distance_to(_press_position) <= 7.0:
+				_select_bond_target(event.position)
+			_release_touch(false)
 
 func _select_bond_target(point: Vector2) -> void:
 	var target := _nearest_valid_bond(point)
@@ -103,11 +119,12 @@ func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 		var b: Vector2 = _atom_screen_position(atom_b, transform)
 		var highlight := valid_targets.has(i)
 		var selected := selected_target == i
+		var touched := _hover_bond == i or _grabbed_bond == i
 		var rest_a: Vector2 = atoms[atom_a].get("pos", Vector2.ZERO)
 		var rest_b: Vector2 = atoms[atom_b].get("pos", Vector2.ZERO)
 		var rest_length := maxf(1.0, rest_a.distance_to(rest_b) * zoom)
 		var tension := clampf((a.distance_to(b) - rest_length) / maxf(rest_length, 1.0), 0.0, 1.0)
-		_draw_bond(a, b, int(bond.get("order", 1)), highlight, selected, zoom, tension)
+		_draw_bond(a, b, int(bond.get("order", 1)), highlight or touched, selected, zoom, tension, touched)
 
 func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])
@@ -122,7 +139,7 @@ func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 			draw_circle(pos, radius + 5.0 * zoom, Color(0.45, 1.0, 0.9, 0.18))
 		_draw_atom(pos, radius, base)
 
-func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float, tension: float = 0.0) -> void:
+func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float, tension: float = 0.0, touched: bool = false) -> void:
 	var dir := (b - a).normalized()
 	var normal := Vector2(-dir.y, dir.x)
 	var color := Color("dbeff2").lerp(Color("ffe064"), tension)
@@ -133,6 +150,8 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		color = Color("73e6ff").lerp(Color("ffe064"), tension)
 		inner = Color("c8fbff")
 		width = 9.0 * zoom
+	if touched:
+		width = (11.0 + tension * 4.0) * zoom
 	if selected:
 		color = Color("8cff6a").lerp(Color("ffe064"), tension * 0.5)
 		inner = Color("e7ffd8")
@@ -181,11 +200,11 @@ func _draw_electric_bond(start: Vector2, end: Vector2, normal: Vector2, zoom: fl
 		draw_line(center - spark_normal * spark_len * 0.35, center + spark_normal * spark_len, Color(electric.r, electric.g, electric.b, 0.52), maxf(1.0, 1.4 * zoom), true)
 
 func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
-	if _grabbed_atom < 0:
+	if _grabbed_atom < 0 and _grabbed_bond < 0:
 		if _release_flash > 0.01:
 			draw_circle(_pointer_position, 32.0 * _release_flash, Color(0.45, 1.0, 0.9, 0.18 * _release_flash))
 		return
-	var atom_pos := _atom_screen_position(_grabbed_atom, transform)
+	var atom_pos := _atom_screen_position(_grabbed_atom, transform) if _grabbed_atom >= 0 else _bond_center(_grabbed_bond, transform)
 	var tension_color := Color("76f4ff").lerp(Color("ffe064"), _pull_warning)
 	draw_line(atom_pos, _pointer_position, Color("02070b"), 7.0, true)
 	draw_line(atom_pos, _pointer_position, tension_color, 3.0, true)
@@ -247,7 +266,7 @@ func _update_physical_touch(delta: float) -> void:
 	var zoom := _graph_zoom(transform)
 	var atoms: Array = molecule.get("atoms", [])
 	if _grabbed_atom >= atoms.size():
-		_release_atom(false)
+		_release_touch(false)
 	if _grabbed_atom >= 0:
 		var rest_screen: Vector2 = transform * atoms[_grabbed_atom].get("pos", Vector2.ZERO)
 		var raw_pull_screen := _pointer_position - rest_screen
@@ -255,15 +274,17 @@ func _update_physical_touch(delta: float) -> void:
 		var elastic_limit := 118.0 * zoom
 		_pull_warning = clampf(raw_pull_screen.length() / break_distance, 0.0, 1.0)
 		if raw_pull_screen.length() > break_distance:
-			_release_atom(true)
+			_release_touch(true)
 		else:
 			var softened_pull := raw_pull_screen.limit_length(elastic_limit) * 0.52
 			var desired_world := softened_pull / maxf(zoom, 0.001)
 			_apply_graph_pull(_grabbed_atom, desired_world)
-	var stiffness := 18.0 if _grabbed_atom < 0 else 11.0
+	elif _grabbed_bond >= 0:
+		_apply_bond_pull(transform, zoom)
+	var stiffness := 18.0 if _grabbed_atom < 0 and _grabbed_bond < 0 else 11.0
 	var damping := 7.5
 	for i in _visual_offsets.size():
-		var is_grabbed := i == _grabbed_atom
+		var is_grabbed := i == _grabbed_atom or _bond_has_atom(_grabbed_bond, i)
 		var target := _visual_offsets[i] if is_grabbed else Vector2.ZERO
 		var spring := (target - _visual_offsets[i]) * stiffness
 		_visual_velocities[i] += spring * delta
@@ -271,6 +292,26 @@ func _update_physical_touch(delta: float) -> void:
 		if not is_grabbed:
 			_visual_offsets[i] += _visual_velocities[i] * delta
 	_visual_offsets = _relax_bond_lengths(_visual_offsets, delta)
+
+func _apply_bond_pull(transform: Transform2D, zoom: float) -> void:
+	var bonds: Array = molecule.get("bonds", [])
+	if _grabbed_bond < 0 or _grabbed_bond >= bonds.size():
+		_release_touch(false)
+		return
+	var bond: Dictionary = bonds[_grabbed_bond]
+	var a := int(bond.get("a", 0))
+	var b := int(bond.get("b", 0))
+	var center := _bond_center(_grabbed_bond, transform)
+	var raw_pull_screen := _pointer_position - center
+	var break_distance := 145.0 * zoom
+	var elastic_limit := 98.0 * zoom
+	_pull_warning = clampf(raw_pull_screen.length() / break_distance, 0.0, 1.0)
+	if raw_pull_screen.length() > break_distance:
+		_release_touch(true)
+		return
+	var desired_world := raw_pull_screen.limit_length(elastic_limit) / maxf(zoom, 0.001) * 0.34
+	_apply_graph_pull(a, desired_world)
+	_apply_graph_pull(b, desired_world)
 
 func _apply_graph_pull(atom_index: int, desired_world: Vector2) -> void:
 	var distances := _atom_graph_distances(atom_index)
@@ -297,22 +338,51 @@ func _relax_bond_lengths(offsets: Array[Vector2], delta: float) -> Array[Vector2
 		if absf(stretch) < 0.01:
 			continue
 		var correction := current_delta.normalized() * stretch * 0.22 * delta
-		if a != _grabbed_atom:
+		if a != _grabbed_atom and not _bond_has_atom(_grabbed_bond, a):
 			offsets[a] += correction
-		if b != _grabbed_atom:
+		if b != _grabbed_atom and not _bond_has_atom(_grabbed_bond, b):
 			offsets[b] -= correction
 	return offsets
 
-func _release_atom(hard: bool) -> void:
-	if _grabbed_atom >= 0 and hard:
+func _release_touch(hard: bool) -> void:
+	if (_grabbed_atom >= 0 or _grabbed_bond >= 0) and hard:
 		_release_flash = 1.0
-		if _grabbed_atom < _visual_velocities.size():
-			var transform := _graph_transform()
-			var zoom := _graph_zoom(transform)
+		var transform := _graph_transform()
+		var zoom := _graph_zoom(transform)
+		if _grabbed_atom >= 0 and _grabbed_atom < _visual_velocities.size():
 			var atom_pos := _atom_screen_position(_grabbed_atom, transform)
 			_visual_velocities[_grabbed_atom] += (atom_pos - _pointer_position) / maxf(zoom, 0.001) * 4.0
+		elif _grabbed_bond >= 0:
+			var bonds: Array = molecule.get("bonds", [])
+			if _grabbed_bond < bonds.size():
+				var bond: Dictionary = bonds[_grabbed_bond]
+				var center := _bond_center(_grabbed_bond, transform)
+				var kick := (center - _pointer_position) / maxf(zoom, 0.001) * 2.6
+				var a := int(bond.get("a", 0))
+				var b := int(bond.get("b", 0))
+				if a < _visual_velocities.size():
+					_visual_velocities[a] += kick
+				if b < _visual_velocities.size():
+					_visual_velocities[b] += kick
 	_grabbed_atom = -1
+	_grabbed_bond = -1
 	_pull_warning = 0.0
+
+func _bond_has_atom(bond_index: int, atom_index: int) -> bool:
+	if bond_index < 0:
+		return false
+	var bonds: Array = molecule.get("bonds", [])
+	if bond_index >= bonds.size():
+		return false
+	var bond: Dictionary = bonds[bond_index]
+	return int(bond.get("a", -1)) == atom_index or int(bond.get("b", -1)) == atom_index
+
+func _bond_center(bond_index: int, transform: Transform2D) -> Vector2:
+	var bonds: Array = molecule.get("bonds", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return Vector2.ZERO
+	var bond: Dictionary = bonds[bond_index]
+	return (_atom_screen_position(int(bond.get("a", 0)), transform) + _atom_screen_position(int(bond.get("b", 0)), transform)) * 0.5
 
 func _nearest_atom(point: Vector2) -> int:
 	if molecule.is_empty():
