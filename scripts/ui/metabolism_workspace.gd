@@ -241,19 +241,16 @@ func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictiona
 		if valid_products.is_empty():
 			continue
 		var source_rect := Rect2(positions[substrate], sizes[substrate])
-		var target_center := Vector2.ZERO
 		var target_top := INF
 		for center in valid_products:
-			target_center += center
 			target_top = minf(target_top, center.y)
-		target_center /= float(valid_products.size())
 		var step_size := Vector2(210.0, 112.0) * zoom
-		var center_x := lerpf(source_rect.get_center().x, target_center.x, 0.32)
+		var center_x := source_rect.get_center().x
 		var upper_y := source_rect.end.y + 56.0 * zoom
 		var lower_y := target_top - 70.0 * zoom
 		var center_y := (upper_y + lower_y) * 0.5
 		if lower_y < upper_y:
-			center_y = source_rect.end.y + 90.0 * zoom
+			center_y = source_rect.end.y + 96.0 * zoom
 		var center := Vector2(center_x, center_y)
 		layout[blueprint_id] = {
 			"rect": Rect2(center - step_size * 0.5, step_size),
@@ -291,26 +288,26 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		if not _layout_positions.has(substrate_id):
 			continue
 		var products: Array = pathway.get("products", [])
-		var unplaced_products: Array[String] = []
+		var placed_products: Array[String] = []
 		for product_id in products:
-			if sizes.has(product_id) and not _layout_positions.has(product_id):
-				unplaced_products.append(product_id)
-		if unplaced_products.is_empty():
+			if sizes.has(product_id) and product_id != first_id:
+				placed_products.append(product_id)
+		if placed_products.is_empty():
 			continue
 		var source_pos: Vector2 = _layout_positions[substrate_id]
 		var source_size: Vector2 = sizes[substrate_id]
 		var group_gap := 86.0
 		var group_width := -group_gap
-		for product_id in unplaced_products:
+		for product_id in placed_products:
 			var product_size: Vector2 = sizes[product_id]
 			group_width += product_size.x + group_gap
 		var cursor_x := source_pos.x + source_size.x * 0.5 - group_width * 0.5
-		for product_id in unplaced_products:
+		for product_id in placed_products:
 			var product_size: Vector2 = sizes[product_id]
 			var preferred := Vector2(cursor_x, source_pos.y + source_size.y + 260.0)
-			var opened := _open_position(preferred, product_size, sizes, false)
+			var opened := _open_position(preferred, product_size, sizes, false, product_id)
 			if opened.y > preferred.y + product_size.y * 0.5:
-				opened = _open_position(preferred + Vector2(0.0, product_size.y + 116.0), product_size, sizes, false)
+				opened = _open_position(preferred + Vector2(0.0, product_size.y + 116.0), product_size, sizes, false, product_id)
 			if opened.y < preferred.y:
 				opened.y = preferred.y
 			_layout_positions[product_id] = opened
@@ -333,19 +330,21 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		result[id] = {"position": _layout_positions[id], "size": node_size}
 	return result
 
-func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true) -> Vector2:
+func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true, ignore_id: String = "") -> Vector2:
 	var gap := Vector2(84.0, 104.0)
 	var candidate := preferred
 	for attempt in 18:
-		if not _overlaps_existing(candidate, node_size, sizes):
+		if not _overlaps_existing(candidate, node_size, sizes, ignore_id):
 			return candidate
 		var side_shift := (attempt % 3 - 1) * (node_size.x + gap.x) if allow_side_shift else 0.0
 		candidate = preferred + Vector2(side_shift, (attempt / 3 + 1) * (node_size.y + gap.y))
 	return candidate
 
-func _overlaps_existing(pos: Vector2, node_size: Vector2, sizes: Dictionary) -> bool:
+func _overlaps_existing(pos: Vector2, node_size: Vector2, sizes: Dictionary, ignore_id: String = "") -> bool:
 	var rect := Rect2(pos, node_size).grow(34.0)
 	for id in _layout_positions.keys():
+		if str(id) == ignore_id:
+			continue
 		if not sizes.has(id):
 			continue
 		var other := Rect2(_layout_positions[id], sizes[id]).grow(34.0)
