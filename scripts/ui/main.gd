@@ -16,6 +16,9 @@ var pathway_box: VBoxContainer
 var map_layer: Control
 var metabolism_workspace: Control
 var queue_box: VBoxContainer
+var protein_template_box: VBoxContainer
+var protein_completed_box: VBoxContainer
+var protein_summary_box: VBoxContainer
 var event_log: RichTextLabel
 var music_player: AudioStreamPlayer
 var music_button: Button
@@ -233,13 +236,42 @@ func _build_metabolism_view() -> void:
 	map_layer.add_child(metabolism_workspace)
 
 func _build_protein_view() -> void:
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.add_theme_constant_override("separation", 10)
-	content.add_child(box)
-	box.add_child(_title("PROTEIN BUILDER", "Designed enzyme blueprints auto-queue here before becoming active in metabolism."))
+	var layout := HBoxContainer.new()
+	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layout.add_theme_constant_override("separation", 12)
+	content.add_child(layout)
+
+	var left := _glow_panel("PROTEIN SYNTHESIS CONTROL")
+	left.custom_minimum_size = Vector2(330, 0)
+	layout.add_child(left)
+	protein_summary_box = VBoxContainer.new()
+	protein_summary_box.add_theme_constant_override("separation", 8)
+	left.add_child(protein_summary_box)
+	left.add_child(_section_label("mRNA Templates"))
+	protein_template_box = VBoxContainer.new()
+	protein_template_box.add_theme_constant_override("separation", 8)
+	left.add_child(protein_template_box)
+	left.add_child(_section_label("Cytoplasmic Context"))
+	left.add_child(ProteinContextDish.new())
+
+	var center := VBoxContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.add_theme_constant_override("separation", 10)
+	layout.add_child(center)
+	center.add_child(_protein_screen_title())
 	queue_box = VBoxContainer.new()
-	box.add_child(queue_box)
+	queue_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	queue_box.add_theme_constant_override("separation", 12)
+	center.add_child(queue_box)
+
+	var right := _glow_panel("CELLULAR PROTEOME")
+	right.custom_minimum_size = Vector2(300, 0)
+	layout.add_child(right)
+	right.add_child(_section_label("Completed Proteins"))
+	protein_completed_box = VBoxContainer.new()
+	protein_completed_box.add_theme_constant_override("separation", 8)
+	right.add_child(protein_completed_box)
 
 func _build_membrane_view() -> void:
 	var layout := HBoxContainer.new()
@@ -785,12 +817,203 @@ func _restore_main_shell() -> void:
 	_show_view("metabolism")
 
 func _refresh_protein_queue() -> void:
+	_clear(protein_summary_box)
+	_clear(protein_template_box)
 	_clear(queue_box)
+	_clear(protein_completed_box)
+	var active_ribosomes: int = sim.protein_queue.size()
+	var completed_count := 0
+	for count in sim.active_enzymes.values():
+		completed_count += int(count)
+	var speed := 1.0 + minf(1.5, float(completed_count) * 0.05)
+	protein_summary_box.add_child(_title("Active Ribosomes: %d" % active_ribosomes, "Overall synthesis speed: x%.1f" % speed))
+	protein_summary_box.add_child(_protein_metric_row("Blueprints", sim.enzyme_blueprints.size(), "Completed", completed_count))
+	var pathways := sim.pathway_list()
+	if pathways.is_empty():
+		protein_template_box.add_child(_title("No templates", "Design an enzyme from metabolism to create the first mRNA template."))
+	else:
+		var index := 1
+		for pathway in pathways:
+			protein_template_box.add_child(_protein_template_card(pathway, index))
+			index += 1
 	if sim.protein_queue.is_empty():
-		queue_box.add_child(_title("No active builds", "Design an enzyme from metabolism to create a blueprint."))
+		queue_box.add_child(_empty_ribosome_card())
+	var ribosome_index := 1
 	for item in sim.protein_queue:
 		var duration := maxf(0.01, float(item.get("duration", 1.0)))
-		queue_box.add_child(_title(item.get("name", "Enzyme"), "%.0f%% complete" % ((1.0 - float(item.get("remaining", 0.0)) / duration) * 100.0)))
+		var progress := clampf(1.0 - float(item.get("remaining", 0.0)) / duration, 0.0, 1.0)
+		queue_box.add_child(_ribosome_card(item, ribosome_index, progress))
+		ribosome_index += 1
+	var completed_any := false
+	for pathway in pathways:
+		var count := int(pathway.get("active_count", 0))
+		if count <= 0:
+			continue
+		completed_any = true
+		protein_completed_box.add_child(_completed_protein_card(pathway, count))
+	if not completed_any:
+		protein_completed_box.add_child(_title("No completed proteins", "Queued ribosomes will add active enzymes here when synthesis finishes."))
+
+func _protein_screen_title() -> Control:
+	var frame := DesignerTitleFrame.new()
+	frame.custom_minimum_size = Vector2(0, 54)
+	var label := Label.new()
+	label.text = "CELLULAR ARCHITECT"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 22)
+	label.modulate = Color("76f4ff")
+	frame.add_child(label)
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	return frame
+
+func _glow_panel(title_text: String) -> VBoxContainer:
+	var panel := GlowVBox.new()
+	panel.fill = Color(0.07, 0.13, 0.17, 0.78)
+	panel.border = Color("73dfff")
+	panel.border_width = 1.5
+	panel.add_theme_constant_override("separation", 10)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 18)
+	title.modulate = Color("9defff")
+	panel.add_child(title)
+	return panel
+
+func _protein_metric_row(left_label: String, left_value: int, right_label: String, right_value: int) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.add_child(_metric_pill(left_label, str(left_value)))
+	row.add_child(_metric_pill(right_label, str(right_value)))
+	return row
+
+func _metric_pill(label_text: String, value_text: String) -> VBoxContainer:
+	var box := GlowVBox.new()
+	box.fill = Color("152a34")
+	box.border = Color("2f7080")
+	box.border_width = 1.0
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label := Label.new()
+	label.text = label_text
+	label.modulate = Color(0.72, 0.84, 0.82)
+	box.add_child(label)
+	var value := Label.new()
+	value.text = value_text
+	value.add_theme_font_size_override("font_size", 20)
+	value.modulate = Color("8cff6a")
+	box.add_child(value)
+	return box
+
+func _protein_template_card(pathway: Dictionary, index: int) -> HBoxContainer:
+	var row := GlowHBox.new()
+	row.fill = Color("142531")
+	row.border = Color("2f7080")
+	row.border_width = 1.0
+	row.custom_minimum_size = Vector2(0, 64)
+	row.add_theme_constant_override("separation", 8)
+	var icon := ProteinGlyph.new()
+	icon.kind = str(pathway.get("tool", "enzyme"))
+	icon.custom_minimum_size = Vector2(54, 54)
+	row.add_child(icon)
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text)
+	var title := Label.new()
+	title.text = "%d. %s" % [index, pathway.get("name", "Enzyme")]
+	title.add_theme_font_size_override("font_size", 15)
+	text.add_child(title)
+	var queued := int(pathway.get("queued_count", 0))
+	var active := int(pathway.get("active_count", 0))
+	var status := str(pathway.get("status", "Designed"))
+	var detail := Label.new()
+	detail.text = "%s | active %d | queued %d" % [status, active, queued]
+	detail.modulate = Color(0.72, 0.84, 0.82)
+	text.add_child(detail)
+	return row
+
+func _ribosome_card(item: Dictionary, index: int, progress: float) -> VBoxContainer:
+	var card := GlowVBox.new()
+	card.fill = Color(0.07, 0.16, 0.19, 0.84)
+	card.border = Color("73dfff")
+	card.border_width = 1.6
+	card.custom_minimum_size = Vector2(0, 118)
+	card.add_theme_constant_override("separation", 8)
+	var header := Label.new()
+	header.text = "RIBOSOME %d: ENZYME SYNTHESIS" % index
+	header.add_theme_font_size_override("font_size", 19)
+	header.modulate = Color("9defff")
+	card.add_child(header)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	card.add_child(row)
+	var icon := ProteinGlyph.new()
+	icon.kind = str(item.get("name", "enzyme"))
+	icon.custom_minimum_size = Vector2(68, 68)
+	row.add_child(icon)
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 8)
+	row.add_child(text)
+	var name := Label.new()
+	name.text = "Synthesis: %s" % item.get("name", "Enzyme")
+	name.add_theme_font_size_override("font_size", 18)
+	text.add_child(name)
+	var bar := ProgressBar.new()
+	bar.value = progress * 100.0
+	bar.show_percentage = true
+	bar.custom_minimum_size = Vector2(0, 30)
+	bar.add_theme_stylebox_override("background", _progress_style(false))
+	bar.add_theme_stylebox_override("fill", _progress_style(true))
+	text.add_child(bar)
+	var remaining := Label.new()
+	remaining.text = "%.1fs remaining | %.0f%% done" % [float(item.get("remaining", 0.0)), progress * 100.0]
+	remaining.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	remaining.modulate = Color(0.78, 0.9, 0.82)
+	text.add_child(remaining)
+	return card
+
+func _empty_ribosome_card() -> VBoxContainer:
+	var card := GlowVBox.new()
+	card.fill = Color(0.06, 0.12, 0.15, 0.72)
+	card.border = Color("2f7080")
+	card.border_width = 1.2
+	card.custom_minimum_size = Vector2(0, 118)
+	card.add_child(_title("No active ribosomes", "Design an enzyme in the metabolism view to queue protein synthesis."))
+	return card
+
+func _completed_protein_card(pathway: Dictionary, count: int) -> HBoxContainer:
+	var row := GlowHBox.new()
+	row.fill = Color("142531")
+	row.border = Color("2f7080")
+	row.border_width = 1.0
+	row.custom_minimum_size = Vector2(0, 72)
+	row.add_theme_constant_override("separation", 10)
+	var icon := ProteinGlyph.new()
+	icon.kind = str(pathway.get("tool", "enzyme"))
+	icon.custom_minimum_size = Vector2(58, 58)
+	row.add_child(icon)
+	var labels := VBoxContainer.new()
+	labels.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(labels)
+	var name := Label.new()
+	name.text = pathway.get("name", "Enzyme")
+	name.add_theme_font_size_override("font_size", 15)
+	labels.add_child(name)
+	var detail := Label.new()
+	detail.text = "Active count x%d | %.2f/s" % [count, float(pathway.get("rate", 0.0))]
+	detail.modulate = Color(0.72, 0.84, 0.82)
+	labels.add_child(detail)
+	return row
+
+func _progress_style(fill: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("76f4ff") if fill else Color("10202a")
+	style.border_color = Color("b8fbff") if fill else Color("477988")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.shadow_color = Color(0.45, 0.95, 1.0, 0.24 if fill else 0.08)
+	style.shadow_size = 7 if fill else 2
+	return style
 
 func _panel_container(title_text: String) -> VBoxContainer:
 	var panel := VBoxContainer.new()
@@ -830,6 +1053,101 @@ func _log_event(message: String) -> void:
 	if event_log == null:
 		return
 	event_log.append_text("[%05.1f] %s\n" % [sim.time_seconds, message])
+
+class GlowVBox:
+	extends VBoxContainer
+
+	var fill := Color("142531")
+	var border := Color("73dfff")
+	var border_width := 1.2
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size).grow(-2.0)
+		draw_rect(rect, fill, true)
+		draw_rect(rect, Color(border.r, border.g, border.b, 0.18), false, border_width + 7.0)
+		draw_rect(rect, border, false, border_width)
+
+class GlowHBox:
+	extends HBoxContainer
+
+	var fill := Color("142531")
+	var border := Color("73dfff")
+	var border_width := 1.2
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size).grow(-2.0)
+		draw_rect(rect, fill, true)
+		draw_rect(rect, Color(border.r, border.g, border.b, 0.16), false, border_width + 6.0)
+		draw_rect(rect, border, false, border_width)
+
+class ProteinGlyph:
+	extends Control
+
+	var kind := "enzyme"
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x, size.y) * 0.33
+		var seed := float(abs(kind.hash() % 1000)) / 1000.0
+		draw_circle(center, radius + 7.0, Color("02070b"))
+		draw_circle(center, radius + 3.0, Color("243b4b"))
+		var colors := [Color("8cff6a"), Color("76f4ff"), Color("a34ed0"), Color("ffe064"), Color("e95058")]
+		for i in 8:
+			var angle := seed * TAU + float(i) * TAU / 8.0
+			var arm := Vector2(cos(angle), sin(angle)) * radius * (0.42 + 0.25 * sin(float(i) + seed * 8.0))
+			var p := center + arm
+			var color: Color = colors[(i + int(seed * 10.0)) % colors.size()]
+			draw_circle(p, radius * 0.28, Color("02070b"))
+			draw_circle(p, radius * 0.22, color.darkened(0.08))
+			draw_circle(p + Vector2(radius * 0.06, -radius * 0.08), radius * 0.07, Color(1, 1, 1, 0.35))
+			if i > 0:
+				var prev_angle := seed * TAU + float(i - 1) * TAU / 8.0
+				var prev := center + Vector2(cos(prev_angle), sin(prev_angle)) * radius * 0.50
+				draw_line(prev, p, Color(0.8, 0.95, 0.95, 0.24), 3.0, true)
+		draw_circle(center, radius * 0.28, Color("02070b"))
+		draw_circle(center, radius * 0.21, Color("728186").lightened(0.2))
+
+class ProteinContextDish:
+	extends Control
+
+	func _ready() -> void:
+		custom_minimum_size = Vector2(0, 150)
+
+	func _draw() -> void:
+		var center := Vector2(size.x * 0.5, size.y * 0.58)
+		var rx := size.x * 0.36
+		var ry := size.y * 0.28
+		_draw_dish_ellipse(center, rx, ry, Color(0.04, 0.08, 0.1, 0.70))
+		_draw_dish_arc(center, rx, ry, 0.0, TAU, 80, Color("8db9c4"), 2.0)
+		_draw_dish_arc(center + Vector2(0, 8), rx * 0.94, ry * 0.72, 0.0, PI, 60, Color(0.45, 0.95, 1.0, 0.22), 2.0)
+		for i in 10:
+			var t := float(i) / 10.0
+			var angle := t * TAU + 0.4
+			var pos := center + Vector2(cos(angle) * rx * (0.25 + fmod(t * 2.3, 0.55)), sin(angle) * ry * 0.55)
+			draw_circle(pos, 13.0, Color("02070b"))
+			draw_circle(pos, 10.0, Color("243b4b"))
+			if i % 3 == 0:
+				draw_circle(pos, 5.0, Color("8cff6a"))
+
+	func _draw_dish_ellipse(center: Vector2, rx: float, ry: float, color: Color) -> void:
+		var points := PackedVector2Array()
+		for i in 80:
+			var angle := float(i) / 80.0 * TAU
+			points.append(center + Vector2(cos(angle) * rx, sin(angle) * ry))
+		draw_colored_polygon(points, color)
+
+	func _draw_dish_arc(center: Vector2, rx: float, ry: float, start_angle: float, end_angle: float, steps: int, color: Color, width: float) -> void:
+		var points := PackedVector2Array()
+		for i in steps + 1:
+			var angle := lerpf(start_angle, end_angle, float(i) / float(steps))
+			points.append(center + Vector2(cos(angle) * rx, sin(angle) * ry))
+		draw_polyline(points, color, width, true)
 
 class MembraneCrossSection:
 	extends Control
