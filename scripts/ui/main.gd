@@ -559,6 +559,7 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	designer_canvas.custom_minimum_size = Vector2(760, 360)
 	designer_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	designer_canvas.interactive = true
+	designer_canvas.physical_touch = true
 	designer_canvas.target_selected.connect(_designer_target_selected)
 	center.add_child(designer_canvas)
 	designer_preview = HBoxContainer.new()

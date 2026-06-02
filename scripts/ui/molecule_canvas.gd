@@ -10,20 +10,59 @@ var selected_target := -1
 var scale_to_fit := true
 var fixed_zoom := 1.0
 var selection_glow := false
+var physical_touch := false
+
+var _visual_offsets: Array[Vector2] = []
+var _visual_velocities: Array[Vector2] = []
+var _grabbed_atom := -1
+var _hover_atom := -1
+var _pointer_position := Vector2.ZERO
+var _pull_warning := 0.0
+var _release_flash := 0.0
+
+func _ready() -> void:
+	set_process(true)
 
 func set_molecule(value: Dictionary) -> void:
 	molecule = value
+	_reset_physics_state()
+	queue_redraw()
+
+func _process(delta: float) -> void:
+	if molecule.is_empty() or _visual_offsets.is_empty():
+		return
+	if not physical_touch and _grabbed_atom < 0 and _release_flash <= 0.0 and _all_offsets_settled():
+		return
+	_update_physical_touch(delta)
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
 	if not interactive:
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var target := _nearest_valid_bond(event.position)
-		if target >= 0:
-			selected_target = target
-			emit_signal("target_selected", target)
-			queue_redraw()
+	if event is InputEventMouseMotion:
+		_pointer_position = event.position
+		_hover_atom = _nearest_atom(event.position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_pointer_position = event.position
+		if event.pressed:
+			if physical_touch:
+				var atom := _nearest_atom(event.position)
+				if atom >= 0:
+					_grabbed_atom = atom
+					_hover_atom = atom
+					_pull_warning = 0.0
+					queue_redraw()
+					return
+			_select_bond_target(event.position)
+		else:
+			_release_atom(false)
+
+func _select_bond_target(point: Vector2) -> void:
+	var target := _nearest_valid_bond(point)
+	if target >= 0:
+		selected_target = target
+		emit_signal("target_selected", target)
+		queue_redraw()
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("10292d"))
@@ -34,6 +73,7 @@ func _draw() -> void:
 	if selection_glow:
 		_draw_selection_glow(transform, zoom)
 	_draw_bonds(transform, zoom)
+	_draw_touch_feedback(transform, zoom)
 	_draw_atoms(transform, zoom)
 
 func _draw_selection_glow(transform: Transform2D, zoom: float) -> void:
@@ -57,30 +97,40 @@ func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 	var bonds: Array = molecule.get("bonds", [])
 	for i in bonds.size():
 		var bond: Dictionary = bonds[i]
-		var a: Vector2 = transform * atoms[int(bond.get("a", 0))].get("pos", Vector2.ZERO)
-		var b: Vector2 = transform * atoms[int(bond.get("b", 0))].get("pos", Vector2.ZERO)
+		var atom_a := int(bond.get("a", 0))
+		var atom_b := int(bond.get("b", 0))
+		var a: Vector2 = _atom_screen_position(atom_a, transform)
+		var b: Vector2 = _atom_screen_position(atom_b, transform)
 		var highlight := valid_targets.has(i)
 		var selected := selected_target == i
-		_draw_bond(a, b, int(bond.get("order", 1)), highlight, selected, zoom)
+		var rest_a: Vector2 = atoms[atom_a].get("pos", Vector2.ZERO)
+		var rest_b: Vector2 = atoms[atom_b].get("pos", Vector2.ZERO)
+		var rest_length := maxf(1.0, rest_a.distance_to(rest_b) * zoom)
+		var tension := clampf((a.distance_to(b) - rest_length) / maxf(rest_length, 1.0), 0.0, 1.0)
+		_draw_bond(a, b, int(bond.get("order", 1)), highlight, selected, zoom, tension)
 
 func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])
-	for atom in atoms:
-		var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+	for i in atoms.size():
+		var atom: Dictionary = atoms[i]
+		var pos: Vector2 = _atom_screen_position(i, transform)
 		var element: String = atom.get("element", "C")
 		var radius := _atom_radius(element) * zoom
 		var base := _atom_color(element)
+		if i == _hover_atom or i == _grabbed_atom:
+			draw_circle(pos, radius + 12.0 * zoom, Color(0.45, 1.0, 0.9, 0.16))
+			draw_circle(pos, radius + 5.0 * zoom, Color(0.45, 1.0, 0.9, 0.18))
 		_draw_atom(pos, radius, base)
 
-func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float) -> void:
+func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float, tension: float = 0.0) -> void:
 	var dir := (b - a).normalized()
 	var normal := Vector2(-dir.y, dir.x)
-	var color := Color("dbeff2")
+	var color := Color("dbeff2").lerp(Color("ffe064"), tension)
 	var outline := Color("02070b")
-	var inner := Color("f4fbff")
-	var width := 8.0 * zoom
+	var inner := Color("f4fbff").lerp(Color("fff1a8"), tension)
+	var width := (8.0 + tension * 3.0) * zoom
 	if highlight:
-		color = Color("73e6ff")
+		color = Color("73e6ff").lerp(Color("ffe064"), tension)
 		inner = Color("c8fbff")
 		width = 9.0 * zoom
 	if selected:
@@ -97,6 +147,17 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		draw_line(start, end, outline, width + 7.0 * zoom, true)
 		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom, true)
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
+
+func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
+	if _grabbed_atom < 0:
+		if _release_flash > 0.01:
+			draw_circle(_pointer_position, 32.0 * _release_flash, Color(0.45, 1.0, 0.9, 0.18 * _release_flash))
+		return
+	var atom_pos := _atom_screen_position(_grabbed_atom, transform)
+	var tension_color := Color("76f4ff").lerp(Color("ffe064"), _pull_warning)
+	draw_line(atom_pos, _pointer_position, Color("02070b"), 7.0, true)
+	draw_line(atom_pos, _pointer_position, tension_color, 3.0, true)
+	draw_circle(_pointer_position, 9.0 + 8.0 * _pull_warning, Color(tension_color.r, tension_color.g, tension_color.b, 0.26))
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
 	draw_circle(pos, radius + 5.0, Color("02070b"))
@@ -127,6 +188,144 @@ func _atom_color(element: String) -> Color:
 	if element == "S":
 		return Color("ffe064")
 	return Color("728186")
+
+func _reset_physics_state() -> void:
+	var atom_count := int(molecule.get("atoms", []).size())
+	_visual_offsets = []
+	_visual_velocities = []
+	for i in atom_count:
+		_visual_offsets.append(Vector2.ZERO)
+		_visual_velocities.append(Vector2.ZERO)
+	_grabbed_atom = -1
+	_hover_atom = -1
+	_pull_warning = 0.0
+	_release_flash = 0.0
+
+func _all_offsets_settled() -> bool:
+	for i in _visual_offsets.size():
+		if _visual_offsets[i].length_squared() > 0.01:
+			return false
+		if i < _visual_velocities.size() and _visual_velocities[i].length_squared() > 0.01:
+			return false
+	return true
+
+func _update_physical_touch(delta: float) -> void:
+	_release_flash = maxf(0.0, _release_flash - delta * 2.8)
+	var transform := _graph_transform()
+	var zoom := _graph_zoom(transform)
+	var atoms: Array = molecule.get("atoms", [])
+	if _grabbed_atom >= atoms.size():
+		_release_atom(false)
+	if _grabbed_atom >= 0:
+		var rest_screen: Vector2 = transform * atoms[_grabbed_atom].get("pos", Vector2.ZERO)
+		var raw_pull_screen := _pointer_position - rest_screen
+		var break_distance := 165.0 * zoom
+		var elastic_limit := 118.0 * zoom
+		_pull_warning = clampf(raw_pull_screen.length() / break_distance, 0.0, 1.0)
+		if raw_pull_screen.length() > break_distance:
+			_release_atom(true)
+		else:
+			var softened_pull := raw_pull_screen.limit_length(elastic_limit) * 0.52
+			var desired_world := softened_pull / maxf(zoom, 0.001)
+			_apply_graph_pull(_grabbed_atom, desired_world)
+	var stiffness := 18.0 if _grabbed_atom < 0 else 11.0
+	var damping := 7.5
+	for i in _visual_offsets.size():
+		var is_grabbed := i == _grabbed_atom
+		var target := _visual_offsets[i] if is_grabbed else Vector2.ZERO
+		var spring := (target - _visual_offsets[i]) * stiffness
+		_visual_velocities[i] += spring * delta
+		_visual_velocities[i] *= maxf(0.0, 1.0 - damping * delta)
+		if not is_grabbed:
+			_visual_offsets[i] += _visual_velocities[i] * delta
+	_visual_offsets = _relax_bond_lengths(_visual_offsets, delta)
+
+func _apply_graph_pull(atom_index: int, desired_world: Vector2) -> void:
+	var distances := _atom_graph_distances(atom_index)
+	for i in _visual_offsets.size():
+		var graph_distance := int(distances.get(i, 99))
+		if graph_distance > 4:
+			continue
+		var influence := pow(0.48, graph_distance)
+		if i == atom_index:
+			influence = 1.0
+		_visual_offsets[i] = _visual_offsets[i].lerp(desired_world * influence, 0.32)
+
+func _relax_bond_lengths(offsets: Array[Vector2], delta: float) -> Array[Vector2]:
+	var atoms: Array = molecule.get("atoms", [])
+	var bonds: Array = molecule.get("bonds", [])
+	for bond in bonds:
+		var a := int(bond.get("a", 0))
+		var b := int(bond.get("b", 0))
+		if a >= offsets.size() or b >= offsets.size():
+			continue
+		var rest_delta: Vector2 = atoms[b].get("pos", Vector2.ZERO) - atoms[a].get("pos", Vector2.ZERO)
+		var current_delta := rest_delta + offsets[b] - offsets[a]
+		var stretch := current_delta.length() - rest_delta.length()
+		if absf(stretch) < 0.01:
+			continue
+		var correction := current_delta.normalized() * stretch * 0.22 * delta
+		if a != _grabbed_atom:
+			offsets[a] += correction
+		if b != _grabbed_atom:
+			offsets[b] -= correction
+	return offsets
+
+func _release_atom(hard: bool) -> void:
+	if _grabbed_atom >= 0 and hard:
+		_release_flash = 1.0
+		if _grabbed_atom < _visual_velocities.size():
+			var transform := _graph_transform()
+			var zoom := _graph_zoom(transform)
+			var atom_pos := _atom_screen_position(_grabbed_atom, transform)
+			_visual_velocities[_grabbed_atom] += (atom_pos - _pointer_position) / maxf(zoom, 0.001) * 4.0
+	_grabbed_atom = -1
+	_pull_warning = 0.0
+
+func _nearest_atom(point: Vector2) -> int:
+	if molecule.is_empty():
+		return -1
+	var atoms: Array = molecule.get("atoms", [])
+	var transform := _graph_transform()
+	var zoom := _graph_zoom(transform)
+	var best := -1
+	var best_distance := 34.0 * zoom
+	for i in atoms.size():
+		var pos := _atom_screen_position(i, transform)
+		var distance := point.distance_to(pos)
+		if distance < best_distance:
+			best_distance = distance
+			best = i
+	return best
+
+func _atom_graph_distances(start: int) -> Dictionary:
+	var distances := {start: 0}
+	var queue := [start]
+	var bonds: Array = molecule.get("bonds", [])
+	while not queue.is_empty():
+		var current: int = queue.pop_front()
+		var current_distance := int(distances[current])
+		for bond in bonds:
+			var a := int(bond.get("a", 0))
+			var b := int(bond.get("b", 0))
+			var next := -1
+			if a == current:
+				next = b
+			elif b == current:
+				next = a
+			if next >= 0 and not distances.has(next):
+				distances[next] = current_distance + 1
+				queue.append(next)
+	return distances
+
+func _atom_screen_position(index: int, transform: Transform2D) -> Vector2:
+	var atoms: Array = molecule.get("atoms", [])
+	if index < 0 or index >= atoms.size():
+		return Vector2.ZERO
+	var offset := Vector2.ZERO
+	if index < _visual_offsets.size():
+		offset = _visual_offsets[index]
+	return transform * (atoms[index].get("pos", Vector2.ZERO) + offset)
 
 func _nearest_valid_bond(point: Vector2) -> int:
 	var atoms: Array = molecule.get("atoms", [])
