@@ -834,8 +834,6 @@ func _log_event(message: String) -> void:
 class MembraneCrossSection:
 	extends Control
 
-	const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
-
 	var simulation
 	var _particles := {}
 	var _signature := ""
@@ -874,11 +872,9 @@ class MembraneCrossSection:
 			var key: String = item["key"]
 			if _particles.has(key):
 				continue
-			var node = MoleculeCanvasScript.new()
-			node.draw_background = false
-			node.scale_to_fit = true
-			node.fixed_zoom = 0.42
+			var node := FloatingMolecule3D.new()
 			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			node.spin_seed = float(item.get("seed", 0.0))
 			node.set_molecule(simulation.molecule_types[item["id"]])
 			add_child(node)
 			item["node"] = node
@@ -976,8 +972,159 @@ class MembraneCrossSection:
 			var drift := Vector2(sin(_elapsed * (0.35 + seed) + seed * 19.0), cos(_elapsed * (0.28 + seed) + seed * 13.0)) * (18.0 + 18.0 * depth)
 			var perspective: float = 0.62 + depth * 0.36 + sin(_elapsed * 1.2 + seed * 23.0) * 0.045
 			node.position = Vector2(x, y) + drift - node_size * 0.5
-			node.rotation = sin(_elapsed * (0.55 + seed * 0.6) + seed * TAU) * 0.18
-			node.scale = Vector2(perspective, perspective * (0.86 + sin(_elapsed * 1.7 + seed * 11.0) * 0.09))
+			node.rotation = sin(_elapsed * (0.42 + seed * 0.35) + seed * TAU) * 0.08
+			node.scale = Vector2(perspective, perspective)
+
+class FloatingMolecule3D:
+	extends Control
+
+	var molecule: Dictionary = {}
+	var spin_seed := 0.0
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		set_process(true)
+
+	func set_molecule(value: Dictionary) -> void:
+		molecule = value
+		queue_redraw()
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		if molecule.is_empty():
+			return
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		if atoms.is_empty():
+			return
+		var projected := _project_atoms(atoms)
+		var projected_bonds: Array[Dictionary] = []
+		for i in bonds.size():
+			var bond: Dictionary = bonds[i]
+			var a_index := int(bond.get("a", 0))
+			var b_index := int(bond.get("b", 0))
+			if a_index >= projected.size() or b_index >= projected.size():
+				continue
+			var a: Dictionary = projected[a_index]
+			var b: Dictionary = projected[b_index]
+			projected_bonds.append({
+				"a": a,
+				"b": b,
+				"order": int(bond.get("order", 1)),
+				"z": (float(a.get("z", 0.0)) + float(b.get("z", 0.0))) * 0.5
+			})
+		projected_bonds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return float(a.get("z", 0.0)) < float(b.get("z", 0.0))
+		)
+		for bond in projected_bonds:
+			_draw_projected_bond(bond)
+		projected.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return float(a.get("z", 0.0)) < float(b.get("z", 0.0))
+		)
+		for atom in projected:
+			_draw_projected_atom(atom)
+
+	func _project_atoms(atoms: Array) -> Array[Dictionary]:
+		var min_pos := Vector2(INF, INF)
+		var max_pos := Vector2(-INF, -INF)
+		for atom in atoms:
+			var pos: Vector2 = atom.get("pos", Vector2.ZERO)
+			min_pos.x = minf(min_pos.x, pos.x)
+			min_pos.y = minf(min_pos.y, pos.y)
+			max_pos.x = maxf(max_pos.x, pos.x)
+			max_pos.y = maxf(max_pos.y, pos.y)
+		var graph_center := (min_pos + max_pos) * 0.5
+		var graph_size := max_pos - min_pos
+		var fit := minf(size.x / maxf(1.0, graph_size.x + 120.0), size.y / maxf(1.0, graph_size.y + 120.0))
+		var scale := clampf(fit * 1.8, 0.42, 0.82)
+		var yaw := _elapsed * (0.75 + spin_seed * 0.75) + spin_seed * TAU
+		var pitch := sin(_elapsed * 0.42 + spin_seed * 9.0) * 0.34
+		var cy := cos(yaw)
+		var sy := sin(yaw)
+		var cp := cos(pitch)
+		var sp := sin(pitch)
+		var center := size * 0.5
+		var camera := 620.0
+		var output: Array[Dictionary] = []
+		for i in atoms.size():
+			var atom: Dictionary = atoms[i]
+			var source: Vector2 = atom.get("pos", Vector2.ZERO) - graph_center
+			var x0 := source.x * scale
+			var y0 := source.y * scale
+			var z0 := source.y * scale * 0.18
+			var x1 := x0 * cy + z0 * sy
+			var z1 := -x0 * sy + z0 * cy
+			var y1 := y0 * cp - z1 * sp
+			var z2 := y0 * sp + z1 * cp
+			var perspective := camera / maxf(120.0, camera - z2)
+			output.append({
+				"element": str(atom.get("element", "C")),
+				"screen": center + Vector2(x1, y1) * perspective,
+				"z": z2,
+				"scale": perspective
+			})
+		return output
+
+	func _draw_projected_bond(bond: Dictionary) -> void:
+		var a: Dictionary = bond.get("a", {})
+		var b: Dictionary = bond.get("b", {})
+		var start: Vector2 = a.get("screen", Vector2.ZERO)
+		var end: Vector2 = b.get("screen", Vector2.ZERO)
+		var dir := end - start
+		if dir.length() < 1.0:
+			return
+		dir = dir.normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var avg_scale := (float(a.get("scale", 1.0)) + float(b.get("scale", 1.0))) * 0.5
+		var width := 6.0 * avg_scale
+		var trim := 22.0 * avg_scale
+		var offsets := [0.0]
+		if int(bond.get("order", 1)) == 2:
+			offsets = [-5.0 * avg_scale, 5.0 * avg_scale]
+		for offset in offsets:
+			var p0: Vector2 = start + dir * trim + normal * float(offset)
+			var p1: Vector2 = end - dir * trim + normal * float(offset)
+			draw_line(p0, p1, Color("02070b"), width + 6.0, true)
+			draw_line(p0, p1, Color("dbeff2"), width + 1.5, true)
+			draw_line(p0 + normal * 0.6, p1 + normal * 0.6, Color(1, 1, 1, 0.6), maxf(1.0, width * 0.32), true)
+
+	func _draw_projected_atom(atom: Dictionary) -> void:
+		var element := str(atom.get("element", "C"))
+		var pos: Vector2 = atom.get("screen", Vector2.ZERO)
+		var depth := clampf((float(atom.get("z", 0.0)) + 130.0) / 260.0, 0.0, 1.0)
+		var radius := _atom_radius(element) * float(atom.get("scale", 1.0)) * lerpf(0.82, 1.16, depth)
+		var base := _atom_color(element).lerp(Color.WHITE, depth * 0.16)
+		draw_circle(pos + Vector2(0, radius * 0.20), radius + 5.0, Color(0.0, 0.0, 0.0, 0.33))
+		draw_circle(pos, radius + 5.0, Color("02070b"))
+		draw_circle(pos, radius + 1.5, base.lightened(0.35))
+		draw_circle(pos, radius - 1.0, base.darkened(0.16))
+		for i in 8:
+			var t := float(i) / 7.0
+			var r := lerpf(radius * 0.84, radius * 0.20, t)
+			var offset := Vector2(-radius * 0.16, -radius * 0.15) * (1.0 - t)
+			var shade := base.darkened(0.12).lerp(base.lightened(0.28), t)
+			draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.28))
+		draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
+		draw_circle(pos + Vector2(radius * 0.31, -radius * 0.43), radius * 0.10, Color(1, 1, 1, 0.22))
+
+	func _atom_radius(element: String) -> float:
+		if element == "C":
+			return 22.0
+		return 20.0
+
+	func _atom_color(element: String) -> Color:
+		if element == "O":
+			return Color("e95058")
+		if element == "P":
+			return Color("a34ed0")
+		if element == "N":
+			return Color("4a90df")
+		if element == "S":
+			return Color("ffe064")
+		return Color("728186")
 
 class DesignerTitleFrame:
 	extends Control
