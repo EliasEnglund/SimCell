@@ -18,6 +18,7 @@ var _fixed_zoom := 0.72
 var _layout_positions := {}
 var _visible_positions := {}
 var _visible_sizes := {}
+var _visible_reaction_steps := {}
 var _press_started_in_workspace := false
 
 func _ready() -> void:
@@ -115,10 +116,14 @@ func _rebuild() -> void:
 		var item: Dictionary = layout[id]
 		positions[id] = item["position"] * zoom + pan_offset
 		sizes[id] = item["size"] * zoom
+	var step_layout := _reaction_step_layout(positions, sizes)
 	_visible_positions = positions
 	_visible_sizes = sizes
+	_visible_reaction_steps = step_layout
 	_draw_membrane_transport_arrows(positions, sizes)
-	_draw_reaction_arrows(positions, sizes)
+	_draw_reaction_arrows(positions, sizes, step_layout)
+	for key in step_layout.keys():
+		add_child(_reaction_step_node(step_layout[key]))
 	for id in ids:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
 
@@ -129,24 +134,37 @@ func _molecule_at(local_position: Vector2) -> String:
 			return id
 	return ""
 
-func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
+func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout: Dictionary) -> void:
 	for reaction in simulation.pathway_arrows():
+		var step_key: String = reaction.get("blueprint_id", "")
 		var substrate: String = reaction.get("substrate", "")
 		var products: Array = reaction.get("products", [])
 		if not positions.has(substrate):
 			continue
 		var source_center: Vector2 = positions[substrate] + sizes[substrate] * 0.5
+		var step_rect: Rect2 = step_layout.get(step_key, {}).get("rect", Rect2())
+		var step_center := step_rect.get_center()
+		if step_rect.size.x > 0.0:
+			var enzyme_arrow := ArrowLine.new()
+			enzyme_arrow.start = source_center
+			enzyme_arrow.end = step_center
+			enzyme_arrow.rate = float(reaction.get("rate", 0.0))
+			enzyme_arrow.active = int(reaction.get("active_count", 0)) > 0
+			enzyme_arrow.queued = int(reaction.get("queued_count", 0)) > 0
+			enzyme_arrow.label = _arrow_label(reaction)
+			enzyme_arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
+			add_child(enzyme_arrow)
 		for product_id in products:
 			if not positions.has(product_id):
 				continue
 			var target_center: Vector2 = positions[product_id] + sizes[product_id] * 0.5
 			var arrow := ArrowLine.new()
-			arrow.start = source_center
+			arrow.start = step_center if step_rect.size.x > 0.0 else source_center
 			arrow.end = target_center
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
 			arrow.queued = int(reaction.get("queued_count", 0)) > 0
-			arrow.label = _arrow_label(reaction)
+			arrow.label = ""
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
 
@@ -177,6 +195,46 @@ func _arrow_label(pathway: Dictionary) -> String:
 	if int(pathway.get("queued_count", 0)) > 0:
 		return "building"
 	return "designed"
+
+func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictionary:
+	var layout := {}
+	for reaction in simulation.pathway_arrows():
+		var blueprint_id: String = reaction.get("blueprint_id", "")
+		var substrate: String = reaction.get("substrate", "")
+		var products: Array = reaction.get("products", [])
+		if blueprint_id.is_empty() or not positions.has(substrate) or products.is_empty():
+			continue
+		var valid_products: Array[Vector2] = []
+		for product_id in products:
+			if positions.has(product_id):
+				valid_products.append(positions[product_id] + sizes[product_id] * 0.5)
+		if valid_products.is_empty():
+			continue
+		var source_center: Vector2 = positions[substrate] + sizes[substrate] * 0.5
+		var target_center := Vector2.ZERO
+		for center in valid_products:
+			target_center += center
+		target_center /= float(valid_products.size())
+		var center := source_center.lerp(target_center, 0.52)
+		var step_size := Vector2(252.0, 132.0) * zoom
+		layout[blueprint_id] = {
+			"rect": Rect2(center - step_size * 0.5, step_size),
+			"reaction": reaction
+		}
+	return layout
+
+func _reaction_step_node(item: Dictionary) -> Control:
+	var reaction: Dictionary = item.get("reaction", {})
+	var rect: Rect2 = item.get("rect", Rect2())
+	var box := EnzymeStepBox.new()
+	box.simulation = simulation
+	box.reaction = reaction
+	box.fixed_zoom = _fixed_zoom * zoom * 0.72
+	box.position = rect.position
+	box.size = rect.size
+	box.custom_minimum_size = rect.size
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return box
 
 func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	var result := {}
@@ -313,7 +371,173 @@ class ArrowLine:
 		var left := to - dir * 18.0 + normal * 9.0
 		var right := to - dir * 18.0 - normal * 9.0
 		draw_colored_polygon(PackedVector2Array([to, left, right]), line_color)
-		draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, line_color)
+		if not label.is_empty():
+			draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, line_color)
+
+class EnzymeStepBox:
+	extends Control
+
+	var simulation
+	var reaction: Dictionary = {}
+	var fixed_zoom := 0.52
+
+	func _ready() -> void:
+		set_process(true)
+
+	func _process(_delta: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size).grow(-4.0)
+		var cyan := Color("76f4ff")
+		draw_rect(rect, Color(0.08, 0.16, 0.20, 0.86), true)
+		draw_rect(rect, Color(cyan.r, cyan.g, cyan.b, 0.20), false, 9.0)
+		draw_rect(rect, cyan, false, 2.0)
+		if simulation == null:
+			return
+		var substrate_id: String = reaction.get("substrate", "")
+		if not simulation.molecule_types.has(substrate_id):
+			return
+		var molecule: Dictionary = simulation.molecule_types[substrate_id]
+		var transform := _molecule_transform(molecule)
+		_draw_molecule(molecule, transform)
+		var target_index := _reaction_target_index()
+		if str(reaction.get("tool", "")) == "lyase" and target_index >= 0:
+			_draw_breaking_bond(molecule, transform, target_index)
+		else:
+			_draw_reaction_pulse(rect)
+		_draw_enzyme_icon(rect)
+		_draw_step_label(rect)
+
+	func _molecule_transform(molecule: Dictionary) -> Transform2D:
+		var atoms: Array = molecule.get("atoms", [])
+		var min_pos := Vector2(INF, INF)
+		var max_pos := Vector2(-INF, -INF)
+		for atom in atoms:
+			var pos: Vector2 = atom.get("pos", Vector2.ZERO)
+			min_pos = min_pos.min(pos)
+			max_pos = max_pos.max(pos)
+		var graph_size := (max_pos - min_pos).max(Vector2(80.0, 80.0))
+		var scale := minf(size.x * 0.62 / graph_size.x, size.y * 0.66 / graph_size.y)
+		scale = minf(scale, fixed_zoom)
+		var graph_center := (min_pos + max_pos) * 0.5
+		var center := Vector2(size.x * 0.43, size.y * 0.52)
+		return Transform2D(Vector2(scale, 0.0), Vector2(0.0, scale), center - graph_center * scale)
+
+	func _draw_molecule(molecule: Dictionary, transform: Transform2D) -> void:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		for bond in bonds:
+			var a_index := int(bond.get("a", 0))
+			var b_index := int(bond.get("b", 0))
+			if a_index >= atoms.size() or b_index >= atoms.size():
+				continue
+			var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+			var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+			_draw_step_bond(a, b, int(bond.get("order", 1)), 1.0)
+		for atom in atoms:
+			var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+			_draw_step_atom(pos, str(atom.get("element", "C")))
+
+	func _draw_breaking_bond(molecule: Dictionary, transform: Transform2D, target_index: int) -> void:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		if target_index >= bonds.size():
+			return
+		var bond: Dictionary = bonds[target_index]
+		var a_index := int(bond.get("a", 0))
+		var b_index := int(bond.get("b", 0))
+		if a_index >= atoms.size() or b_index >= atoms.size():
+			return
+		var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+		var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+		var intensity := smoothstep(0.15, 0.95, abs(sin(Time.get_ticks_msec() * 0.0032)))
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var center := a.lerp(b, 0.5)
+		var gap := 10.0 + 18.0 * intensity
+		_draw_step_bond(a, center - dir * gap, int(bond.get("order", 1)), 0.55 + 0.45 * intensity, Color("ffe064"))
+		_draw_step_bond(center + dir * gap, b, int(bond.get("order", 1)), 0.55 + 0.45 * intensity, Color("ffe064"))
+		var sparks := PackedVector2Array()
+		for i in 7:
+			var p := center + dir * lerpf(-gap, gap, float(i) / 6.0)
+			var wave := sin(float(i) * 2.2 + Time.get_ticks_msec() * 0.011) * 9.0 * intensity
+			sparks.append(p + normal * wave)
+		draw_polyline(sparks, Color("76f4ff"), 7.0 * intensity, true)
+		draw_polyline(sparks, Color("fff1a8"), maxf(1.0, 2.0 * intensity), true)
+
+	func _draw_reaction_pulse(rect: Rect2) -> void:
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.004)
+		draw_circle(rect.get_center(), 24.0 + 20.0 * pulse, Color(0.45, 0.95, 1.0, 0.10 * (1.0 - pulse)))
+
+	func _draw_enzyme_icon(rect: Rect2) -> void:
+		var center := Vector2(rect.position.x + rect.size.x * 0.74, rect.position.y + rect.size.y * 0.45)
+		var size_scale := minf(rect.size.x, rect.size.y) / 132.0
+		if str(reaction.get("tool", "")) == "lyase":
+			_draw_scissors(center, size_scale)
+		else:
+			draw_circle(center, 20.0 * size_scale, Color("02070b"))
+			draw_circle(center, 15.0 * size_scale, Color("76f4ff"))
+			draw_line(center + Vector2(-24, 0) * size_scale, center + Vector2(24, 0) * size_scale, Color("f4fbff"), 4.0 * size_scale, true)
+
+	func _draw_scissors(center: Vector2, scale: float) -> void:
+		var a := center + Vector2(-30, 26) * scale
+		var b := center + Vector2(20, -28) * scale
+		var c := center + Vector2(-12, 28) * scale
+		var d := center + Vector2(32, -22) * scale
+		draw_line(a, b, Color("02070b"), 6.0 * scale, true)
+		draw_line(c, d, Color("02070b"), 6.0 * scale, true)
+		draw_line(a, b, Color("f4fbff"), 3.0 * scale, true)
+		draw_line(c, d, Color("f4fbff"), 3.0 * scale, true)
+		for p in [center + Vector2(28, -28) * scale, center + Vector2(42, -18) * scale]:
+			draw_circle(p, 5.0 * scale, Color("02070b"))
+			draw_circle(p, 3.0 * scale, Color("f4fbff"))
+
+	func _draw_step_label(rect: Rect2) -> void:
+		var text := str(reaction.get("tool", "enzyme")).to_upper()
+		var color := Color("8cff6a") if int(reaction.get("active_count", 0)) > 0 else Color("76f4ff")
+		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 12.0, rect.end.y - 12.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, color)
+
+	func _draw_step_bond(a: Vector2, b: Vector2, order: int, alpha: float, color_override: Color = Color.TRANSPARENT) -> void:
+		if a.distance_to(b) < 4.0:
+			return
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var color := color_override if color_override.a > 0.0 else Color("dbeff2")
+		var offsets := [0.0]
+		if order == 2:
+			offsets = [-4.0, 4.0]
+		for offset in offsets:
+			var start: Vector2 = a + dir * 18.0 + normal * float(offset)
+			var end: Vector2 = b - dir * 18.0 + normal * float(offset)
+			draw_line(start, end, Color("02070b"), 7.0, true)
+			draw_line(start, end, Color(color.r, color.g, color.b, alpha), 3.0, true)
+			draw_line(start + normal * 0.6, end + normal * 0.6, Color(1, 1, 1, 0.45 * alpha), 1.0, true)
+
+	func _draw_step_atom(pos: Vector2, element: String) -> void:
+		var radius := 17.0 if element == "C" else 15.0
+		var base := _atom_color(element)
+		draw_circle(pos, radius + 4.0, Color("02070b"))
+		draw_circle(pos, radius + 1.0, base.lightened(0.3))
+		draw_circle(pos, radius - 1.0, base.darkened(0.14))
+		draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
+
+	func _atom_color(element: String) -> Color:
+		if element == "O":
+			return Color("e95058")
+		if element == "P":
+			return Color("a34ed0")
+		if element == "N":
+			return Color("4a90df")
+		if element == "S":
+			return Color("ffe064")
+		return Color("728186")
+
+	func _reaction_target_index() -> int:
+		var blueprint_id: String = reaction.get("blueprint_id", "")
+		if simulation != null and simulation.enzyme_blueprints.has(blueprint_id):
+			return int(simulation.enzyme_blueprints[blueprint_id].get("target_index", -1))
+		return -1
 
 class BoundaryLayer:
 	extends Control
