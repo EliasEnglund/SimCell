@@ -23,6 +23,7 @@ var membrane_outside_list: VBoxContainer
 var membrane_inside_list: VBoxContainer
 var membrane_transporter_list: VBoxContainer
 var membrane_detail: VBoxContainer
+var membrane_band: Control
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
 
@@ -196,7 +197,8 @@ func _build_membrane_view() -> void:
 	var membrane_panel := _panel_container("MEMBRANE")
 	membrane_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(membrane_panel)
-	membrane_panel.add_child(_membrane_band())
+	membrane_band = _membrane_band()
+	membrane_panel.add_child(membrane_band)
 	membrane_detail = VBoxContainer.new()
 	membrane_detail.add_theme_constant_override("separation", 10)
 	membrane_panel.add_child(membrane_detail)
@@ -249,6 +251,8 @@ func _refresh_membrane() -> void:
 		membrane_inside_list.add_child(_membrane_molecule_button(id, "inside"))
 	_refresh_membrane_detail()
 	_refresh_transporter_list()
+	if membrane_band != null:
+		membrane_band.queue_redraw()
 
 func _membrane_molecule_button(id: String, location: String) -> Button:
 	var molecule: Dictionary = sim.molecule_types[id]
@@ -279,13 +283,17 @@ func _refresh_membrane_detail() -> void:
 		return
 	var molecule: Dictionary = sim.molecule_types[selected_membrane_molecule]
 	var count := sim.transporter_count(selected_membrane_direction, selected_membrane_molecule)
+	var queued_count := sim.transporter_queued_count(selected_membrane_direction, selected_membrane_molecule)
+	var next_build := sim.transporter_next_build_remaining(selected_membrane_direction, selected_membrane_molecule)
 	var rate := sim.transporter_rate(selected_membrane_direction, selected_membrane_molecule)
 	var action := "Importer" if selected_membrane_direction == "import" else "Exporter"
-	membrane_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d transporters | %.1f molecules/s" % [count, rate]))
+	var queue_text := " | %d building" % queued_count if queued_count > 0 else ""
+	var build_text := " | next %.1fs" % next_build if queued_count > 0 else ""
+	membrane_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d active%s | %.1f molecules/s%s" % [count, queue_text, rate, build_text]))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var build := Button.new()
-	build.text = "+ Build"
+	build.text = "+ Queue Build"
 	build.custom_minimum_size = Vector2(128, 44)
 	build.pressed.connect(func():
 		sim.build_transporter(selected_membrane_direction, selected_membrane_molecule)
@@ -325,13 +333,16 @@ func _transporter_card(transporter: Dictionary) -> VBoxContainer:
 	name.modulate = Color("76f4ff")
 	box.add_child(name)
 	var detail := Label.new()
-	detail.text = "%d units | %.1f/s total" % [int(transporter.get("count", 0)), float(transporter.get("rate", 0.0))]
+	var queued_count := int(transporter.get("queued_count", 0))
+	var build_text := " | %d building" % queued_count if queued_count > 0 else ""
+	detail.text = "%d active%s | %.1f/s total" % [int(transporter.get("count", 0)), build_text, float(transporter.get("rate", 0.0))]
 	detail.modulate = Color(0.72, 0.84, 0.82)
 	box.add_child(detail)
 	return box
 
 func _membrane_band() -> Control:
 	var band := MembraneBand.new()
+	band.simulation = sim
 	band.custom_minimum_size = Vector2(0, 96)
 	return band
 
@@ -509,23 +520,48 @@ func _refresh_designer() -> void:
 	designer_canvas.queue_redraw()
 	_clear(designer_preview)
 	if designer_target < 0:
-		designer_preview.add_child(_title("Select Target", "Highlighted bonds can be modified by the selected enzyme class."))
+		designer_preview.add_child(_title("Select Target", "%d highlighted bonds can be modified by %s." % [designer_canvas.valid_targets.size(), designer_tool.capitalize()]))
 		return
-	var products := sim.preview_products(designer_tool, sim.selected_molecule, designer_target)
-	for product in products:
+	var summary := sim.enzyme_preview_summary(designer_tool, sim.selected_molecule, designer_target)
+	var products := sim.product_preview_info(designer_tool, sim.selected_molecule, designer_target)
+	var summary_panel := VBoxContainer.new()
+	summary_panel.custom_minimum_size = Vector2(240, 180)
+	summary_panel.add_child(_title(summary.get("name", "Enzyme Blueprint"), "kcat %.2f/s | stability %.0fs | build %.0fs" % [
+		float(summary.get("kcat", 0.0)),
+		float(summary.get("stability", 0.0)),
+		float(summary.get("build_time", 0.0))
+	]))
+	var kept_products: Array = summary.get("products", [])
+	var kept_label := Label.new()
+	kept_label.text = "Products: %s" % (" + ".join(kept_products) if not kept_products.is_empty() else "none")
+	kept_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary_panel.add_child(kept_label)
+	if int(summary.get("gas_products", 0)) > 0:
+		var gas := Label.new()
+		gas.text = "CO2 escape: %d fragment" % int(summary.get("gas_products", 0))
+		gas.modulate = Color("ffe064")
+		summary_panel.add_child(gas)
+	designer_preview.add_child(summary_panel)
+	for product_info in products:
+		var product: Dictionary = product_info.get("graph", {})
 		var panel := VBoxContainer.new()
 		panel.custom_minimum_size = Vector2(220, 180)
 		var canvas = MoleculeCanvasScript.new()
 		canvas.custom_minimum_size = Vector2(220, 140)
 		canvas.set_molecule(product)
+		if bool(product_info.get("escapes", false)):
+			canvas.modulate = Color(1, 1, 1, 0.45)
 		panel.add_child(canvas)
 		var label := Label.new()
-		label.text = product.get("formula", "Product")
+		label.text = "%s -> escapes as CO2" % product.get("formula", "Product") if bool(product_info.get("escapes", false)) else product.get("formula", "Product")
+		label.modulate = Color("ffe064") if bool(product_info.get("escapes", false)) else Color(0.9, 0.96, 0.95)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		panel.add_child(label)
 		designer_preview.add_child(panel)
 	var confirm := Button.new()
-	confirm.text = "Create Blueprint + Auto-Queue"
+	confirm.text = "Create Blueprint + Queue Protein"
 	confirm.custom_minimum_size = Vector2(240, 64)
+	confirm.disabled = kept_products.is_empty()
 	confirm.pressed.connect(func():
 		sim.design_enzyme(designer_tool, sim.selected_molecule, designer_target)
 		_restore_main_shell()
@@ -587,6 +623,8 @@ func _log_event(message: String) -> void:
 class MembraneBand:
 	extends Control
 
+	var simulation
+
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		draw_rect(rect, Color("10292d"), true)
@@ -599,3 +637,22 @@ class MembraneBand:
 			draw_circle(Vector2(x, top), 8.0, Color("4a90df"))
 			draw_circle(Vector2(x + 16, bottom), 8.0, Color("a34ed0"))
 		draw_string(ThemeDB.fallback_font, Vector2(18, center_y + 5), "TRANSPORTER MEMBRANE", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("f4fbff"))
+		if simulation == null:
+			return
+		var arrows: Array = simulation.membrane_transport_arrows()
+		var start_x := maxf(220.0, size.x * 0.32)
+		var spacing := 74.0
+		for i in min(arrows.size(), 6):
+			var arrow: Dictionary = arrows[i]
+			var x: float = start_x + i * spacing
+			var import_direction: bool = arrow.get("direction", "") == "import"
+			var from := Vector2(x, top - 24.0 if import_direction else bottom + 24.0)
+			var to := Vector2(x, bottom + 24.0 if import_direction else top - 24.0)
+			var color := Color("8cff6a") if import_direction else Color("ffe064")
+			draw_line(from, to, Color("02070b"), 8.0, true)
+			draw_line(from, to, color, 4.0, true)
+			var dir := (to - from).normalized()
+			var left := to - dir * 12.0 + Vector2(-dir.y, dir.x) * 7.0
+			var right := to - dir * 12.0 - Vector2(-dir.y, dir.x) * 7.0
+			draw_colored_polygon(PackedVector2Array([to, left, right]), color)
+			draw_string(ThemeDB.fallback_font, Vector2(x - 22.0, center_y + 36.0), "%s x%d" % [arrow.get("formula", ""), int(arrow.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)

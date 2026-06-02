@@ -11,6 +11,7 @@ static func save_state(sim) -> bool:
 		"molecule_amounts": sim.molecule_amounts,
 		"outside_amounts": sim.outside_amounts,
 		"transporters": sim.transporters,
+		"transporter_queue": sim.transporter_queue,
 		"enzyme_blueprints": sim.enzyme_blueprints,
 		"active_enzymes": sim.active_enzymes,
 		"protein_queue": sim.protein_queue,
@@ -41,6 +42,7 @@ static func load_state(sim) -> bool:
 	sim.molecule_amounts = parsed.get("molecule_amounts", sim.molecule_amounts)
 	sim.outside_amounts = parsed.get("outside_amounts", sim.outside_amounts)
 	sim.transporters = parsed.get("transporters", sim.transporters)
+	sim.transporter_queue = parsed.get("transporter_queue", [])
 	sim.enzyme_blueprints = parsed.get("enzyme_blueprints", sim.enzyme_blueprints)
 	sim.active_enzymes = parsed.get("active_enzymes", sim.active_enzymes)
 	sim.protein_queue = parsed.get("protein_queue", [])

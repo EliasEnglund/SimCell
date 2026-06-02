@@ -117,6 +117,7 @@ func _rebuild() -> void:
 		sizes[id] = item["size"] * zoom
 	_visible_positions = positions
 	_visible_sizes = sizes
+	_draw_membrane_transport_arrows(positions, sizes)
 	_draw_reaction_arrows(positions, sizes)
 	for id in ids:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
@@ -148,6 +149,26 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			arrow.label = _arrow_label(reaction)
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
+
+func _draw_membrane_transport_arrows(positions: Dictionary, sizes: Dictionary) -> void:
+	for transport in simulation.membrane_transport_arrows():
+		var molecule_id: String = transport.get("molecule", "")
+		if not positions.has(molecule_id) or float(transport.get("rate", 0.0)) <= 0.0:
+			continue
+		var center: Vector2 = positions[molecule_id] + sizes[molecule_id] * 0.5
+		var arrow := ArrowLine.new()
+		if transport.get("direction", "") == "import":
+			arrow.start = center + Vector2(0.0, -190.0 * zoom)
+			arrow.end = center + Vector2(0.0, -72.0 * zoom)
+			arrow.label = "membrane +%.1f/s" % float(transport.get("rate", 0.0))
+			arrow.active = true
+		else:
+			arrow.start = center + Vector2(0.0, 72.0 * zoom)
+			arrow.end = center + Vector2(0.0, 190.0 * zoom)
+			arrow.label = "export %.1f/s" % float(transport.get("rate", 0.0))
+			arrow.queued = true
+		arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(arrow)
 
 func _arrow_label(pathway: Dictionary) -> String:
 	var rate := float(pathway.get("rate", 0.0))

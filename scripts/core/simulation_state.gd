@@ -8,6 +8,7 @@ signal event_logged(message: String)
 
 const METABOLISM_TICK := 0.25
 const TRANSPORTER_RATE_PER_SECOND := 2.0
+const TRANSPORTER_BUILD_TIME := 2.5
 const STARTING_GLUCOSE_TRANSPORTERS := 4
 
 var time_seconds := 0.0
@@ -24,6 +25,7 @@ var molecule_rates: Dictionary = {}
 var outside_amounts: Dictionary = {}
 var outside_rates: Dictionary = {}
 var transporters: Dictionary = {}
+var transporter_queue: Array[Dictionary] = []
 var enzyme_blueprints: Dictionary = {}
 var active_enzymes: Dictionary = {}
 var protein_queue: Array[Dictionary] = []
@@ -50,6 +52,7 @@ func reset() -> void:
 	outside_amounts = {}
 	outside_rates = {}
 	transporters = {}
+	transporter_queue = []
 	enzyme_blueprints = {}
 	active_enzymes = {}
 	protein_queue = []
@@ -83,6 +86,7 @@ func tick(delta: float) -> void:
 		return
 	var dt := delta * speed
 	time_seconds += dt
+	_tick_transporter_queue(dt)
 	tick_accumulator += dt
 	_tick_protein_queue(dt)
 	while tick_accumulator >= METABOLISM_TICK:
@@ -142,9 +146,12 @@ func transporter_list() -> Array[Dictionary]:
 	for id in transporters.keys():
 		var transporter: Dictionary = transporters[id].duplicate(true)
 		var count := int(transporter.get("count", 0))
-		if count <= 0:
+		var queued_count := transporter_queued_count(str(transporter.get("direction", "")), str(transporter.get("molecule", "")))
+		if count <= 0 and queued_count <= 0:
 			continue
 		transporter["rate"] = count * float(transporter.get("rate_per_transporter", TRANSPORTER_RATE_PER_SECOND))
+		transporter["queued_count"] = queued_count
+		transporter["next_build_remaining"] = transporter_next_build_remaining(str(transporter.get("direction", "")), str(transporter.get("molecule", "")))
 		output.append(transporter)
 	output.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var a_key := "%s:%s" % [a.get("direction", ""), molecule_types.get(a.get("molecule", ""), {}).get("formula", "")]
@@ -160,6 +167,20 @@ func transporter_count(direction: String, molecule_id: String) -> int:
 func transporter_rate(direction: String, molecule_id: String) -> float:
 	return transporter_count(direction, molecule_id) * TRANSPORTER_RATE_PER_SECOND
 
+func transporter_queued_count(direction: String, molecule_id: String) -> int:
+	var count := 0
+	for item in transporter_queue:
+		if item.get("direction", "") == direction and item.get("molecule", "") == molecule_id:
+			count += 1
+	return count
+
+func transporter_next_build_remaining(direction: String, molecule_id: String) -> float:
+	var remaining := INF
+	for item in transporter_queue:
+		if item.get("direction", "") == direction and item.get("molecule", "") == molecule_id:
+			remaining = minf(remaining, float(item.get("remaining", 0.0)))
+	return remaining if remaining < INF else 0.0
+
 func build_transporter(direction: String, molecule_id: String) -> bool:
 	if not molecule_types.has(molecule_id) or not ["import", "export"].has(direction):
 		return false
@@ -174,8 +195,14 @@ func build_transporter(direction: String, molecule_id: String) -> bool:
 			"count": 0,
 			"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND
 		}
-	transporters[id]["count"] = int(transporters[id].get("count", 0)) + 1
-	emit_signal("event_logged", "Built %s transporter for %s." % [direction, molecule_types[molecule_id].get("formula", "molecule")])
+	transporter_queue.append({
+		"id": id,
+		"direction": direction,
+		"molecule": molecule_id,
+		"remaining": TRANSPORTER_BUILD_TIME,
+		"duration": TRANSPORTER_BUILD_TIME
+	})
+	emit_signal("event_logged", "Queued %s transporter for %s." % [direction, molecule_types[molecule_id].get("formula", "molecule")])
 	emit_signal("changed")
 	return true
 
@@ -246,6 +273,52 @@ func pathway_arrows() -> Array[Dictionary]:
 			"status": pathway.get("status", "Designed")
 		})
 	return output
+
+func membrane_transport_arrows() -> Array[Dictionary]:
+	var output: Array[Dictionary] = []
+	for transporter in transporter_list():
+		var molecule_id: String = transporter.get("molecule", "")
+		if not molecule_types.has(molecule_id):
+			continue
+		output.append({
+			"direction": transporter.get("direction", ""),
+			"molecule": molecule_id,
+			"formula": molecule_types[molecule_id].get("formula", "Molecule"),
+			"rate": float(transporter.get("rate", 0.0)),
+			"count": int(transporter.get("count", 0)),
+			"queued_count": int(transporter.get("queued_count", 0))
+		})
+	return output
+
+func product_preview_info(tool: String, substrate_id: String, target_index: int) -> Array[Dictionary]:
+	var output: Array[Dictionary] = []
+	for product in preview_products(tool, substrate_id, target_index):
+		output.append({
+			"graph": product,
+			"formula": product.get("formula", "Product"),
+			"escapes": _escapes_as_carbon_dioxide(product)
+		})
+	return output
+
+func enzyme_preview_summary(tool: String, substrate_id: String, target_index: int) -> Dictionary:
+	if not molecule_types.has(substrate_id) or target_index < 0:
+		return {}
+	var substrate: Dictionary = molecule_types[substrate_id]
+	var kept_products: Array[String] = []
+	var gas_products := 0
+	for product in product_preview_info(tool, substrate_id, target_index):
+		if bool(product.get("escapes", false)):
+			gas_products += 1
+		else:
+			kept_products.append(product.get("formula", "Product"))
+	return {
+		"name": _enzyme_name(tool, substrate),
+		"kcat": _estimate_kcat(tool, substrate, target_index),
+		"stability": 120.0,
+		"build_time": 3.0,
+		"products": kept_products,
+		"gas_products": gas_products
+	}
 
 func design_enzyme(tool: String, substrate_id: String, target_index: int) -> bool:
 	if not molecule_types.has(substrate_id):
@@ -386,6 +459,17 @@ func _tick_protein_queue(dt: float) -> void:
 			active_enzymes[id] = int(active_enzymes.get(id, 0)) + 1
 			emit_signal("event_logged", "Enzyme built: %s." % item.get("name", id))
 			protein_queue.remove_at(i)
+
+func _tick_transporter_queue(dt: float) -> void:
+	for i in range(transporter_queue.size() - 1, -1, -1):
+		var item := transporter_queue[i]
+		item["remaining"] = float(item.get("remaining", 0.0)) - dt
+		if float(item["remaining"]) <= 0.0:
+			var id: String = item.get("id", "")
+			if transporters.has(id):
+				transporters[id]["count"] = int(transporters[id].get("count", 0)) + 1
+				emit_signal("event_logged", "Transporter built: %s %s." % [item.get("direction", ""), molecule_types[item.get("molecule", "")].get("formula", "molecule")])
+			transporter_queue.remove_at(i)
 
 func _register_molecule(graph: Dictionary) -> String:
 	var normalized := Graph.normalize(graph)
