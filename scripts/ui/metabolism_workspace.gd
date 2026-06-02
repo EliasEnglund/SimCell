@@ -283,16 +283,30 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		if not _layout_positions.has(substrate_id):
 			continue
 		var products: Array = pathway.get("products", [])
-		for i in products.size():
-			var product_id: String = products[i]
-			if not sizes.has(product_id) or _layout_positions.has(product_id):
-				continue
-			var source_pos: Vector2 = _layout_positions[substrate_id]
-			var source_size: Vector2 = sizes[substrate_id]
+		var unplaced_products: Array[String] = []
+		for product_id in products:
+			if sizes.has(product_id) and not _layout_positions.has(product_id):
+				unplaced_products.append(product_id)
+		if unplaced_products.is_empty():
+			continue
+		var source_pos: Vector2 = _layout_positions[substrate_id]
+		var source_size: Vector2 = sizes[substrate_id]
+		var group_gap := 86.0
+		var group_width := -group_gap
+		for product_id in unplaced_products:
 			var product_size: Vector2 = sizes[product_id]
-			var x_offset := (float(i) - float(products.size() - 1) * 0.5) * (product_size.x + 56.0)
-			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 190.0)
-			_layout_positions[product_id] = _open_position(preferred, product_size, sizes)
+			group_width += product_size.x + group_gap
+		var cursor_x := source_pos.x + source_size.x * 0.5 - group_width * 0.5
+		for product_id in unplaced_products:
+			var product_size: Vector2 = sizes[product_id]
+			var preferred := Vector2(cursor_x, source_pos.y + source_size.y + 260.0)
+			var opened := _open_position(preferred, product_size, sizes, false)
+			if opened.y > preferred.y + product_size.y * 0.5:
+				opened = _open_position(preferred + Vector2(0.0, product_size.y + 116.0), product_size, sizes, false)
+			if opened.y < preferred.y:
+				opened.y = preferred.y
+			_layout_positions[product_id] = opened
+			cursor_x += product_size.x + group_gap
 	var gap := Vector2(72.0, 86.0)
 	var row_y := 320.0
 	var row_x := 96.0
@@ -311,13 +325,14 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		result[id] = {"position": _layout_positions[id], "size": node_size}
 	return result
 
-func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary) -> Vector2:
+func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true) -> Vector2:
 	var gap := Vector2(84.0, 104.0)
 	var candidate := preferred
 	for attempt in 18:
 		if not _overlaps_existing(candidate, node_size, sizes):
 			return candidate
-		candidate = preferred + Vector2((attempt % 3 - 1) * (node_size.x + gap.x), (attempt / 3 + 1) * (node_size.y + gap.y))
+		var side_shift := (attempt % 3 - 1) * (node_size.x + gap.x) if allow_side_shift else 0.0
+		candidate = preferred + Vector2(side_shift, (attempt / 3 + 1) * (node_size.y + gap.y))
 	return candidate
 
 func _overlaps_existing(pos: Vector2, node_size: Vector2, sizes: Dictionary) -> bool:
@@ -566,8 +581,8 @@ class EnzymeStepBox:
 		var bond_center := _bond_screen_center(molecule, transform, target_index)
 		if bond_center != Vector2(INF, INF):
 			var scissors_alpha := smoothstep(0.08, 0.22, cycle) * (1.0 - smoothstep(0.56, 0.74, cycle))
-			var scissors_drop := Vector2(0.0, lerpf(-14.0, 5.0, smoothstep(0.10, 0.48, cycle)))
-			_draw_scissors_alpha(bond_center + Vector2(25.0, -16.0) + scissors_drop, minf(rect.size.x, rect.size.y) / 118.0, scissors_alpha)
+			var scissors_drop := Vector2(0.0, lerpf(-8.0, 4.0, smoothstep(0.10, 0.48, cycle)))
+			_draw_scissors_alpha(bond_center + Vector2(28.0, -18.0) + scissors_drop, minf(rect.size.x, rect.size.y) / 176.0, scissors_alpha)
 		if product_alpha <= 0.01:
 			return
 		var products := _product_molecules()
@@ -673,17 +688,22 @@ class EnzymeStepBox:
 	func _draw_scissors_alpha(center: Vector2, scale: float, alpha: float) -> void:
 		if alpha <= 0.01:
 			return
-		var a := center + Vector2(-30, 26) * scale
-		var b := center + Vector2(20, -28) * scale
-		var c := center + Vector2(-12, 28) * scale
-		var d := center + Vector2(32, -22) * scale
-		draw_line(a, b, Color(0.0, 0.0, 0.0, alpha), 6.0 * scale, true)
-		draw_line(c, d, Color(0.0, 0.0, 0.0, alpha), 6.0 * scale, true)
-		draw_line(a, b, Color(0.96, 0.98, 1.0, alpha), 3.0 * scale, true)
-		draw_line(c, d, Color(0.96, 0.98, 1.0, alpha), 3.0 * scale, true)
-		for p in [center + Vector2(28, -28) * scale, center + Vector2(42, -18) * scale]:
-			draw_circle(p, 5.0 * scale, Color(0.0, 0.0, 0.0, alpha))
-			draw_circle(p, 3.0 * scale, Color(0.96, 0.98, 1.0, alpha))
+		var pivot := center
+		var blade_a := pivot + Vector2(-28.0, 26.0) * scale
+		var blade_b := pivot + Vector2(28.0, -28.0) * scale
+		var blade_c := pivot + Vector2(-20.0, -4.0) * scale
+		var blade_d := pivot + Vector2(34.0, 20.0) * scale
+		var outline := Color(0.0, 0.0, 0.0, 0.82 * alpha)
+		var metal := Color(0.96, 0.98, 1.0, alpha)
+		draw_line(blade_a, blade_b, outline, 5.0 * scale, true)
+		draw_line(blade_c, blade_d, outline, 5.0 * scale, true)
+		draw_line(blade_a, blade_b, metal, 2.4 * scale, true)
+		draw_line(blade_c, blade_d, metal, 2.4 * scale, true)
+		draw_circle(pivot, 3.8 * scale, outline)
+		draw_circle(pivot, 2.1 * scale, metal)
+		for p in [pivot + Vector2(25.0, -30.0) * scale, pivot + Vector2(40.0, 13.0) * scale]:
+			draw_arc(p, 6.5 * scale, 0.0, TAU, 24, outline, 4.0 * scale, true)
+			draw_arc(p, 6.5 * scale, 0.0, TAU, 24, metal, 2.0 * scale, true)
 
 	func _draw_step_label(rect: Rect2) -> void:
 		var text := str(reaction.get("tool", "enzyme")).to_upper()
