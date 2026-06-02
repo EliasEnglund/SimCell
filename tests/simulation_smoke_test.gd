@@ -29,6 +29,25 @@ func _init() -> void:
 	assert(sim.selected_molecule == "")
 	assert(sim.valid_targets("lyase", glucose_id).size() > 0)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
+	for tool in ["dehydrogenase", "oxygenase", "decarboxylase", "aminase", "desaturase"]:
+		assert(sim.valid_targets(tool, glucose_id).size() > 0)
+		var tool_target := int(sim.valid_targets(tool, glucose_id)[0])
+		assert(sim.preview_products(tool, glucose_id, tool_target).size() > 0)
+	assert(float(sim.resources.get("NADH", 0.0)) > 0.0)
+	assert(float(sim.resources.get("N", 0.0)) > 0.0)
+	var aminase_target := int(sim.valid_targets("aminase", glucose_id)[0])
+	var aminase_preview := sim.preview_products("aminase", glucose_id, aminase_target)
+	assert(str(aminase_preview[0].get("formula", "")).contains("N"))
+	var resource_sim = SimulationStateScript.new()
+	var resource_glucose_id: String = resource_sim.present_molecule_ids()[0]
+	var starting_n := float(resource_sim.resources.get("N", 0.0))
+	var resource_target := int(resource_sim.valid_targets("aminase", resource_glucose_id)[0])
+	assert(resource_sim.design_enzyme("aminase", resource_glucose_id, resource_target) == true)
+	for i in 40:
+		resource_sim.tick(0.1)
+	for i in 10:
+		resource_sim.tick(0.1)
+	assert(float(resource_sim.resources.get("N", 0.0)) < starting_n)
 	var target := int(sim.valid_targets("lyase", glucose_id)[0])
 	var preview := sim.preview_products("lyase", glucose_id, target)
 	assert(preview.size() == 2)

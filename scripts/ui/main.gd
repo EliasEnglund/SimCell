@@ -345,10 +345,12 @@ func _build_placeholder(title: String, subtitle: String) -> void:
 func _refresh() -> void:
 	if status_label == null:
 		return
-	status_label.text = "Time %.1fs | %s | %.2fx | Molecules %d | Enzymes %d" % [
+	status_label.text = "Time %.1fs | %s | %.2fx | NADH %.1f | N %.1f | Molecules %d | Enzymes %d" % [
 		sim.time_seconds,
 		"Paused" if sim.paused else "Running",
 		sim.speed,
+		float(sim.resources.get("NADH", 0.0)),
+		float(sim.resources.get("N", 0.0)),
 		sim.present_molecule_ids().size(),
 		sim.active_enzymes.size()
 	]
@@ -674,6 +676,12 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 	]
 	details.modulate = Color(0.68, 0.78, 0.76)
 	box.add_child(details)
+	var resource_delta: Dictionary = pathway.get("resource_delta", {})
+	if not resource_delta.is_empty():
+		var resources := Label.new()
+		resources.text = _resource_delta_text(resource_delta)
+		resources.modulate = Color("ffe064")
+		box.add_child(resources)
 	var select := Button.new()
 	select.text = "Manage"
 	select.custom_minimum_size = Vector2(0, 32)
@@ -730,10 +738,8 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	tools_title.add_theme_font_size_override("font_size", 26)
 	tools_title.modulate = Color("76f4ff")
 	tools.add_child(tools_title)
-	tools.add_child(_tool_button("lyase", "✂", "LYASE"))
-	tools.add_child(_tool_button("reductase", "=", "REDUCTASE"))
-	tools.add_child(_locked_tool_card("DECARBOXYLASE"))
-	tools.add_child(_locked_tool_card("SULFUR TRANSFERASE"))
+	for tool in sim.enzyme_tools():
+		tools.add_child(_tool_button(str(tool.get("id", "")), str(tool.get("icon", "")), str(tool.get("label", "")), str(tool.get("summary", ""))))
 
 	var center := VBoxContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -788,13 +794,13 @@ func _handle_empty_metabolism_click() -> void:
 	selected_pathway = ""
 	sim.deselect_molecule()
 
-func _tool_button(id: String, icon: String, label_text: String) -> Button:
+func _tool_button(id: String, icon: String, label_text: String, summary: String = "") -> Button:
 	var button := Button.new()
-	button.text = "%s\n%s" % [icon, label_text]
-	button.custom_minimum_size = Vector2(0, 112)
+	button.text = "%s  %s\n%s" % [icon, label_text, summary]
+	button.custom_minimum_size = Vector2(0, 74)
 	button.toggle_mode = true
 	button.button_pressed = designer_tool == id
-	button.add_theme_font_size_override("font_size", 22)
+	button.add_theme_font_size_override("font_size", 16)
 	button.add_theme_stylebox_override("normal", _tool_style(false))
 	button.add_theme_stylebox_override("hover", _tool_style(true))
 	button.add_theme_stylebox_override("pressed", _tool_style(true))
@@ -841,6 +847,13 @@ func _refresh_designer() -> void:
 		float(summary.get("stability", 0.0)),
 		float(summary.get("build_time", 0.0))
 	]))
+	var resource_delta: Dictionary = summary.get("resource_delta", {})
+	if not resource_delta.is_empty():
+		var resource_label := Label.new()
+		resource_label.text = "Resources: %s" % _resource_delta_text(resource_delta)
+		resource_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		resource_label.modulate = Color("ffe064")
+		summary_panel.add_child(resource_label)
 	var kept_products: Array = summary.get("products", [])
 	var kept_label := Label.new()
 	kept_label.text = "Products: %s" % (" + ".join(kept_products) if not kept_products.is_empty() else "none")
@@ -916,6 +929,16 @@ func _refresh_designer_info(molecule: Dictionary) -> void:
 	toxicity_label.text = "Toxicity: None"
 	toxicity_label.add_theme_font_size_override("font_size", 18)
 	box.add_child(toxicity_label)
+
+func _resource_delta_text(delta: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key in delta.keys():
+		var value := float(delta[key])
+		if value > 0.0:
+			parts.append("+%.0f %s" % [value, key])
+		elif value < 0.0:
+			parts.append("-%.0f %s" % [absf(value), key])
+	return ", ".join(parts) if not parts.is_empty() else "none"
 
 func _glow_panel_style(fill: Color, border: Color, width: float, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

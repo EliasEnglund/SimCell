@@ -3,6 +3,7 @@ class_name MoleculeGraph
 
 const CARBON := "C"
 const OXYGEN := "O"
+const NITROGEN := "N"
 
 static func initial_glucose_like() -> Dictionary:
 	var atoms: Array[Dictionary] = [
@@ -163,9 +164,11 @@ static func valid_reductase_targets(graph: Dictionary) -> Array[int]:
 		var bond: Dictionary = bonds[i]
 		var a := int(bond.get("a", -1))
 		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
 		var e1: String = atoms[a].get("element", "")
 		var e2: String = atoms[b].get("element", "")
-		if (e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON):
+		if int(bond.get("order", 1)) > 1 and ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON) or (e1 == CARBON and e2 == CARBON)):
 			targets.append(i)
 	return targets
 
@@ -175,10 +178,102 @@ static func apply_reductase(graph: Dictionary, bond_index: int) -> Array[Diction
 	if bond_index < 0 or bond_index >= bonds.size():
 		return []
 	var order := int(bonds[bond_index].get("order", 1))
-	bonds[bond_index]["order"] = 1 if order > 1 else 2
+	if order <= 1:
+		return []
+	bonds[bond_index]["order"] = 1
 	product["bonds"] = bonds
 	product["name"] = product.get("formula", "Molecule")
 	return [normalize(product)]
+
+static func valid_dehydrogenase_targets(graph: Dictionary) -> Array[int]:
+	var targets: Array[int] = []
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	for i in bonds.size():
+		var bond: Dictionary = bonds[i]
+		if int(bond.get("order", 1)) != 1:
+			continue
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
+		var e1: String = atoms[a].get("element", "")
+		var e2: String = atoms[b].get("element", "")
+		if (e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON) or (e1 == CARBON and e2 == CARBON):
+			targets.append(i)
+	return targets
+
+static func apply_dehydrogenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	return _set_bond_order(graph, bond_index, 2)
+
+static func valid_desaturase_targets(graph: Dictionary) -> Array[int]:
+	var targets: Array[int] = []
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	for i in bonds.size():
+		var bond: Dictionary = bonds[i]
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
+		if int(bond.get("order", 1)) == 1 and atoms[a].get("element", "") == CARBON and atoms[b].get("element", "") == CARBON:
+			targets.append(i)
+	return targets
+
+static func apply_desaturase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	return _set_bond_order(graph, bond_index, 2)
+
+static func valid_oxygenase_targets(graph: Dictionary) -> Array[int]:
+	return _valid_bonds_with_carbon(graph)
+
+static func apply_oxygenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	return _add_atom_to_bond_carbon(graph, bond_index, OXYGEN)
+
+static func valid_aminase_targets(graph: Dictionary) -> Array[int]:
+	return _valid_bonds_with_carbon(graph)
+
+static func apply_aminase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	return _add_atom_to_bond_carbon(graph, bond_index, NITROGEN)
+
+static func valid_decarboxylase_targets(graph: Dictionary) -> Array[int]:
+	var targets: Array[int] = []
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	for i in bonds.size():
+		var bond: Dictionary = bonds[i]
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size() or atoms[a].get("element", "") != CARBON or atoms[b].get("element", "") != CARBON:
+			continue
+		if _oxygen_neighbor_count(graph, a) > 0 or _oxygen_neighbor_count(graph, b) > 0 or _bond_degree(graph, a) <= 1 or _bond_degree(graph, b) <= 1:
+			targets.append(i)
+	return targets
+
+static func apply_decarboxylase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	var source := clone(graph)
+	var atoms: Array = source.get("atoms", [])
+	var bonds: Array = source.get("bonds", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return []
+	var bond: Dictionary = bonds[bond_index]
+	var a := int(bond.get("a", -1))
+	var b := int(bond.get("b", -1))
+	if a < 0 or b < 0:
+		return []
+	var remove_carbon := _preferred_carboxyl_carbon(source, a, b)
+	if remove_carbon < 0:
+		return []
+	var remove := {remove_carbon: true}
+	for neighbor in _neighbors(source, remove_carbon):
+		if atoms[int(neighbor)].get("element", "") == OXYGEN:
+			remove[int(neighbor)] = true
+	var kept: Array[int] = []
+	for i in atoms.size():
+		if not remove.has(i):
+			kept.append(i)
+	if kept.is_empty():
+		return []
+	return [_subgraph(source, kept)]
 
 static func apply_lyase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
 	var source := clone(graph)
@@ -188,6 +283,98 @@ static func apply_lyase(graph: Dictionary, bond_index: int) -> Array[Dictionary]
 	bonds.remove_at(bond_index)
 	source["bonds"] = bonds
 	return _connected_components(source)
+
+static func _set_bond_order(graph: Dictionary, bond_index: int, order: int) -> Array[Dictionary]:
+	var product := clone(graph)
+	var bonds: Array = product.get("bonds", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return []
+	if int(bonds[bond_index].get("order", 1)) == order:
+		return []
+	bonds[bond_index]["order"] = order
+	product["bonds"] = bonds
+	product["name"] = product.get("formula", "Molecule")
+	return [normalize(product)]
+
+static func _valid_bonds_with_carbon(graph: Dictionary) -> Array[int]:
+	var targets: Array[int] = []
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	for i in bonds.size():
+		var bond: Dictionary = bonds[i]
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
+		if atoms[a].get("element", "") == CARBON or atoms[b].get("element", "") == CARBON:
+			targets.append(i)
+	return targets
+
+static func _add_atom_to_bond_carbon(graph: Dictionary, bond_index: int, element: String) -> Array[Dictionary]:
+	var product := clone(graph)
+	var atoms: Array = product.get("atoms", [])
+	var bonds: Array = product.get("bonds", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return []
+	var bond: Dictionary = bonds[bond_index]
+	var a := int(bond.get("a", -1))
+	var b := int(bond.get("b", -1))
+	if a < 0 or b < 0:
+		return []
+	var carbon_index := a if atoms[a].get("element", "") == CARBON else b
+	if atoms[carbon_index].get("element", "") != CARBON:
+		return []
+	var carbon_pos: Vector2 = atoms[carbon_index].get("pos", Vector2.ZERO)
+	var other_index := b if carbon_index == a else a
+	var other_pos: Vector2 = atoms[other_index].get("pos", carbon_pos + Vector2.RIGHT)
+	var dir := (carbon_pos - other_pos).normalized()
+	if dir.length() <= 0.0:
+		dir = Vector2.UP
+	var normal := Vector2(-dir.y, dir.x)
+	var side := -1.0 if _oxygen_neighbor_count(product, carbon_index) > 0 else 1.0
+	var new_pos := carbon_pos + (normal * side + dir * 0.24).normalized() * 86.0
+	var new_index := atoms.size()
+	atoms.append({"element": element, "pos": new_pos})
+	bonds.append({"a": carbon_index, "b": new_index, "order": 1})
+	product["atoms"] = atoms
+	product["bonds"] = bonds
+	product["name"] = product.get("formula", "Molecule")
+	return [normalize(product)]
+
+static func _preferred_carboxyl_carbon(graph: Dictionary, a: int, b: int) -> int:
+	var a_oxygen := _oxygen_neighbor_count(graph, a)
+	var b_oxygen := _oxygen_neighbor_count(graph, b)
+	if a_oxygen > b_oxygen:
+		return a
+	if b_oxygen > a_oxygen:
+		return b
+	var a_degree := _bond_degree(graph, a)
+	var b_degree := _bond_degree(graph, b)
+	if a_degree <= b_degree:
+		return a
+	return b
+
+static func _oxygen_neighbor_count(graph: Dictionary, atom_index: int) -> int:
+	var count := 0
+	var atoms: Array = graph.get("atoms", [])
+	for neighbor in _neighbors(graph, atom_index):
+		if atoms[int(neighbor)].get("element", "") == OXYGEN:
+			count += 1
+	return count
+
+static func _bond_degree(graph: Dictionary, atom_index: int) -> int:
+	return _neighbors(graph, atom_index).size()
+
+static func _neighbors(graph: Dictionary, atom_index: int) -> Array[int]:
+	var output: Array[int] = []
+	for bond in graph.get("bonds", []):
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a == atom_index:
+			output.append(b)
+		elif b == atom_index:
+			output.append(a)
+	return output
 
 static func _connected_components(graph: Dictionary) -> Array[Dictionary]:
 	var atoms: Array = graph.get("atoms", [])

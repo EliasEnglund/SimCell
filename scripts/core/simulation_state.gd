@@ -22,6 +22,8 @@ var tick_accumulator := 0.0
 var molecule_types: Dictionary = {}
 var molecule_amounts: Dictionary = {}
 var molecule_rates: Dictionary = {}
+var resources: Dictionary = {}
+var resource_rates: Dictionary = {}
 var outside_amounts: Dictionary = {}
 var outside_rates: Dictionary = {}
 var transporters: Dictionary = {}
@@ -49,6 +51,8 @@ func reset() -> void:
 	molecule_types = {}
 	molecule_amounts = {}
 	molecule_rates = {}
+	resources = {"NADH": 8.0, "N": 6.0}
+	resource_rates = {"NADH": {"production": 0.0, "consumption": 0.0}, "N": {"production": 0.0, "consumption": 0.0}}
 	outside_amounts = {}
 	outside_rates = {}
 	transporters = {}
@@ -280,6 +284,17 @@ func pathway_arrows() -> Array[Dictionary]:
 		})
 	return output
 
+func enzyme_tools() -> Array[Dictionary]:
+	return [
+		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C"},
+		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O/C=C to single"},
+		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O"},
+		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "Add O"},
+		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "Remove COO"},
+		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "Add N"},
+		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C"}
+	]
+
 func membrane_transport_arrows() -> Array[Dictionary]:
 	var output: Array[Dictionary] = []
 	for transporter in transporter_list():
@@ -322,6 +337,7 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"stability": 120.0,
 		"build_time": 3.0,
+		"resource_delta": _resource_delta(tool),
 		"products": kept_products,
 		"gas_products": gas_products
 	}
@@ -352,6 +368,7 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		"substrate": substrate_id,
 		"target_index": target_index,
 		"products": product_ids,
+		"resource_delta": _resource_delta(tool),
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"km": 18.0,
 		"stability": 120.0,
@@ -391,6 +408,16 @@ func preview_products(tool: String, substrate_id: String, target_index: int) -> 
 		return Graph.apply_lyase(graph, target_index)
 	if tool == "reductase":
 		return Graph.apply_reductase(graph, target_index)
+	if tool == "dehydrogenase":
+		return Graph.apply_dehydrogenase(graph, target_index)
+	if tool == "oxygenase":
+		return Graph.apply_oxygenase(graph, target_index)
+	if tool == "decarboxylase":
+		return Graph.apply_decarboxylase(graph, target_index)
+	if tool == "aminase":
+		return Graph.apply_aminase(graph, target_index)
+	if tool == "desaturase":
+		return Graph.apply_desaturase(graph, target_index)
 	return []
 
 func valid_targets(tool: String, molecule_id: String) -> Array[int]:
@@ -401,6 +428,16 @@ func valid_targets(tool: String, molecule_id: String) -> Array[int]:
 		return Graph.valid_lyase_targets(graph)
 	if tool == "reductase":
 		return Graph.valid_reductase_targets(graph)
+	if tool == "dehydrogenase":
+		return Graph.valid_dehydrogenase_targets(graph)
+	if tool == "oxygenase":
+		return Graph.valid_oxygenase_targets(graph)
+	if tool == "decarboxylase":
+		return Graph.valid_decarboxylase_targets(graph)
+	if tool == "aminase":
+		return Graph.valid_aminase_targets(graph)
+	if tool == "desaturase":
+		return Graph.valid_desaturase_targets(graph)
 	return []
 
 func reaction_list_for(substrate_id: String) -> Array[Dictionary]:
@@ -424,6 +461,8 @@ func _tick_metabolism(dt: float) -> void:
 		molecule_rates[id] = {"production": 0.0, "consumption": 0.0}
 	for id in outside_amounts.keys():
 		outside_rates[id] = {"production": 0.0, "consumption": 0.0}
+	for id in resources.keys():
+		resource_rates[id] = {"production": 0.0, "consumption": 0.0}
 	_apply_membrane_transport(dt)
 	var previous_amounts := molecule_amounts.duplicate(true)
 
@@ -450,12 +489,14 @@ func _tick_metabolism(dt: float) -> void:
 		var actual_rate := demand
 		if total_demand > available_rate and total_demand > 0.0:
 			actual_rate = available_rate * demand / total_demand
+		actual_rate = _limit_rate_by_resources(blueprint, actual_rate, dt)
 		var consumed := minf(actual_rate * dt, float(molecule_amounts.get(substrate_id, 0.0)))
 		if consumed <= 0.0:
 			actual_rate = 0.0
 		else:
 			molecule_amounts[substrate_id] = float(molecule_amounts.get(substrate_id, 0.0)) - consumed
 			molecule_rates[substrate_id]["consumption"] = float(molecule_rates[substrate_id].get("consumption", 0.0)) + actual_rate
+			_apply_resource_delta(blueprint, consumed, dt)
 			var products: Array = blueprint.get("products", [])
 			for product_id in products:
 				molecule_amounts[product_id] = float(molecule_amounts.get(product_id, 0.0)) + consumed
@@ -549,6 +590,32 @@ func _ensure_rate_entries(molecule_id: String) -> void:
 	if not outside_rates.has(molecule_id):
 		outside_rates[molecule_id] = {"production": 0.0, "consumption": 0.0}
 
+func _limit_rate_by_resources(blueprint: Dictionary, requested_rate: float, dt: float) -> float:
+	var limited := requested_rate
+	var delta: Dictionary = blueprint.get("resource_delta", {})
+	for resource_id in delta.keys():
+		var per_reaction := float(delta[resource_id])
+		if per_reaction >= 0.0:
+			continue
+		var available := float(resources.get(resource_id, 0.0))
+		limited = minf(limited, available / maxf(dt * absf(per_reaction), 0.0001))
+	return limited
+
+func _apply_resource_delta(blueprint: Dictionary, reactions_done: float, dt: float) -> void:
+	var delta: Dictionary = blueprint.get("resource_delta", {})
+	for resource_id in delta.keys():
+		var change := float(delta[resource_id]) * reactions_done
+		if is_zero_approx(change):
+			continue
+		resources[resource_id] = maxf(0.0, float(resources.get(resource_id, 0.0)) + change)
+		if not resource_rates.has(resource_id):
+			resource_rates[resource_id] = {"production": 0.0, "consumption": 0.0}
+		var rate := absf(change) / maxf(dt, 0.0001)
+		if change >= 0.0:
+			resource_rates[resource_id]["production"] = float(resource_rates[resource_id].get("production", 0.0)) + rate
+		else:
+			resource_rates[resource_id]["consumption"] = float(resource_rates[resource_id].get("consumption", 0.0)) + rate
+
 func _escapes_as_carbon_dioxide(graph: Dictionary) -> bool:
 	var carbon_count := 0
 	for atom in graph.get("atoms", []):
@@ -566,7 +633,16 @@ func _transporter_id(direction: String, molecule_id: String) -> String:
 	return "%s:%s" % [direction, molecule_id.md5_text()]
 
 func _enzyme_name(tool: String, substrate: Dictionary) -> String:
-	var enzyme_name := "Lyase" if tool == "lyase" else "Reductase"
+	var names := {
+		"lyase": "Lyase",
+		"reductase": "Reductase",
+		"dehydrogenase": "Dehydrogenase",
+		"oxygenase": "Oxygenase",
+		"decarboxylase": "Decarboxylase",
+		"aminase": "Amination Enzyme",
+		"desaturase": "Desaturase"
+	}
+	var enzyme_name: String = names.get(tool, "Enzyme")
 	var roman := "I"
 	var base := "%s %s %s" % [substrate.get("formula", "Molecule"), enzyme_name, roman]
 	return base
@@ -576,4 +652,27 @@ func _estimate_kcat(tool: String, substrate: Dictionary, target_index: int) -> f
 		return 1.0
 	if tool == "reductase":
 		return 0.7
+	if tool == "dehydrogenase":
+		return 0.8
+	if tool == "oxygenase":
+		return 0.55
+	if tool == "decarboxylase":
+		return 0.45
+	if tool == "aminase":
+		return 0.5
+	if tool == "desaturase":
+		return 0.65
 	return 0.5
+
+func _resource_delta(tool: String) -> Dictionary:
+	if tool == "reductase":
+		return {"NADH": -1.0}
+	if tool == "dehydrogenase":
+		return {"NADH": 1.0}
+	if tool == "oxygenase":
+		return {"NADH": -1.0}
+	if tool == "aminase":
+		return {"N": -1.0}
+	if tool == "desaturase":
+		return {"NADH": 1.0}
+	return {}

@@ -9,6 +9,7 @@ static func save_state(sim) -> bool:
 		"paused": sim.paused,
 		"speed": sim.speed,
 		"molecule_amounts": sim.molecule_amounts,
+		"resources": sim.resources,
 		"outside_amounts": sim.outside_amounts,
 		"transporters": sim.transporters,
 		"transporter_queue": sim.transporter_queue,
@@ -40,6 +41,7 @@ static func load_state(sim) -> bool:
 	sim.paused = bool(parsed.get("paused", sim.paused))
 	sim.speed = float(parsed.get("speed", sim.speed))
 	sim.molecule_amounts = parsed.get("molecule_amounts", sim.molecule_amounts)
+	sim.resources = parsed.get("resources", sim.resources)
 	sim.outside_amounts = parsed.get("outside_amounts", sim.outside_amounts)
 	sim.transporters = parsed.get("transporters", sim.transporters)
 	sim.transporter_queue = parsed.get("transporter_queue", [])
