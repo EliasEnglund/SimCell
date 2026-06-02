@@ -216,17 +216,10 @@ func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
 	draw_circle(pos, radius + 4.6, Color("02070b"))
-	draw_circle(pos, radius + 1.2, base.lightened(0.30))
-	draw_circle(pos, radius - 1.0, base.darkened(0.16))
-	var steps := 8
-	for i in steps:
-		var t := float(i) / float(steps - 1)
-		var r := lerpf(radius * 0.84, radius * 0.20, t)
-		var offset := Vector2(-radius * 0.12, -radius * 0.10) * (1.0 - t)
-		var shade := base.darkened(0.16).lerp(base.lightened(0.22), t)
-		draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.24))
-	draw_circle(pos + Vector2(radius * 0.28, -radius * 0.40), radius * 0.19, Color(1, 1, 1, 0.38))
-	draw_circle(pos + Vector2(radius * 0.32, -radius * 0.44), radius * 0.09, Color(1, 1, 1, 0.18))
+	draw_circle(pos, radius + 1.3, base.lightened(0.30))
+	draw_circle(pos, radius - 1.1, base.darkened(0.14))
+	draw_circle(pos + Vector2(-radius * 0.10, -radius * 0.08), radius * 0.62, Color(base.lightened(0.08).r, base.lightened(0.08).g, base.lightened(0.08).b, 0.20))
+	draw_circle(pos + Vector2(radius * 0.27, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
 
 func _atom_radius(element: String) -> float:
 	if element == "C":

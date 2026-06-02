@@ -240,13 +240,21 @@ func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictiona
 				valid_products.append(positions[product_id] + sizes[product_id] * 0.5)
 		if valid_products.is_empty():
 			continue
-		var source_center: Vector2 = positions[substrate] + sizes[substrate] * 0.5
+		var source_rect := Rect2(positions[substrate], sizes[substrate])
 		var target_center := Vector2.ZERO
+		var target_top := INF
 		for center in valid_products:
 			target_center += center
+			target_top = minf(target_top, center.y)
 		target_center /= float(valid_products.size())
-		var center := source_center.lerp(target_center, 0.52)
 		var step_size := Vector2(210.0, 112.0) * zoom
+		var center_x := lerpf(source_rect.get_center().x, target_center.x, 0.32)
+		var upper_y := source_rect.end.y + 56.0 * zoom
+		var lower_y := target_top - 70.0 * zoom
+		var center_y := (upper_y + lower_y) * 0.5
+		if lower_y < upper_y:
+			center_y = source_rect.end.y + 90.0 * zoom
+		var center := Vector2(center_x, center_y)
 		layout[blueprint_id] = {
 			"rect": Rect2(center - step_size * 0.5, step_size),
 			"reaction": reaction
@@ -511,7 +519,7 @@ class EnzymeStepBox:
 		var scale := minf(size.x * 0.62 / graph_size.x, size.y * 0.66 / graph_size.y)
 		scale = minf(scale, fixed_zoom)
 		var graph_center := (min_pos + max_pos) * 0.5
-		var center := Vector2(size.x * 0.35, size.y * 0.50)
+		var center := Vector2(size.x * 0.50, size.y * 0.46)
 		return Transform2D(Vector2(scale, 0.0), Vector2(0.0, scale), center - graph_center * scale)
 
 	func _product_transform(product: Dictionary, origin: Vector2, product_scale: float) -> Transform2D:
@@ -569,68 +577,91 @@ class EnzymeStepBox:
 
 	func _draw_lyase_cycle(molecule: Dictionary, transform: Transform2D, target_index: int, rect: Rect2) -> void:
 		var cycle := fmod(Time.get_ticks_msec() * 0.00036, 1.0)
-		var break_amount := smoothstep(0.18, 0.52, cycle) * (1.0 - smoothstep(0.66, 0.84, cycle))
-		var substrate_alpha := 1.0
-		if cycle > 0.52 and cycle < 0.86:
-			substrate_alpha = 1.0 - smoothstep(0.52, 0.68, cycle)
-		elif cycle >= 0.86:
-			substrate_alpha = smoothstep(0.86, 0.98, cycle)
-		var product_alpha := smoothstep(0.48, 0.62, cycle) * (1.0 - smoothstep(0.76, 0.94, cycle))
-		var drift := smoothstep(0.50, 0.86, cycle)
-		_draw_molecule_break_stage(molecule, transform, target_index, break_amount, substrate_alpha)
+		var break_amount := smoothstep(0.18, 0.50, cycle) * (1.0 - smoothstep(0.72, 0.90, cycle))
+		var alpha := 1.0 - smoothstep(0.72, 0.90, cycle)
+		if cycle > 0.90:
+			alpha = smoothstep(0.90, 0.99, cycle)
+			break_amount = 0.0
+		_draw_molecule_fragment_stage(molecule, transform, target_index, break_amount, alpha)
 		var bond_center := _bond_screen_center(molecule, transform, target_index)
 		if bond_center != Vector2(INF, INF):
-			var scissors_alpha := smoothstep(0.08, 0.22, cycle) * (1.0 - smoothstep(0.56, 0.74, cycle))
-			var scissors_drop := Vector2(0.0, lerpf(-8.0, 4.0, smoothstep(0.10, 0.48, cycle)))
-			_draw_scissors_alpha(bond_center + Vector2(28.0, -18.0) + scissors_drop, minf(rect.size.x, rect.size.y) / 176.0, scissors_alpha)
-		if product_alpha <= 0.01:
-			return
-		var products := _product_molecules()
-		if products.is_empty():
-			return
-		var count := products.size()
-		var base := Vector2(rect.position.x + rect.size.x * 0.42, rect.position.y + rect.size.y * 0.56)
-		for i in count:
-			var product: Dictionary = products[i]
-			var side := float(i) - float(count - 1) * 0.5
-			var start := base + Vector2(side * rect.size.x * 0.10, 0.0)
-			var end := base + Vector2(side * rect.size.x * 0.36, rect.size.y * 0.20)
-			var origin := start.lerp(end, drift)
-			var product_scale := minf(fixed_zoom * 0.56, 0.31)
-			var product_transform := _product_transform(product, origin, product_scale)
-			_draw_molecule_with_alpha(product, product_transform, product_alpha)
+			var scissors_alpha := smoothstep(0.08, 0.20, cycle) * (1.0 - smoothstep(0.58, 0.76, cycle))
+			var scissors_drop := Vector2(0.0, lerpf(-6.0, 3.0, smoothstep(0.10, 0.46, cycle)))
+			_draw_scissors_alpha(bond_center + Vector2(24.0, -14.0) + scissors_drop, minf(rect.size.x, rect.size.y) / 142.0, scissors_alpha)
 
-	func _draw_molecule_break_stage(molecule: Dictionary, transform: Transform2D, target_index: int, break_amount: float, alpha: float) -> void:
+	func _draw_molecule_fragment_stage(molecule: Dictionary, transform: Transform2D, target_index: int, break_amount: float, alpha: float) -> void:
 		var atoms: Array = molecule.get("atoms", [])
 		var bonds: Array = molecule.get("bonds", [])
+		var components := _split_components(molecule, target_index)
+		var offsets: Array[Vector2] = []
+		offsets.resize(atoms.size())
+		for atom_index in atoms.size():
+			offsets[atom_index] = Vector2.ZERO
+		if components.size() >= 2:
+			var bond: Dictionary = bonds[target_index]
+			var a_index := int(bond.get("a", 0))
+			var b_index := int(bond.get("b", 0))
+			var a_pos: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+			var b_pos: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+			var split_dir := (b_pos - a_pos).normalized()
+			if split_dir.length() <= 0.0:
+				split_dir = Vector2.RIGHT
+			for component_index in components.size():
+				var component: Array = components[component_index]
+				var side := -1.0 if component.has(a_index) else 1.0
+				var drift := (split_dir * side * 42.0 + Vector2(0.0, 14.0)) * break_amount
+				for atom_index in component:
+					offsets[int(atom_index)] = drift
 		for i in bonds.size():
 			var bond: Dictionary = bonds[i]
 			var a_index := int(bond.get("a", 0))
 			var b_index := int(bond.get("b", 0))
 			if a_index >= atoms.size() or b_index >= atoms.size():
 				continue
-			var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
-			var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
-			if i != target_index or break_amount <= 0.01:
-				_draw_step_bond(a, b, int(bond.get("order", 1)), alpha)
+			if i == target_index and break_amount > 0.03:
 				continue
-			var dir := (b - a).normalized()
-			var normal := Vector2(-dir.y, dir.x)
-			var center := a.lerp(b, 0.5)
-			var gap := 4.0 + 18.0 * break_amount
-			var cut_alpha := alpha * (0.55 + 0.45 * break_amount)
-			_draw_step_bond(a, center - dir * gap, int(bond.get("order", 1)), cut_alpha, Color("ffe064"))
-			_draw_step_bond(center + dir * gap, b, int(bond.get("order", 1)), cut_alpha, Color("ffe064"))
-			var sparks := PackedVector2Array()
-			for spark_index in 7:
-				var p := center + dir * lerpf(-gap, gap, float(spark_index) / 6.0)
-				var wave := sin(float(spark_index) * 2.2 + Time.get_ticks_msec() * 0.011) * 7.0 * break_amount
-				sparks.append(p + normal * wave)
-			draw_polyline(sparks, Color(0.45, 0.95, 1.0, 0.50 * break_amount * alpha), 4.0 * break_amount, true)
-			draw_polyline(sparks, Color(1.0, 0.95, 0.55, 0.80 * break_amount * alpha), maxf(1.0, 1.7 * break_amount), true)
-		for atom in atoms:
-			var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+			var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO) + offsets[a_index]
+			var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO) + offsets[b_index]
+			var color := Color("ffe064") if i == target_index and break_amount > 0.0 else Color.TRANSPARENT
+			_draw_step_bond(a, b, int(bond.get("order", 1)), alpha * (1.0 - break_amount * 0.8 if i == target_index else 1.0), color)
+		for atom_index in atoms.size():
+			var atom: Dictionary = atoms[atom_index]
+			var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO) + offsets[atom_index]
 			_draw_step_atom_alpha(pos, str(atom.get("element", "C")), alpha)
+
+	func _split_components(molecule: Dictionary, skipped_bond_index: int) -> Array:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		var adjacency := []
+		for i in atoms.size():
+			adjacency.append([])
+		for i in bonds.size():
+			if i == skipped_bond_index:
+				continue
+			var bond: Dictionary = bonds[i]
+			var a := int(bond.get("a", 0))
+			var b := int(bond.get("b", 0))
+			if a >= atoms.size() or b >= atoms.size():
+				continue
+			adjacency[a].append(b)
+			adjacency[b].append(a)
+		var visited := {}
+		var components := []
+		for start in atoms.size():
+			if visited.has(start):
+				continue
+			var component := []
+			var stack := [start]
+			visited[start] = true
+			while not stack.is_empty():
+				var current: int = stack.pop_back()
+				component.append(current)
+				for neighbor in adjacency[current]:
+					if not visited.has(neighbor):
+						visited[neighbor] = true
+						stack.append(neighbor)
+			components.append(component)
+		return components
 
 	func _bond_screen_center(molecule: Dictionary, transform: Transform2D, target_index: int) -> Vector2:
 		var atoms: Array = molecule.get("atoms", [])
@@ -751,7 +782,7 @@ class EnzymeStepBox:
 			_draw_step_atom_alpha(pos, str(atom.get("element", "C")), alpha)
 
 	func _draw_step_atom_alpha(pos: Vector2, element: String, alpha: float) -> void:
-		var radius := 9.5 if element == "C" else 8.5
+		var radius := 12.5 if element == "C" else 11.0
 		var base := _atom_color(element)
 		draw_circle(pos, radius + 3.0, Color(0.0, 0.0, 0.0, alpha))
 		draw_circle(pos, radius + 1.0, Color(base.lightened(0.3).r, base.lightened(0.3).g, base.lightened(0.3).b, alpha))
