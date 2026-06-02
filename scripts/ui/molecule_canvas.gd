@@ -11,6 +11,7 @@ var scale_to_fit := true
 var fixed_zoom := 1.0
 var selection_glow := false
 var physical_touch := false
+var draw_background := true
 
 var _visual_offsets: Array[Vector2] = []
 var _visual_velocities: Array[Vector2] = []
@@ -81,7 +82,8 @@ func _select_bond_target(point: Vector2) -> void:
 		queue_redraw()
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color("10292d"))
+	if draw_background:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("10292d"))
 	if molecule.is_empty():
 		return
 	var transform := _graph_transform()

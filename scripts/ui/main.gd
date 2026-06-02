@@ -22,8 +22,9 @@ var music_button: Button
 var membrane_outside_list: VBoxContainer
 var membrane_inside_list: VBoxContainer
 var membrane_transporter_list: VBoxContainer
-var membrane_detail: VBoxContainer
-var membrane_band: Control
+var membrane_import_detail: VBoxContainer
+var membrane_export_detail: VBoxContainer
+var membrane_scene: Control
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
 
@@ -243,35 +244,45 @@ func _build_protein_view() -> void:
 func _build_membrane_view() -> void:
 	var layout := HBoxContainer.new()
 	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layout.add_theme_constant_override("separation", 14)
+	layout.add_theme_constant_override("separation", 12)
 	content.add_child(layout)
 
 	var outside_panel := _panel_container("OUTSIDE")
-	outside_panel.custom_minimum_size = Vector2(300, 0)
+	outside_panel.custom_minimum_size = Vector2(280, 0)
 	layout.add_child(outside_panel)
+	outside_panel.add_child(_title("Environment", "Select a molecule outside the cell to build importers."))
 	membrane_outside_list = VBoxContainer.new()
 	membrane_outside_list.add_theme_constant_override("separation", 8)
 	outside_panel.add_child(membrane_outside_list)
+	outside_panel.add_child(_section_label("Importer Builder"))
+	membrane_import_detail = VBoxContainer.new()
+	membrane_import_detail.add_theme_constant_override("separation", 10)
+	outside_panel.add_child(membrane_import_detail)
 
-	var membrane_panel := _panel_container("MEMBRANE")
-	membrane_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	layout.add_child(membrane_panel)
-	membrane_band = _membrane_band()
-	membrane_panel.add_child(membrane_band)
-	membrane_detail = VBoxContainer.new()
-	membrane_detail.add_theme_constant_override("separation", 10)
-	membrane_panel.add_child(membrane_detail)
-	membrane_panel.add_child(_section_label("Active Transporters"))
+	var center := VBoxContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.add_theme_constant_override("separation", 10)
+	layout.add_child(center)
+	center.add_child(_section_label("Membrane Cross-Section"))
+	membrane_scene = _membrane_cross_section()
+	center.add_child(membrane_scene)
+	center.add_child(_section_label("Active Transporters"))
 	membrane_transporter_list = VBoxContainer.new()
 	membrane_transporter_list.add_theme_constant_override("separation", 8)
-	membrane_panel.add_child(membrane_transporter_list)
+	center.add_child(membrane_transporter_list)
 
 	var inside_panel := _panel_container("INSIDE CELL")
 	inside_panel.custom_minimum_size = Vector2(300, 0)
 	layout.add_child(inside_panel)
+	inside_panel.add_child(_title("Cytoplasm", "Select a molecule inside the cell to build exporters."))
 	membrane_inside_list = VBoxContainer.new()
 	membrane_inside_list.add_theme_constant_override("separation", 8)
 	inside_panel.add_child(membrane_inside_list)
+	inside_panel.add_child(_section_label("Exporter Builder"))
+	membrane_export_detail = VBoxContainer.new()
+	membrane_export_detail.add_theme_constant_override("separation", 10)
+	inside_panel.add_child(membrane_export_detail)
 
 func _build_placeholder(title: String, subtitle: String) -> void:
 	var box := CenterContainer.new()
@@ -310,8 +321,8 @@ func _refresh_membrane() -> void:
 		membrane_inside_list.add_child(_membrane_molecule_button(id, "inside"))
 	_refresh_membrane_detail()
 	_refresh_transporter_list()
-	if membrane_band != null:
-		membrane_band.queue_redraw()
+	if membrane_scene != null:
+		membrane_scene.update_from_simulation()
 
 func _membrane_molecule_button(id: String, location: String) -> Button:
 	var molecule: Dictionary = sim.molecule_types[id]
@@ -336,9 +347,11 @@ func _membrane_molecule_button(id: String, location: String) -> Button:
 	return button
 
 func _refresh_membrane_detail() -> void:
-	_clear(membrane_detail)
+	_clear(membrane_import_detail)
+	_clear(membrane_export_detail)
 	if not sim.molecule_types.has(selected_membrane_molecule):
-		membrane_detail.add_child(_title("No molecule selected", "Select an outside molecule to build an importer or an inside molecule to build an exporter."))
+		membrane_import_detail.add_child(_title("No molecule selected", ""))
+		membrane_export_detail.add_child(_title("No molecule selected", ""))
 		return
 	var molecule: Dictionary = sim.molecule_types[selected_membrane_molecule]
 	var count := sim.transporter_count(selected_membrane_direction, selected_membrane_molecule)
@@ -348,7 +361,10 @@ func _refresh_membrane_detail() -> void:
 	var action := "Importer" if selected_membrane_direction == "import" else "Exporter"
 	var queue_text := " | %d building" % queued_count if queued_count > 0 else ""
 	var build_text := " | next %.1fs" % next_build if queued_count > 0 else ""
-	membrane_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d active%s | %.1f molecules/s%s" % [count, queue_text, rate, build_text]))
+	var target_detail := membrane_import_detail if selected_membrane_direction == "import" else membrane_export_detail
+	var idle_detail := membrane_export_detail if selected_membrane_direction == "import" else membrane_import_detail
+	idle_detail.add_child(_title("No molecule selected", ""))
+	target_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d active%s | %.1f molecules/s%s" % [count, queue_text, rate, build_text]))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var build := Button.new()
@@ -366,11 +382,11 @@ func _refresh_membrane_detail() -> void:
 		sim.destroy_transporter(selected_membrane_direction, selected_membrane_molecule)
 	)
 	row.add_child(remove)
-	membrane_detail.add_child(row)
+	target_detail.add_child(row)
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(260, 150)
 	canvas.set_molecule(molecule)
-	membrane_detail.add_child(canvas)
+	target_detail.add_child(canvas)
 
 func _refresh_transporter_list() -> void:
 	_clear(membrane_transporter_list)
@@ -399,11 +415,14 @@ func _transporter_card(transporter: Dictionary) -> VBoxContainer:
 	box.add_child(detail)
 	return box
 
-func _membrane_band() -> Control:
-	var band := MembraneBand.new()
-	band.simulation = sim
-	band.custom_minimum_size = Vector2(0, 96)
-	return band
+func _membrane_cross_section() -> Control:
+	var scene := MembraneCrossSection.new()
+	scene.simulation = sim
+	scene.custom_minimum_size = Vector2(0, 430)
+	scene.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scene.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scene.clip_contents = true
+	return scene
 
 func _refresh_metabolism() -> void:
 	_clear(molecule_list)
@@ -812,34 +831,121 @@ func _log_event(message: String) -> void:
 		return
 	event_log.append_text("[%05.1f] %s\n" % [sim.time_seconds, message])
 
-class MembraneBand:
+class MembraneCrossSection:
 	extends Control
 
+	const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
+
 	var simulation
+	var _particles := {}
+	var _signature := ""
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		_update_particle_transforms()
+		queue_redraw()
+
+	func update_from_simulation() -> void:
+		if simulation == null:
+			return
+		var desired := _desired_particles()
+		var keys: Array[String] = []
+		for item in desired:
+			keys.append(item["key"])
+		keys.sort()
+		var next_signature := ",".join(keys)
+		if next_signature == _signature:
+			return
+		_signature = next_signature
+		var stale_keys: Array = []
+		for key in _particles.keys():
+			if not keys.has(key):
+				stale_keys.append(key)
+		for key in stale_keys:
+			var old_node: Control = _particles[key].get("node", null)
+			if old_node != null:
+				old_node.queue_free()
+			_particles.erase(key)
+		for item in desired:
+			var key: String = item["key"]
+			if _particles.has(key):
+				continue
+			var node = MoleculeCanvasScript.new()
+			node.draw_background = false
+			node.scale_to_fit = true
+			node.fixed_zoom = 0.42
+			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			node.set_molecule(simulation.molecule_types[item["id"]])
+			add_child(node)
+			item["node"] = node
+			_particles[key] = item
+		_update_particle_transforms()
+		queue_redraw()
+
+	func _desired_particles() -> Array[Dictionary]:
+		var desired: Array[Dictionary] = []
+		_append_side_particles(desired, "outside", simulation.outside_molecule_ids())
+		_append_side_particles(desired, "inside", simulation.present_molecule_ids())
+		return desired
+
+	func _append_side_particles(desired: Array[Dictionary], side: String, ids: Array[String]) -> void:
+		for id in ids:
+			var amount := float(simulation.outside_amounts.get(id, 0.0)) if side == "outside" else float(simulation.molecule_amounts.get(id, 0.0))
+			var count := clampi(1 + int(sqrt(maxf(amount, 0.0)) / 4.0), 1, 7)
+			for i in count:
+				var seed := float(abs(("%s:%s:%d" % [side, id, i]).hash() % 10000)) / 10000.0
+				desired.append({
+					"key": "%s:%s:%d" % [side, id, i],
+					"id": id,
+					"side": side,
+					"seed": seed,
+					"depth": 0.55 + fmod(seed * 3.71, 0.45)
+				})
 
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		draw_rect(rect, Color("10292d"), true)
+		var outside_rect := Rect2(Vector2.ZERO, Vector2(size.x, size.y * 0.48))
+		var inside_rect := Rect2(Vector2(0, size.y * 0.52), Vector2(size.x, size.y * 0.48))
+		draw_rect(outside_rect, Color("143036"), true)
+		draw_rect(inside_rect, Color("0d2528"), true)
+		for y in range(18, int(size.y * 0.45), 54):
+			draw_line(Vector2(0, y), Vector2(size.x, y + 22.0), Color(0.45, 0.95, 1.0, 0.035), 1.0, true)
+		for y in range(int(size.y * 0.56), int(size.y), 62):
+			draw_line(Vector2(0, y + 18.0), Vector2(size.x, y), Color(0.55, 1.0, 0.72, 0.025), 1.0, true)
 		var center_y := size.y * 0.5
-		var top := center_y - 18.0
-		var bottom := center_y + 18.0
+		var top := center_y - 34.0
+		var bottom := center_y + 34.0
+		draw_rect(Rect2(Vector2(0, top), Vector2(size.x, bottom - top)), Color("162b35"), true)
 		draw_line(Vector2(0, top), Vector2(size.x, top), Color("76f4ff"), 2.0, true)
 		draw_line(Vector2(0, bottom), Vector2(size.x, bottom), Color("76f4ff"), 2.0, true)
-		for x in range(20, int(size.x), 34):
-			draw_circle(Vector2(x, top), 8.0, Color("4a90df"))
-			draw_circle(Vector2(x + 16, bottom), 8.0, Color("a34ed0"))
-		draw_string(ThemeDB.fallback_font, Vector2(18, center_y + 5), "TRANSPORTER MEMBRANE", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("f4fbff"))
+		for x in range(16, int(size.x) + 34, 34):
+			var wobble := sin(_elapsed * 1.4 + float(x) * 0.04) * 2.0
+			draw_circle(Vector2(x, top + wobble), 8.0, Color("4a90df"))
+			draw_circle(Vector2(x + 17, bottom - wobble), 8.0, Color("a34ed0"))
+			draw_line(Vector2(x, top + 8.0 + wobble), Vector2(x + 17, bottom - 8.0 - wobble), Color(0.82, 0.94, 0.96, 0.18), 2.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(18, 30), "OUTSIDE ENVIRONMENT", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
+		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 22), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
 		if simulation == null:
 			return
 		var arrows: Array = simulation.membrane_transport_arrows()
-		var start_x := maxf(220.0, size.x * 0.32)
-		var spacing := 74.0
+		var start_x := maxf(120.0, size.x * 0.26)
+		var spacing := 92.0
 		for i in min(arrows.size(), 6):
 			var arrow: Dictionary = arrows[i]
-			var x: float = start_x + i * spacing
+			var x: float = start_x + i * spacing + sin(_elapsed + float(i)) * 3.0
 			var import_direction: bool = arrow.get("direction", "") == "import"
-			var from := Vector2(x, top - 24.0 if import_direction else bottom + 24.0)
-			var to := Vector2(x, bottom + 24.0 if import_direction else top - 24.0)
+			var channel_top := Vector2(x, top - 14.0)
+			var channel_bottom := Vector2(x, bottom + 14.0)
+			draw_line(channel_top, channel_bottom, Color("02070b"), 18.0, true)
+			draw_line(channel_top, channel_bottom, Color("253747"), 13.0, true)
+			draw_line(channel_top, channel_bottom, Color("76f4ff"), 2.0, true)
+			var from := Vector2(x, top - 58.0 if import_direction else bottom + 58.0)
+			var to := Vector2(x, bottom + 58.0 if import_direction else top - 58.0)
 			var color := Color("8cff6a") if import_direction else Color("ffe064")
 			draw_line(from, to, Color("02070b"), 8.0, true)
 			draw_line(from, to, color, 4.0, true)
@@ -847,7 +953,31 @@ class MembraneBand:
 			var left := to - dir * 12.0 + Vector2(-dir.y, dir.x) * 7.0
 			var right := to - dir * 12.0 - Vector2(-dir.y, dir.x) * 7.0
 			draw_colored_polygon(PackedVector2Array([to, left, right]), color)
-			draw_string(ThemeDB.fallback_font, Vector2(x - 22.0, center_y + 36.0), "%s x%d" % [arrow.get("formula", ""), int(arrow.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+			draw_string(ThemeDB.fallback_font, Vector2(x - 30.0, center_y + 82.0), "%s x%d" % [arrow.get("formula", ""), int(arrow.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+
+	func _update_particle_transforms() -> void:
+		for key in _particles.keys():
+			var item: Dictionary = _particles[key]
+			var node: Control = item.get("node", null)
+			if node == null:
+				continue
+			var molecule: Dictionary = simulation.molecule_types.get(item.get("id", ""), {})
+			var atom_count: int = maxi(1, int(molecule.get("atoms", []).size()))
+			var node_size := Vector2(92.0 + float(atom_count) * 9.0, 78.0 + float(mini(atom_count, 7)) * 5.0)
+			node.custom_minimum_size = node_size
+			node.size = node_size
+			var seed := float(item.get("seed", 0.0))
+			var depth := float(item.get("depth", 0.7))
+			var side := str(item.get("side", "outside"))
+			var y_min: float = 42.0 if side == "outside" else size.y * 0.58
+			var y_max: float = size.y * 0.39 if side == "outside" else size.y - 86.0
+			var x: float = lerpf(82.0, maxf(92.0, size.x - 130.0), fmod(seed * 7.11 + sin(_elapsed * 0.08 + seed * TAU) * 0.05, 1.0))
+			var y: float = lerpf(y_min, y_max, fmod(seed * 5.37 + cos(_elapsed * 0.06 + seed * TAU) * 0.04, 1.0))
+			var drift := Vector2(sin(_elapsed * (0.35 + seed) + seed * 19.0), cos(_elapsed * (0.28 + seed) + seed * 13.0)) * (18.0 + 18.0 * depth)
+			var perspective: float = 0.62 + depth * 0.36 + sin(_elapsed * 1.2 + seed * 23.0) * 0.045
+			node.position = Vector2(x, y) + drift - node_size * 0.5
+			node.rotation = sin(_elapsed * (0.55 + seed * 0.6) + seed * TAU) * 0.18
+			node.scale = Vector2(perspective, perspective * (0.86 + sin(_elapsed * 1.7 + seed * 11.0) * 0.09))
 
 class DesignerTitleFrame:
 	extends Control
