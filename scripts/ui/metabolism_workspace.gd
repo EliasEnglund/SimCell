@@ -497,13 +497,12 @@ class EnzymeStepBox:
 		var molecule: Dictionary = simulation.molecule_types[substrate_id]
 		var transform := _molecule_transform(molecule)
 		var target_index := _reaction_target_index()
-		if str(reaction.get("tool", "")) == "lyase" and target_index >= 0:
+		var tool := str(reaction.get("tool", ""))
+		if tool == "lyase" and target_index >= 0:
 			_draw_lyase_cycle(molecule, transform, target_index, rect)
 		else:
 			_draw_molecule(molecule, transform)
-			_draw_reaction_pulse(rect)
-			_draw_product_preview(rect)
-			_draw_enzyme_icon(rect)
+			_draw_enzyme_cycle_overlay(molecule, transform, target_index, rect, tool)
 		_draw_step_label(rect)
 
 	func _molecule_transform(molecule: Dictionary) -> Transform2D:
@@ -518,7 +517,7 @@ class EnzymeStepBox:
 		var scale := minf(size.x * 0.62 / graph_size.x, size.y * 0.66 / graph_size.y)
 		scale = minf(scale, fixed_zoom)
 		var graph_center := (min_pos + max_pos) * 0.5
-		var center := Vector2(size.x * 0.50, size.y * 0.46)
+		var center := Vector2(size.x * 0.50, size.y * 0.40)
 		return Transform2D(Vector2(scale, 0.0), Vector2(0.0, scale), center - graph_center * scale)
 
 	func _product_transform(product: Dictionary, origin: Vector2, product_scale: float) -> Transform2D:
@@ -608,7 +607,7 @@ class EnzymeStepBox:
 			for component_index in components.size():
 				var component: Array = components[component_index]
 				var side := -1.0 if component.has(a_index) else 1.0
-				var drift := (split_dir * side * 42.0 + Vector2(0.0, 14.0)) * break_amount
+				var drift := split_dir * side * 40.0 * break_amount
 				for atom_index in component:
 					offsets[int(atom_index)] = drift
 		for i in bonds.size():
@@ -680,37 +679,99 @@ class EnzymeStepBox:
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.004)
 		draw_circle(rect.get_center(), 24.0 + 20.0 * pulse, Color(0.45, 0.95, 1.0, 0.10 * (1.0 - pulse)))
 
-	func _draw_product_preview(rect: Rect2) -> void:
-		var products := _product_molecules()
-		if products.is_empty():
+	func _draw_enzyme_cycle_overlay(molecule: Dictionary, transform: Transform2D, target_index: int, rect: Rect2, tool: String) -> void:
+		var cycle := fmod(Time.get_ticks_msec() * 0.00048, 1.0)
+		var phase := smoothstep(0.12, 0.72, cycle) * (1.0 - smoothstep(0.82, 0.98, cycle))
+		var bond := _target_bond_points(molecule, transform, target_index)
+		if bond.is_empty():
+			_draw_reaction_pulse(rect)
 			return
-		var progress := smoothstep(0.05, 0.95, fmod(Time.get_ticks_msec() * 0.00055, 1.0))
-		var count := products.size()
-		for i in count:
-			var product: Dictionary = products[i]
-			var offset_y := (float(i) - float(count - 1) * 0.5) * rect.size.y * 0.22
-			var start := Vector2(rect.position.x + rect.size.x * 0.52, rect.position.y + rect.size.y * 0.52 + offset_y * 0.4)
-			var end := Vector2(rect.position.x + rect.size.x * 0.74, rect.position.y + rect.size.y * 0.52 + offset_y)
-			var origin := start.lerp(end, progress)
-			var transform := _product_transform(product, origin, minf(fixed_zoom * 0.64, 0.36))
-			var alpha := 0.22 + 0.78 * progress
-			_draw_molecule_with_alpha(product, transform, alpha)
-		var arrow_start := Vector2(rect.position.x + rect.size.x * 0.50, rect.position.y + rect.size.y * 0.80)
-		var arrow_end := Vector2(rect.position.x + rect.size.x * 0.67, rect.position.y + rect.size.y * 0.80)
-		draw_line(arrow_start, arrow_end, Color("02070b"), 5.0, true)
-		draw_line(arrow_start, arrow_end, Color("8cff6a"), 2.0, true)
-		var dir := (arrow_end - arrow_start).normalized()
-		draw_colored_polygon(PackedVector2Array([arrow_end, arrow_end - dir * 10.0 + Vector2(-dir.y, dir.x) * 5.0, arrow_end - dir * 10.0 - Vector2(-dir.y, dir.x) * 5.0]), Color("8cff6a"))
+		var a: Vector2 = bond.get("a", rect.get_center())
+		var b: Vector2 = bond.get("b", rect.get_center())
+		var center: Vector2 = a.lerp(b, 0.5)
+		var dir := (b - a).normalized()
+		if dir.length() <= 0.0:
+			dir = Vector2.RIGHT
+		var normal := Vector2(-dir.y, dir.x)
+		match tool:
+			"reductase":
+				_draw_reductase_effect(a, b, center, normal, phase, cycle)
+			"dehydrogenase":
+				_draw_dehydrogenase_effect(a, b, center, normal, phase, cycle)
+			"oxygenase":
+				_draw_add_atom_effect(molecule, transform, target_index, "O", Color("e95058"), phase, cycle)
+			"decarboxylase":
+				_draw_decarboxylase_effect(molecule, transform, target_index, phase, cycle)
+			"aminase":
+				_draw_add_atom_effect(molecule, transform, target_index, "N", Color("4a90df"), phase, cycle)
+			"desaturase":
+				_draw_desaturase_effect(a, b, center, normal, phase, cycle)
+			_:
+				_draw_reaction_pulse(rect)
 
-	func _draw_enzyme_icon(rect: Rect2) -> void:
-		var center := Vector2(rect.position.x + rect.size.x * 0.74, rect.position.y + rect.size.y * 0.45)
-		var size_scale := minf(rect.size.x, rect.size.y) / 132.0
-		if str(reaction.get("tool", "")) == "lyase":
-			_draw_scissors(center, size_scale)
-		else:
-			draw_circle(center, 20.0 * size_scale, Color("02070b"))
-			draw_circle(center, 15.0 * size_scale, Color("76f4ff"))
-			draw_line(center + Vector2(-24, 0) * size_scale, center + Vector2(24, 0) * size_scale, Color("f4fbff"), 4.0 * size_scale, true)
+	func _draw_reductase_effect(a: Vector2, b: Vector2, center: Vector2, normal: Vector2, phase: float, cycle: float) -> void:
+		var nad_pos := center + Vector2(-58.0, -34.0).lerp(Vector2(0.0, 0.0), phase)
+		_draw_resource_bead(nad_pos, "NADH", Color("76f4ff"), 1.0 - smoothstep(0.64, 0.92, cycle))
+		var intensity := 0.28 + 0.72 * phase
+		_draw_step_bond(a, b, 1, intensity, Color("8cff6a"))
+		draw_line(center - normal * 18.0, center + normal * 18.0, Color(0.55, 1.0, 0.42, 0.36 * phase), 3.0, true)
+
+	func _draw_dehydrogenase_effect(a: Vector2, b: Vector2, center: Vector2, normal: Vector2, phase: float, cycle: float) -> void:
+		var nad_pos := center.lerp(center + Vector2(56.0, -38.0), phase)
+		_draw_resource_bead(nad_pos, "+NADH", Color("76f4ff"), smoothstep(0.22, 0.72, cycle))
+		_draw_step_bond(a, b, 2, 0.35 + 0.65 * phase, Color("ffe064"))
+		_draw_spark_line(center - normal * 17.0, center + normal * 17.0, normal, phase, Color("ffe064"))
+
+	func _draw_desaturase_effect(a: Vector2, b: Vector2, center: Vector2, normal: Vector2, phase: float, cycle: float) -> void:
+		_draw_step_bond(a, b, 1, 0.45, Color("dbeff2"))
+		var offset := normal * 4.0
+		var grow_a := a.lerp(center, 1.0 - phase) + offset
+		var grow_b := b.lerp(center, 1.0 - phase) + offset
+		draw_line(grow_a, grow_b, Color("02070b"), 5.4, true)
+		draw_line(grow_a, grow_b, Color("ffe064"), 2.4, true)
+		_draw_resource_bead(center.lerp(center + Vector2(52.0, -30.0), phase), "+NADH", Color("76f4ff"), smoothstep(0.28, 0.80, cycle))
+
+	func _draw_add_atom_effect(molecule: Dictionary, transform: Transform2D, target_index: int, element: String, color: Color, phase: float, cycle: float) -> void:
+		var carbon := _target_carbon_point(molecule, transform, target_index)
+		if carbon == Vector2(INF, INF):
+			return
+		var source := carbon + Vector2(58.0, -42.0)
+		var atom_pos := source.lerp(carbon + Vector2(34.0, -22.0), phase)
+		var alpha := 1.0 - smoothstep(0.84, 0.98, cycle)
+		draw_line(carbon, atom_pos, Color(0.0, 0.0, 0.0, 0.75 * phase * alpha), 5.0, true)
+		draw_line(carbon, atom_pos, Color(color.r, color.g, color.b, 0.92 * phase * alpha), 2.0, true)
+		_draw_step_atom_alpha(atom_pos, element, alpha)
+		var label := "-NADH" if element == "O" else "-N"
+		draw_string(ThemeDB.fallback_font, atom_pos + Vector2(10.0, -8.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, color.lightened(0.28))
+
+	func _draw_decarboxylase_effect(molecule: Dictionary, transform: Transform2D, target_index: int, phase: float, cycle: float) -> void:
+		var carbon := _target_carboxyl_point(molecule, transform, target_index)
+		if carbon == Vector2(INF, INF):
+			return
+		var bubble := carbon.lerp(carbon + Vector2(0.0, -58.0), phase)
+		var alpha := 1.0 - smoothstep(0.72, 0.98, cycle)
+		draw_circle(carbon, 22.0 + 8.0 * phase, Color(1.0, 0.88, 0.32, 0.14 * alpha))
+		draw_line(carbon + Vector2(-18.0, 0.0), carbon + Vector2(18.0, 0.0), Color("ffe064"), 2.0, true)
+		draw_circle(bubble, 18.0, Color(0.0, 0.0, 0.0, 0.45 * alpha))
+		draw_circle(bubble, 14.0, Color(0.68, 0.88, 0.92, 0.34 * alpha))
+		draw_string(ThemeDB.fallback_font, bubble + Vector2(-17.0, 5.0), "CO2", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.96, 1.0, 1.0, alpha))
+
+	func _draw_resource_bead(pos: Vector2, text: String, color: Color, alpha: float) -> void:
+		if alpha <= 0.01:
+			return
+		draw_circle(pos, 13.0, Color(0.0, 0.0, 0.0, 0.62 * alpha))
+		draw_circle(pos, 10.0, Color(color.r, color.g, color.b, 0.86 * alpha))
+		draw_circle(pos + Vector2(3.0, -4.0), 3.0, Color(1, 1, 1, 0.38 * alpha))
+		draw_string(ThemeDB.fallback_font, pos + Vector2(12.0, 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(color.lightened(0.32).r, color.lightened(0.32).g, color.lightened(0.32).b, alpha))
+
+	func _draw_spark_line(a: Vector2, b: Vector2, normal: Vector2, phase: float, color: Color) -> void:
+		var points := PackedVector2Array()
+		for i in 6:
+			var t := float(i) / 5.0
+			var wave := sin(t * TAU * 2.0 + Time.get_ticks_msec() * 0.01) * 6.0 * phase
+			points.append(a.lerp(b, t) + normal * wave)
+		draw_polyline(points, Color(color.r, color.g, color.b, 0.42 * phase), 4.0, true)
+		draw_polyline(points, Color("f4fbff"), maxf(1.0, 1.2 * phase), true)
 
 	func _draw_scissors(center: Vector2, scale: float) -> void:
 		_draw_scissors_alpha(center, scale, 1.0)
@@ -804,6 +865,65 @@ class EnzymeStepBox:
 		if simulation != null and simulation.enzyme_blueprints.has(blueprint_id):
 			return int(simulation.enzyme_blueprints[blueprint_id].get("target_index", -1))
 		return -1
+
+	func _target_bond_points(molecule: Dictionary, transform: Transform2D, target_index: int) -> Dictionary:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		if target_index < 0 or target_index >= bonds.size():
+			return {}
+		var bond: Dictionary = bonds[target_index]
+		var a_index := int(bond.get("a", 0))
+		var b_index := int(bond.get("b", 0))
+		if a_index >= atoms.size() or b_index >= atoms.size():
+			return {}
+		return {
+			"a": transform * atoms[a_index].get("pos", Vector2.ZERO),
+			"b": transform * atoms[b_index].get("pos", Vector2.ZERO),
+			"a_index": a_index,
+			"b_index": b_index
+		}
+
+	func _target_carbon_point(molecule: Dictionary, transform: Transform2D, target_index: int) -> Vector2:
+		var atoms: Array = molecule.get("atoms", [])
+		var bond := _target_bond_points(molecule, transform, target_index)
+		if bond.is_empty():
+			return Vector2(INF, INF)
+		var a_index := int(bond.get("a_index", -1))
+		var b_index := int(bond.get("b_index", -1))
+		if a_index >= 0 and atoms[a_index].get("element", "") == "C":
+			return bond.get("a", Vector2(INF, INF))
+		if b_index >= 0 and atoms[b_index].get("element", "") == "C":
+			return bond.get("b", Vector2(INF, INF))
+		return Vector2(INF, INF)
+
+	func _target_carboxyl_point(molecule: Dictionary, transform: Transform2D, target_index: int) -> Vector2:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		var bond := _target_bond_points(molecule, transform, target_index)
+		if bond.is_empty():
+			return Vector2(INF, INF)
+		var best_index := int(bond.get("a_index", -1))
+		var best_score := -1
+		for candidate in [int(bond.get("a_index", -1)), int(bond.get("b_index", -1))]:
+			if candidate < 0 or candidate >= atoms.size():
+				continue
+			var score := 0
+			for test_bond in bonds:
+				var a := int(test_bond.get("a", -1))
+				var b := int(test_bond.get("b", -1))
+				var other := -1
+				if a == candidate:
+					other = b
+				elif b == candidate:
+					other = a
+				if other >= 0 and other < atoms.size() and atoms[other].get("element", "") == "O":
+					score += 1
+			if score > best_score:
+				best_score = score
+				best_index = candidate
+		if best_index == int(bond.get("b_index", -1)):
+			return bond.get("b", Vector2(INF, INF))
+		return bond.get("a", Vector2(INF, INF))
 
 	func _product_molecules() -> Array[Dictionary]:
 		var output: Array[Dictionary] = []
