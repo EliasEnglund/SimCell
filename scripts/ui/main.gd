@@ -37,8 +37,7 @@ func _ready() -> void:
 	sim.changed.connect(_refresh)
 	sim.event_logged.connect(_log_event)
 	_setup_music()
-	_build_shell()
-	_show_view("metabolism")
+	_build_title_screen()
 
 func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("pause_toggle"):
@@ -48,6 +47,60 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		get_tree().quit()
+
+func _build_title_screen() -> void:
+	var title_root := Control.new()
+	title_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(title_root)
+	var background := TitleBackground.new()
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_root.add_child(background)
+	var frame := DesignerTitleFrame.new()
+	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_root.add_child(frame)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	title_root.add_child(center)
+	var menu := VBoxContainer.new()
+	menu.custom_minimum_size = Vector2(420, 320)
+	menu.alignment = BoxContainer.ALIGNMENT_CENTER
+	menu.add_theme_constant_override("separation", 18)
+	center.add_child(menu)
+	var title := Label.new()
+	title.text = "SIM CELL"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 56)
+	title.modulate = Color("76f4ff")
+	menu.add_child(title)
+	var subtitle := Label.new()
+	subtitle.text = "Build metabolism. Design enzymes. Shape the cell."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.modulate = Color(0.78, 0.9, 0.88)
+	menu.add_child(subtitle)
+	var play := Button.new()
+	play.text = "PLAY"
+	play.custom_minimum_size = Vector2(280, 54)
+	play.add_theme_font_size_override("font_size", 22)
+	play.add_theme_stylebox_override("normal", _nav_style(false))
+	play.add_theme_stylebox_override("hover", _nav_style(true))
+	play.add_theme_stylebox_override("pressed", _nav_style(true))
+	play.pressed.connect(func():
+		title_root.queue_free()
+		_build_shell()
+		_show_view("metabolism")
+	)
+	menu.add_child(play)
+	var quit := Button.new()
+	quit.text = "QUIT"
+	quit.custom_minimum_size = Vector2(280, 54)
+	quit.add_theme_font_size_override("font_size", 22)
+	quit.add_theme_stylebox_override("normal", _nav_style(false))
+	quit.add_theme_stylebox_override("hover", _nav_style(true))
+	quit.add_theme_stylebox_override("pressed", _nav_style(true))
+	quit.pressed.connect(func(): get_tree().quit())
+	menu.add_child(quit)
 
 func _build_shell() -> void:
 	root = VBoxContainer.new()
@@ -821,3 +874,24 @@ class DesignerTitleFrame:
 		draw_polyline(points, glow, 7.0, true)
 		draw_polyline(points, cyan, 3.0, true)
 		draw_string(ThemeDB.fallback_font, Vector2(center_x - 145.0, 21.0), "ENZYME DESIGNER", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, cyan)
+
+class TitleBackground:
+	extends Control
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("10292d"), true)
+		var cyan := Color("76f4ff")
+		for i in 9:
+			var x := size.x * (0.12 + float(i) * 0.1)
+			var y := size.y * (0.28 + sin(float(i) * 1.7) * 0.08)
+			var r := 24.0 + float(i % 3) * 7.0
+			draw_circle(Vector2(x, y), r + 6.0, Color("02070b"))
+			draw_circle(Vector2(x, y), r, Color("728186").darkened(0.12))
+			draw_circle(Vector2(x + r * 0.32, y - r * 0.36), r * 0.18, Color(1, 1, 1, 0.38))
+			if i > 0:
+				var previous_x := size.x * (0.12 + float(i - 1) * 0.1)
+				var previous_y := size.y * (0.28 + sin(float(i - 1) * 1.7) * 0.08)
+				draw_line(Vector2(previous_x, previous_y), Vector2(x, y), Color("02070b"), 13.0, true)
+				draw_line(Vector2(previous_x, previous_y), Vector2(x, y), Color("dbeff2"), 6.0, true)
+		draw_line(Vector2(0, size.y - 88.0), Vector2(size.x, size.y - 88.0), Color(0.45, 0.95, 1.0, 0.18), 3.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(36, size.y - 42.0), "SIMULATION PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, cyan)
