@@ -338,8 +338,8 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.scale_to_fit = false
 	canvas.fixed_zoom = _fixed_zoom * zoom
-	canvas.atom_scale = 0.78
-	canvas.bond_scale = 0.74
+	canvas.atom_scale = 0.68
+	canvas.bond_scale = 0.62
 	canvas.selection_glow = simulation.selected_molecule == id
 	canvas.set_molecule(simulation.molecule_types[id])
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:

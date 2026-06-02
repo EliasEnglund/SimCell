@@ -7,7 +7,7 @@ func _init() -> void:
 	assert(sim.present_molecule_ids().size() == 1)
 	assert(sim.selected_molecule == "")
 	var glucose_id: String = sim.present_molecule_ids()[0]
-	assert(sim.molecule_types[glucose_id].get("formula", "") == "C₆O₆")
+	assert(sim.molecule_types[glucose_id].get("formula", "") == "C₆O₂")
 	assert(sim.outside_molecule_ids().has(glucose_id))
 	assert(sim.transporter_count("import", glucose_id) == 4)
 	assert(is_equal_approx(sim.transporter_rate("import", glucose_id), 8.0))

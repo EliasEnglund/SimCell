@@ -5,37 +5,25 @@ const CARBON := "C"
 const OXYGEN := "O"
 
 static func initial_glucose_like() -> Dictionary:
-	var atoms: Array[Dictionary] = []
-	var bonds: Array[Dictionary] = []
-	var carbon_positions := [
-		Vector2(-230.0, 28.0),
-		Vector2(-150.0, -26.0),
-		Vector2(-68.0, 26.0),
-		Vector2(18.0, -24.0),
-		Vector2(104.0, 24.0),
-		Vector2(190.0, -20.0)
+	var atoms: Array[Dictionary] = [
+		{"element": CARBON, "pos": Vector2(-220.0, 34.0)},
+		{"element": CARBON, "pos": Vector2(-138.0, -10.0)},
+		{"element": CARBON, "pos": Vector2(-138.0, -96.0)},
+		{"element": CARBON, "pos": Vector2(-50.0, 24.0)},
+		{"element": CARBON, "pos": Vector2(42.0, -22.0)},
+		{"element": CARBON, "pos": Vector2(130.0, 20.0)},
+		{"element": OXYGEN, "pos": Vector2(202.0, -32.0)},
+		{"element": OXYGEN, "pos": Vector2(206.0, 70.0)}
 	]
-	var oxygen_offsets := [
-		Vector2(-84.0, 66.0),
-		Vector2(0.0, -86.0),
-		Vector2(0.0, 82.0),
-		Vector2(0.0, -82.0),
-		Vector2(0.0, 82.0),
-		Vector2(78.0, -46.0)
+	var bonds: Array[Dictionary] = [
+		{"a": 0, "b": 1, "order": 1},
+		{"a": 1, "b": 2, "order": 1},
+		{"a": 1, "b": 3, "order": 1},
+		{"a": 3, "b": 4, "order": 2},
+		{"a": 4, "b": 5, "order": 1},
+		{"a": 5, "b": 6, "order": 1},
+		{"a": 5, "b": 7, "order": 2}
 	]
-	for i in 6:
-		atoms.append({
-			"element": CARBON,
-			"pos": carbon_positions[i]
-		})
-		atoms.append({
-			"element": OXYGEN,
-			"pos": carbon_positions[i] + oxygen_offsets[i]
-		})
-	for i in 5:
-		bonds.append({"a": i * 2, "b": (i + 1) * 2, "order": 1})
-	for i in 6:
-		bonds.append({"a": i * 2, "b": i * 2 + 1, "order": 2 if i == 5 else 1})
 	return normalize({"name": "Glucose", "atoms": atoms, "bonds": bonds})
 
 static func demo_molecules() -> Array[Dictionary]:
