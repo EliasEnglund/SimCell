@@ -89,13 +89,18 @@ func _build_shell() -> void:
 	for item in [
 		["◎", "Cell", "cell"],
 		["⌬", "Metabolism", "metabolism"],
-		["◌", "Membrane", "membrane"],
-		["▣", "Proteins", "proteins"],
+		["⇄", "Membrane", "membrane"],
+		["▤", "Proteins", "proteins"],
 		["⌁", "DNA", "dna"]
 	]:
 		var button := Button.new()
 		button.text = "%s\n%s" % [item[0], item[1]]
-		button.custom_minimum_size = Vector2(132, 58)
+		button.custom_minimum_size = Vector2(142, 58)
+		button.add_theme_font_size_override("font_size", 15)
+		button.add_theme_stylebox_override("normal", _nav_style(false))
+		button.add_theme_stylebox_override("hover", _nav_style(true))
+		button.add_theme_stylebox_override("pressed", _nav_style(true))
+		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		button.pressed.connect(func(view_id = item[2]): _show_view(view_id))
 		bottom_nav.add_child(button)
 
@@ -444,11 +449,11 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 
 func _open_enzyme_designer(molecule_id: String) -> void:
 	sim.select_molecule(molecule_id)
-	_clear(root)
+	sim.active_view = "enzyme_designer"
+	_clear(content)
 	var designer_root := Control.new()
-	designer_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	designer_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(designer_root)
+	designer_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.add_child(designer_root)
 	var background := ColorRect.new()
 	background.color = Color("10292d")
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -463,7 +468,7 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	shell.offset_left = 24
 	shell.offset_top = 54
 	shell.offset_right = -24
-	shell.offset_bottom = -22
+	shell.offset_bottom = -12
 	shell.add_theme_constant_override("separation", 34)
 	designer_root.add_child(shell)
 
@@ -498,9 +503,8 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.add_child(top_spacer)
 	designer_canvas = MoleculeCanvasScript.new()
-	designer_canvas.custom_minimum_size = Vector2(760, 490)
+	designer_canvas.custom_minimum_size = Vector2(760, 360)
 	designer_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	designer_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	designer_canvas.interactive = true
 	designer_canvas.target_selected.connect(_designer_target_selected)
 	center.add_child(designer_canvas)
@@ -516,7 +520,7 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	var back := Button.new()
 	back.text = "Back"
 	back.custom_minimum_size = Vector2(0, 40)
-	back.pressed.connect(func(): _restore_main_shell())
+	back.pressed.connect(func(): _show_view("metabolism"))
 	info_stack.add_child(back)
 	designer_info_panel = VBoxContainer.new()
 	designer_info_panel.add_theme_constant_override("separation", 9)
@@ -680,6 +684,20 @@ func _tool_style(active: bool) -> StyleBoxFlat:
 	style.shadow_size = 8 if active else 4
 	return style
 
+func _nav_style(active: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("1f3340") if active else Color("142531")
+	style.border_color = Color("76f4ff") if active else Color("2f7080")
+	style.set_border_width_all(1.5)
+	style.set_corner_radius_all(7)
+	style.shadow_color = Color(0.45, 0.95, 1.0, 0.22 if active else 0.10)
+	style.shadow_size = 7 if active else 3
+	style.content_margin_left = 10
+	style.content_margin_top = 6
+	style.content_margin_right = 10
+	style.content_margin_bottom = 6
+	return style
+
 func _formula_badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("c8c8c8")
@@ -691,8 +709,6 @@ func _formula_badge_style() -> StyleBoxFlat:
 	return style
 
 func _restore_main_shell() -> void:
-	_clear(root)
-	_build_shell()
 	_show_view("metabolism")
 
 func _refresh_protein_queue() -> void:
