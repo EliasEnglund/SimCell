@@ -298,45 +298,43 @@ func _build_protein_view() -> void:
 func _build_membrane_view() -> void:
 	var layout := HBoxContainer.new()
 	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layout.add_theme_constant_override("separation", 12)
+	layout.add_theme_constant_override("separation", 10)
 	content.add_child(layout)
 
-	var outside_panel := _panel_container("OUTSIDE")
-	outside_panel.custom_minimum_size = Vector2(280, 0)
+	var outside_panel := _glow_panel("EXTRACELLULAR COMPOSITION")
+	outside_panel.custom_minimum_size = Vector2(340, 0)
 	layout.add_child(outside_panel)
-	outside_panel.add_child(_title("Environment", "Select a molecule outside the cell to build importers."))
 	membrane_outside_list = VBoxContainer.new()
-	membrane_outside_list.add_theme_constant_override("separation", 8)
+	membrane_outside_list.add_theme_constant_override("separation", 9)
 	outside_panel.add_child(membrane_outside_list)
 	outside_panel.add_child(_section_label("Importer Builder"))
 	membrane_import_detail = VBoxContainer.new()
 	membrane_import_detail.add_theme_constant_override("separation", 10)
 	outside_panel.add_child(membrane_import_detail)
 
-	var center := VBoxContainer.new()
+	var center := Control.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.add_theme_constant_override("separation", 10)
 	layout.add_child(center)
-	center.add_child(_section_label("Membrane Cross-Section"))
 	membrane_scene = _membrane_cross_section()
+	membrane_scene.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.add_child(membrane_scene)
-	center.add_child(_section_label("Active Transporters"))
+
+	var right_panel := _glow_panel("SOURCE METABOLITES")
+	right_panel.custom_minimum_size = Vector2(340, 0)
+	layout.add_child(right_panel)
+	right_panel.add_child(_section_label("Inside Cell"))
+	membrane_inside_list = VBoxContainer.new()
+	membrane_inside_list.add_theme_constant_override("separation", 9)
+	right_panel.add_child(membrane_inside_list)
+	right_panel.add_child(_section_label("Active Transporters"))
 	membrane_transporter_list = VBoxContainer.new()
 	membrane_transporter_list.add_theme_constant_override("separation", 8)
-	center.add_child(membrane_transporter_list)
-
-	var inside_panel := _panel_container("INSIDE CELL")
-	inside_panel.custom_minimum_size = Vector2(300, 0)
-	layout.add_child(inside_panel)
-	inside_panel.add_child(_title("Cytoplasm", "Select a molecule inside the cell to build exporters."))
-	membrane_inside_list = VBoxContainer.new()
-	membrane_inside_list.add_theme_constant_override("separation", 8)
-	inside_panel.add_child(membrane_inside_list)
-	inside_panel.add_child(_section_label("Exporter Builder"))
+	right_panel.add_child(membrane_transporter_list)
+	right_panel.add_child(_section_label("Exporter Builder"))
 	membrane_export_detail = VBoxContainer.new()
 	membrane_export_detail.add_theme_constant_override("separation", 10)
-	inside_panel.add_child(membrane_export_detail)
+	right_panel.add_child(membrane_export_detail)
 
 func _build_placeholder(title: String, subtitle: String) -> void:
 	var box := CenterContainer.new()
@@ -369,10 +367,10 @@ func _refresh_membrane() -> void:
 			selected_membrane_direction = "import"
 	_clear(membrane_outside_list)
 	for id in sim.outside_molecule_ids():
-		membrane_outside_list.add_child(_membrane_molecule_button(id, "outside"))
+		membrane_outside_list.add_child(_membrane_source_card(id, "outside"))
 	_clear(membrane_inside_list)
-	for id in sim.present_molecule_ids():
-		membrane_inside_list.add_child(_membrane_molecule_button(id, "inside"))
+	for id in sim.outside_molecule_ids():
+		membrane_inside_list.add_child(_membrane_source_card(id, "inside"))
 	_refresh_membrane_detail()
 	_refresh_transporter_list()
 	if membrane_scene != null:
@@ -400,6 +398,38 @@ func _membrane_molecule_button(id: String, location: String) -> Button:
 	)
 	return button
 
+func _membrane_source_card(id: String, location: String) -> Button:
+	var molecule: Dictionary = sim.molecule_types[id]
+	var amount := float(sim.outside_amounts.get(id, 0.0)) if location == "outside" else float(sim.molecule_amounts.get(id, 0.0))
+	var rates: Dictionary = sim.outside_rates.get(id, {"production": 0.0, "consumption": 0.0}) if location == "outside" else sim.molecule_rates.get(id, {"production": 0.0, "consumption": 0.0})
+	var direction := "import" if location == "outside" else "export"
+	var button := Button.new()
+	var sign := "-" if location == "outside" else "+"
+	button.text = "%s  %s  %.0f\n%s%.1f/s  transport x%d" % [
+		_molecule_color_symbol(id),
+		molecule.get("formula", "Molecule"),
+		amount,
+		sign,
+		float(rates.get("consumption", 0.0) if location == "outside" else rates.get("production", 0.0)),
+		sim.transporter_count(direction, id)
+	]
+	button.toggle_mode = true
+	button.button_pressed = selected_membrane_molecule == id and selected_membrane_direction == direction
+	button.custom_minimum_size = Vector2(0, 72)
+	button.add_theme_font_size_override("font_size", 15)
+	button.add_theme_color_override("font_color", _molecule_color(id).lightened(0.58))
+	button.add_theme_color_override("font_hover_color", Color("f4fbff"))
+	button.add_theme_color_override("font_pressed_color", Color("f4fbff"))
+	button.add_theme_stylebox_override("normal", _source_card_style(false, id))
+	button.add_theme_stylebox_override("hover", _source_card_style(true, id))
+	button.add_theme_stylebox_override("pressed", _source_card_style(true, id))
+	button.pressed.connect(func():
+		selected_membrane_molecule = id
+		selected_membrane_direction = direction
+		_refresh_membrane()
+	)
+	return button
+
 func _refresh_membrane_detail() -> void:
 	_clear(membrane_import_detail)
 	_clear(membrane_export_detail)
@@ -419,6 +449,11 @@ func _refresh_membrane_detail() -> void:
 	var idle_detail := membrane_export_detail if selected_membrane_direction == "import" else membrane_import_detail
 	idle_detail.add_child(_title("No molecule selected", ""))
 	target_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d active%s | %.1f molecules/s%s" % [count, queue_text, rate, build_text]))
+	var color_note := Label.new()
+	color_note.text = "%s colored source metabolite in the membrane scene" % _molecule_color_symbol(selected_membrane_molecule)
+	color_note.modulate = _molecule_color(selected_membrane_molecule).lightened(0.40)
+	color_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	target_detail.add_child(color_note)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var build := Button.new()
@@ -439,6 +474,10 @@ func _refresh_membrane_detail() -> void:
 	target_detail.add_child(row)
 	var canvas = MoleculeCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(260, 150)
+	canvas.draw_background = false
+	canvas.scale_to_fit = true
+	canvas.atom_scale = 0.78
+	canvas.bond_scale = 0.76
 	canvas.set_molecule(molecule)
 	target_detail.add_child(canvas)
 
@@ -911,6 +950,41 @@ func _nav_style(active: bool) -> StyleBoxFlat:
 	style.content_margin_bottom = 6
 	return style
 
+func _molecule_color(id: String) -> Color:
+	if sim != null and sim.molecule_types.has(id):
+		var molecule: Dictionary = sim.molecule_types[id]
+		var name := str(molecule.get("name", "")).to_lower()
+		if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
+			return Color("64d66f")
+	var palette := [
+		Color("64d66f"),
+		Color("56a8ff"),
+		Color("e95058"),
+		Color("b956de"),
+		Color("ffe064"),
+		Color("5dd4d1"),
+		Color("ff9c5a")
+	]
+	return palette[abs(id.hash()) % palette.size()]
+
+func _molecule_color_symbol(_id: String) -> String:
+	return "●"
+
+func _source_card_style(active: bool, id: String) -> StyleBoxFlat:
+	var color := _molecule_color(id)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("1b3440") if active else Color("122532")
+	style.border_color = color.lightened(0.18) if active else Color(color.r, color.g, color.b, 0.48)
+	style.set_border_width_all(2 if active else 1)
+	style.set_corner_radius_all(6)
+	style.shadow_color = Color(color.r, color.g, color.b, 0.28 if active else 0.10)
+	style.shadow_size = 8 if active else 3
+	style.content_margin_left = 12
+	style.content_margin_right = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	return style
+
 func _formula_badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("c8c8c8")
@@ -1298,10 +1372,11 @@ class MembraneCrossSection:
 			var key: String = item["key"]
 			if _particles.has(key):
 				continue
-			var node := FloatingMolecule3D.new()
+			var node := FloatingSourceParticle.new()
 			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			node.spin_seed = float(item.get("seed", 0.0))
-			node.set_molecule(simulation.molecule_types[item["id"]])
+			node.seed = float(item.get("seed", 0.0))
+			node.color = _source_color(str(item.get("id", "")))
+			node.formula = simulation.molecule_types[item["id"]].get("formula", "")
 			add_child(node)
 			item["node"] = node
 			_particles[key] = item
@@ -1311,7 +1386,7 @@ class MembraneCrossSection:
 	func _desired_particles() -> Array[Dictionary]:
 		var desired: Array[Dictionary] = []
 		_append_side_particles(desired, "outside", simulation.outside_molecule_ids())
-		_append_side_particles(desired, "inside", simulation.present_molecule_ids())
+		_append_side_particles(desired, "inside", simulation.outside_molecule_ids())
 		return desired
 
 	func _append_side_particles(desired: Array[Dictionary], side: String, ids: Array[String]) -> void:
@@ -1319,7 +1394,9 @@ class MembraneCrossSection:
 		var side_count := 0
 		for id in ids:
 			var amount := float(simulation.outside_amounts.get(id, 0.0)) if side == "outside" else float(simulation.molecule_amounts.get(id, 0.0))
-			var count := clampi(int(ceil(sqrt(maxf(amount, 0.0)) / 1.35)), 1, 18)
+			if amount <= 0.01:
+				continue
+			var count := clampi(int(ceil(sqrt(maxf(amount, 0.0)) / (2.8 if side == "outside" else 2.2))), 1, 26)
 			counts[id] = count
 			side_count += count
 		var slot := 0
@@ -1343,52 +1420,99 @@ class MembraneCrossSection:
 
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
-		draw_rect(rect, Color("10292d"), true)
-		var outside_rect := Rect2(Vector2.ZERO, Vector2(size.x, size.y * 0.48))
-		var inside_rect := Rect2(Vector2(0, size.y * 0.52), Vector2(size.x, size.y * 0.48))
-		draw_rect(outside_rect, Color("143036"), true)
-		draw_rect(inside_rect, Color("0d2528"), true)
-		for y in range(18, int(size.y * 0.45), 54):
-			draw_line(Vector2(0, y), Vector2(size.x, y + 22.0), Color(0.45, 0.95, 1.0, 0.035), 1.0, true)
-		for y in range(int(size.y * 0.56), int(size.y), 62):
-			draw_line(Vector2(0, y + 18.0), Vector2(size.x, y), Color(0.55, 1.0, 0.72, 0.025), 1.0, true)
-		var center_y := size.y * 0.5
-		var top := center_y - 34.0
-		var bottom := center_y + 34.0
-		draw_rect(Rect2(Vector2(0, top), Vector2(size.x, bottom - top)), Color("162b35"), true)
-		draw_line(Vector2(0, top), Vector2(size.x, top), Color("76f4ff"), 2.0, true)
-		draw_line(Vector2(0, bottom), Vector2(size.x, bottom), Color("76f4ff"), 2.0, true)
-		for x in range(16, int(size.x) + 34, 34):
-			var wobble := sin(_elapsed * 1.4 + float(x) * 0.04) * 2.0
-			draw_circle(Vector2(x, top + wobble), 8.0, Color("4a90df"))
-			draw_circle(Vector2(x + 17, bottom - wobble), 8.0, Color("a34ed0"))
-			draw_line(Vector2(x, top + 8.0 + wobble), Vector2(x + 17, bottom - 8.0 - wobble), Color(0.82, 0.94, 0.96, 0.18), 2.0, true)
-		draw_string(ThemeDB.fallback_font, Vector2(18, 30), "OUTSIDE ENVIRONMENT", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
-		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 22), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
+		_draw_scene_background(rect)
+		_draw_curved_membrane()
+		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
+		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
 		if simulation == null:
 			return
+		_draw_transporter_proteins()
+
+	func _draw_scene_background(rect: Rect2) -> void:
+		draw_rect(rect, Color("0e2730"), true)
+		for i in 18:
+			var t := float(i) / 17.0
+			var color := Color("244d5d").lerp(Color("f4b08c"), smoothstep(0.48, 1.0, t))
+			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 16.0 + 2.0)), Color(color.r, color.g, color.b, 0.10), true)
+		for i in 16:
+			var y := lerpf(26.0, size.y * 0.46, float(i) / 15.0)
+			var wave := sin(_elapsed * 0.18 + float(i) * 0.7) * 16.0
+			draw_line(Vector2(0, y + wave), Vector2(size.x, y - 22.0 + wave), Color(0.72, 0.95, 1.0, 0.035), 2.0, true)
+		draw_circle(Vector2(size.x * 0.50, size.y * 0.76), size.x * 0.48, Color(1.0, 0.74, 0.58, 0.13))
+
+	func _draw_curved_membrane() -> void:
+		var center := Vector2(size.x * 0.52, size.y * 1.04)
+		var rx := size.x * 0.74
+		var top_ry := size.y * 0.56
+		var bottom_ry := top_ry + 56.0
+		var top_points := _ellipse_arc_points(center, rx, top_ry, PI * 1.08, PI * 1.92, 96)
+		var bottom_points := _ellipse_arc_points(center, rx, bottom_ry, PI * 1.08, PI * 1.92, 96)
+		var band := PackedVector2Array()
+		for p in top_points:
+			band.append(p)
+		for i in range(bottom_points.size() - 1, -1, -1):
+			band.append(bottom_points[i])
+		draw_colored_polygon(band, Color("8f5c3d"))
+		draw_polyline(top_points, Color("02070b"), 11.0, true)
+		draw_polyline(bottom_points, Color("02070b"), 11.0, true)
+		draw_polyline(top_points, Color("7fc6e8"), 7.0, true)
+		draw_polyline(bottom_points, Color("7fc6e8"), 7.0, true)
+		for i in 72:
+			var t := float(i) / 71.0
+			var angle := lerpf(PI * 1.08, PI * 1.92, t)
+			var top := center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
+			var bottom := center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
+			var wobble := sin(_elapsed * 0.8 + float(i) * 0.45) * 1.4
+			var normal := (bottom - top).normalized()
+			var tangent := Vector2(-normal.y, normal.x)
+			draw_line(top + normal * 8.0 + tangent * wobble, bottom - normal * 8.0 - tangent * wobble, Color("d49b6f"), 2.2, true)
+			draw_circle(top, 7.2, Color("02070b"))
+			draw_circle(bottom, 7.2, Color("02070b"))
+			draw_circle(top, 5.5, Color("79bed9"))
+			draw_circle(bottom, 5.5, Color("79bed9"))
+		draw_polyline(top_points, Color(0.55, 1.0, 1.0, 0.28), 2.0, true)
+		draw_polyline(bottom_points, Color(0.55, 1.0, 1.0, 0.20), 2.0, true)
+
+	func _draw_transporter_proteins() -> void:
 		var arrows: Array = simulation.membrane_transport_arrows()
-		var start_x := maxf(120.0, size.x * 0.26)
-		var spacing := 92.0
-		for i in min(arrows.size(), 6):
+		var visible: int = mini(arrows.size(), 7)
+		if visible <= 0:
+			return
+		for i in visible:
 			var arrow: Dictionary = arrows[i]
-			var x: float = start_x + i * spacing + sin(_elapsed + float(i)) * 3.0
+			var t := (float(i) + 1.0) / float(visible + 1)
+			var angle := lerpf(PI * 1.16, PI * 1.84, t)
+			var center: Vector2 = Vector2(size.x * 0.52, size.y * 1.04)
+			var rx: float = size.x * 0.74
+			var top_ry: float = size.y * 0.56
+			var bottom_ry: float = top_ry + 56.0
+			var top: Vector2 = center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
+			var bottom: Vector2 = center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
+			var mid: Vector2 = top.lerp(bottom, 0.5)
+			var normal: Vector2 = (bottom - top).normalized()
+			var tangent: Vector2 = Vector2(-normal.y, normal.x)
+			var protein_color: Color = _source_color(str(arrow.get("molecule", ""))).lightened(0.12)
+			for side in [-1.0, 1.0]:
+				var a: Vector2 = top + tangent * float(side) * 12.0 - normal * 14.0
+				var b: Vector2 = bottom + tangent * float(side) * 12.0 + normal * 14.0
+				draw_line(a, b, Color("02070b"), 15.0, true)
+				draw_line(a, b, protein_color.darkened(0.20), 11.0, true)
+				draw_line(a + tangent * 1.5, b + tangent * 1.5, protein_color.lightened(0.28), 3.0, true)
 			var import_direction: bool = arrow.get("direction", "") == "import"
-			var channel_top := Vector2(x, top - 14.0)
-			var channel_bottom := Vector2(x, bottom + 14.0)
-			draw_line(channel_top, channel_bottom, Color("02070b"), 18.0, true)
-			draw_line(channel_top, channel_bottom, Color("253747"), 13.0, true)
-			draw_line(channel_top, channel_bottom, Color("76f4ff"), 2.0, true)
-			var from := Vector2(x, top - 58.0 if import_direction else bottom + 58.0)
-			var to := Vector2(x, bottom + 58.0 if import_direction else top - 58.0)
-			var color := Color("8cff6a") if import_direction else Color("ffe064")
+			var from := mid - normal * (66.0 if import_direction else -66.0)
+			var to := mid + normal * (66.0 if import_direction else -66.0)
+			var arrow_color := Color("8cff6a") if import_direction else Color("ff6a6a")
 			draw_line(from, to, Color("02070b"), 8.0, true)
-			draw_line(from, to, color, 4.0, true)
+			draw_line(from, to, arrow_color, 4.0, true)
 			var dir := (to - from).normalized()
-			var left := to - dir * 12.0 + Vector2(-dir.y, dir.x) * 7.0
-			var right := to - dir * 12.0 - Vector2(-dir.y, dir.x) * 7.0
-			draw_colored_polygon(PackedVector2Array([to, left, right]), color)
-			draw_string(ThemeDB.fallback_font, Vector2(x - 30.0, center_y + 82.0), "%s x%d" % [arrow.get("formula", ""), int(arrow.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+			draw_colored_polygon(PackedVector2Array([to, to - dir * 13.0 + tangent * 7.0, to - dir * 13.0 - tangent * 7.0]), arrow_color)
+
+	func _ellipse_arc_points(center: Vector2, rx: float, ry: float, start_angle: float, end_angle: float, steps: int) -> PackedVector2Array:
+		var points := PackedVector2Array()
+		for i in steps + 1:
+			var angle := lerpf(start_angle, end_angle, float(i) / float(steps))
+			points.append(center + Vector2(cos(angle) * rx, sin(angle) * ry))
+		return points
 
 	func _update_particle_transforms() -> void:
 		for key in _particles.keys():
@@ -1396,9 +1520,7 @@ class MembraneCrossSection:
 			var node: Control = item.get("node", null)
 			if node == null:
 				continue
-			var molecule: Dictionary = simulation.molecule_types.get(item.get("id", ""), {})
-			var atom_count: int = maxi(1, int(molecule.get("atoms", []).size()))
-			var node_size := Vector2(58.0 + float(atom_count) * 5.0, 46.0 + float(mini(atom_count, 7)) * 3.5)
+			var node_size := Vector2(34.0, 34.0) * (0.86 + float(item.get("depth", 0.7)) * 0.44)
 			node.custom_minimum_size = node_size
 			node.size = node_size
 			var seed := float(item.get("seed", 0.0))
@@ -1416,18 +1538,61 @@ class MembraneCrossSection:
 			var row := spread_slot / columns
 			var x_seed := (float(col) + 0.5 + x_jitter * 0.45) / float(columns)
 			var y_seed := (float(row) + 0.5 + y_jitter * 0.45) / float(rows)
-			var y_min: float = 52.0 if side == "outside" else size.y * 0.61
-			var y_max: float = size.y * 0.36 if side == "outside" else size.y - 80.0
+			var y_min: float = 54.0 if side == "outside" else size.y * 0.63
+			var y_max: float = size.y * 0.38 if side == "outside" else size.y - 72.0
 			var x: float = lerpf(72.0, maxf(84.0, size.x - 96.0), x_seed)
 			var y: float = lerpf(y_min, y_max, y_seed)
 			var drift := Vector2(
 				sin(_elapsed * (0.12 + motion_seed * 0.06) + seed * 19.0),
 				cos(_elapsed * (0.10 + motion_seed * 0.05) + seed * 13.0)
 			) * (12.0 + 12.0 * depth)
-			var perspective: float = 0.40 + depth * 0.18 + sin(_elapsed * 0.35 + seed * 23.0) * 0.018
+			var perspective: float = 0.72 + depth * 0.28 + sin(_elapsed * 0.35 + seed * 23.0) * 0.018
 			node.position = Vector2(x, y) + drift - node_size * 0.5
-			node.rotation = sin(_elapsed * (0.10 + motion_seed * 0.05) + seed * TAU) * 0.06
+			node.rotation = sin(_elapsed * (0.16 + motion_seed * 0.08) + seed * TAU) * 0.18
 			node.scale = Vector2(perspective, perspective)
+
+	func _source_color(id: String) -> Color:
+		if simulation != null and simulation.molecule_types.has(id):
+			var molecule: Dictionary = simulation.molecule_types[id]
+			var name := str(molecule.get("name", "")).to_lower()
+			if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
+				return Color("64d66f")
+		var palette := [
+			Color("64d66f"),
+			Color("56a8ff"),
+			Color("e95058"),
+			Color("b956de"),
+			Color("ffe064"),
+			Color("5dd4d1"),
+			Color("ff9c5a")
+		]
+		return palette[abs(id.hash()) % palette.size()]
+
+class FloatingSourceParticle:
+	extends Control
+
+	var color := Color("64d66f")
+	var seed := 0.0
+	var formula := ""
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x, size.y) * 0.38
+		var pulse := 0.5 + 0.5 * sin(_elapsed * 0.7 + seed * TAU)
+		draw_circle(center + Vector2(0, radius * 0.22), radius * 1.08, Color(0.0, 0.0, 0.0, 0.24))
+		draw_circle(center, radius + 3.0, Color("02070b"))
+		draw_circle(center, radius + 1.0, color.lightened(0.22))
+		draw_circle(center, radius - 1.0, color.darkened(0.10))
+		draw_arc(center, radius * (0.56 + pulse * 0.08), -0.9, 2.3, 24, Color(1, 1, 1, 0.14), 2.0, true)
+		draw_circle(center + Vector2(radius * 0.28, -radius * 0.38), radius * 0.18, Color(1, 1, 1, 0.38))
 
 class FloatingMolecule3D:
 	extends Control
