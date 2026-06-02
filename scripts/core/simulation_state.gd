@@ -216,10 +216,12 @@ func destroy_transporter(direction: String, molecule_id: String) -> bool:
 	return true
 
 func metabolism_molecule_ids() -> Array[String]:
-	var ids := present_molecule_ids()
+	var ids: Array[String] = []
 	var seen := {}
-	for id in ids:
-		seen[id] = true
+	var root_id := _glucose_id()
+	if molecule_types.has(root_id):
+		ids.append(root_id)
+		seen[root_id] = true
 	for blueprint in enzyme_blueprints.values():
 		var substrate_id: String = blueprint.get("substrate", "")
 		if molecule_types.has(substrate_id) and not seen.has(substrate_id):
@@ -229,6 +231,10 @@ func metabolism_molecule_ids() -> Array[String]:
 			if molecule_types.has(product_id) and not seen.has(product_id):
 				ids.append(product_id)
 				seen[product_id] = true
+	for id in present_molecule_ids():
+		if molecule_types.has(id) and not seen.has(id):
+			ids.append(id)
+			seen[id] = true
 	return ids
 
 func pathway_list() -> Array[Dictionary]:
