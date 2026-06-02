@@ -16,7 +16,7 @@ var zoom := 1.0
 var _dragging := false
 var _last_mouse := Vector2.ZERO
 var _drag_distance := 0.0
-var _fixed_zoom := 0.72
+var _fixed_zoom := 0.46
 var _layout_positions := {}
 var _visible_positions := {}
 var _visible_sizes := {}
@@ -229,7 +229,7 @@ func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictiona
 			target_center += center
 		target_center /= float(valid_products.size())
 		var center := source_center.lerp(target_center, 0.52)
-		var step_size := Vector2(252.0, 132.0) * zoom
+		var step_size := Vector2(210.0, 112.0) * zoom
 		layout[blueprint_id] = {
 			"rect": Rect2(center - step_size * 0.5, step_size),
 			"reaction": reaction
@@ -242,7 +242,7 @@ func _reaction_step_node(item: Dictionary) -> Control:
 	var box := EnzymeStepBox.new()
 	box.simulation = simulation
 	box.reaction = reaction
-	box.fixed_zoom = _fixed_zoom * zoom * 0.72
+	box.fixed_zoom = _fixed_zoom * zoom * 0.86
 	box.selected = selected_pathway == str(reaction.get("blueprint_id", ""))
 	box.position = rect.position
 	box.size = rect.size
@@ -273,11 +273,11 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 			var source_pos: Vector2 = _layout_positions[substrate_id]
 			var source_size: Vector2 = sizes[substrate_id]
 			var product_size: Vector2 = sizes[product_id]
-			var x_offset := (float(i) - float(products.size() - 1) * 0.5) * (product_size.x + 70.0)
-			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 250.0)
+			var x_offset := (float(i) - float(products.size() - 1) * 0.5) * (product_size.x + 56.0)
+			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 190.0)
 			_layout_positions[product_id] = _open_position(preferred, product_size, sizes)
-	var gap := Vector2(90.0, 110.0)
-	var row_y := 380.0
+	var gap := Vector2(72.0, 86.0)
+	var row_y := 320.0
 	var row_x := 96.0
 	var row_height := 0.0
 	for i in ids.size():
@@ -324,7 +324,7 @@ func _molecule_canvas_size(molecule: Dictionary, zoom: float) -> Vector2:
 		min_pos = min_pos.min(pos)
 		max_pos = max_pos.max(pos)
 	var graph_size := (max_pos - min_pos).max(Vector2(80.0, 80.0))
-	return graph_size * zoom + Vector2(88.0, 116.0)
+	return graph_size * zoom + Vector2(54.0, 72.0)
 
 func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control:
 	var box := Control.new()
@@ -333,11 +333,13 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	box.size = node_size
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var canvas = MoleculeCanvasScript.new()
-	canvas.custom_minimum_size = Vector2(node_size.x, maxf(90.0, node_size.y - 48.0))
+	canvas.custom_minimum_size = Vector2(node_size.x, maxf(62.0, node_size.y - 34.0))
 	canvas.size = canvas.custom_minimum_size
 	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.scale_to_fit = false
 	canvas.fixed_zoom = _fixed_zoom * zoom
+	canvas.atom_scale = 0.78
+	canvas.bond_scale = 0.74
 	canvas.selection_glow = simulation.selected_molecule == id
 	canvas.set_molecule(simulation.molecule_types[id])
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
@@ -345,10 +347,11 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	box.add_child(canvas)
 	var label := Button.new()
 	label.position = Vector2(0, canvas.custom_minimum_size.y)
-	label.size = Vector2(node_size.x, 42.0)
+	label.size = Vector2(node_size.x, 30.0)
 	label.custom_minimum_size = label.size
 	label.scale = Vector2.ONE
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", 14)
 	label.text = "%s  %.0f" % [simulation.molecule_types[id].get("formula", ""), float(simulation.molecule_amounts.get(id, 0.0))]
 	if float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001:
 		label.text = "%s  preview" % simulation.molecule_types[id].get("formula", "")
@@ -371,8 +374,8 @@ class ArrowLine:
 			return
 		var dir := delta.normalized()
 		var normal := Vector2(-dir.y, dir.x)
-		var from := start + dir * 90.0
-		var to := end - dir * 90.0
+		var from := start + dir * 56.0
+		var to := end - dir * 56.0
 		var line_color := Color("f4fbff")
 		if active:
 			line_color = Color("8cff6a")
@@ -380,13 +383,13 @@ class ArrowLine:
 			line_color = Color("76f4ff")
 		else:
 			line_color = Color("8aa1a7")
-		draw_line(from, to, Color("02070b"), 9.0, true)
-		draw_line(from, to, line_color, 4.0, true)
-		var left := to - dir * 18.0 + normal * 9.0
-		var right := to - dir * 18.0 - normal * 9.0
+		draw_line(from, to, Color("02070b"), 7.0, true)
+		draw_line(from, to, line_color, 3.0, true)
+		var left := to - dir * 14.0 + normal * 7.0
+		var right := to - dir * 14.0 - normal * 7.0
 		draw_colored_polygon(PackedVector2Array([to, left, right]), line_color)
 		if not label.is_empty():
-			draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(8, -8), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, line_color)
+			draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(7, -7), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, line_color)
 
 class EnzymeStepBox:
 	extends Control
@@ -482,7 +485,7 @@ class EnzymeStepBox:
 		var dir := (b - a).normalized()
 		var normal := Vector2(-dir.y, dir.x)
 		var center := a.lerp(b, 0.5)
-		var gap := 10.0 + 18.0 * intensity
+		var gap := 7.0 + 13.0 * intensity
 		_draw_step_bond(a, center - dir * gap, int(bond.get("order", 1)), 0.55 + 0.45 * intensity, Color("ffe064"))
 		_draw_step_bond(center + dir * gap, b, int(bond.get("order", 1)), 0.55 + 0.45 * intensity, Color("ffe064"))
 		var sparks := PackedVector2Array()
@@ -490,7 +493,7 @@ class EnzymeStepBox:
 			var p := center + dir * lerpf(-gap, gap, float(i) / 6.0)
 			var wave := sin(float(i) * 2.2 + Time.get_ticks_msec() * 0.011) * 9.0 * intensity
 			sparks.append(p + normal * wave)
-		draw_polyline(sparks, Color("76f4ff"), 7.0 * intensity, true)
+		draw_polyline(sparks, Color("76f4ff"), 5.0 * intensity, true)
 		draw_polyline(sparks, Color("fff1a8"), maxf(1.0, 2.0 * intensity), true)
 
 	func _draw_reaction_pulse(rect: Rect2) -> void:
@@ -513,7 +516,7 @@ class EnzymeStepBox:
 			var alpha := 0.22 + 0.78 * progress
 			_draw_molecule_with_alpha(product, transform, alpha)
 		var arrow_start := Vector2(rect.position.x + rect.size.x * 0.50, rect.position.y + rect.size.y * 0.80)
-		var arrow_end := Vector2(rect.position.x + rect.size.x * 0.68, rect.position.y + rect.size.y * 0.80)
+		var arrow_end := Vector2(rect.position.x + rect.size.x * 0.67, rect.position.y + rect.size.y * 0.80)
 		draw_line(arrow_start, arrow_end, Color("02070b"), 5.0, true)
 		draw_line(arrow_start, arrow_end, Color("8cff6a"), 2.0, true)
 		var dir := (arrow_end - arrow_start).normalized()
@@ -546,7 +549,7 @@ class EnzymeStepBox:
 		var text := str(reaction.get("tool", "enzyme")).to_upper()
 		var color := Color("8cff6a") if int(reaction.get("active_count", 0)) > 0 else Color("76f4ff")
 		var status := "ACTIVE" if int(reaction.get("active_count", 0)) > 0 else ("BUILDING" if int(reaction.get("queued_count", 0)) > 0 else "DESIGNED")
-		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 12.0, rect.end.y - 12.0), "%s | %s" % [text, status], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, color)
+		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10.0, rect.end.y - 10.0), "%s | %s" % [text, status], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, color)
 
 	func _draw_step_bond(a: Vector2, b: Vector2, order: int, alpha: float, color_override: Color = Color.TRANSPARENT) -> void:
 		if a.distance_to(b) < 4.0:
@@ -556,16 +559,16 @@ class EnzymeStepBox:
 		var color := color_override if color_override.a > 0.0 else Color("dbeff2")
 		var offsets := [0.0]
 		if order == 2:
-			offsets = [-4.0, 4.0]
+			offsets = [-3.0, 3.0]
 		for offset in offsets:
-			var start: Vector2 = a + dir * 18.0 + normal * float(offset)
-			var end: Vector2 = b - dir * 18.0 + normal * float(offset)
-			draw_line(start, end, Color("02070b"), 7.0, true)
-			draw_line(start, end, Color(color.r, color.g, color.b, alpha), 3.0, true)
+			var start: Vector2 = a + dir * 13.0 + normal * float(offset)
+			var end: Vector2 = b - dir * 13.0 + normal * float(offset)
+			draw_line(start, end, Color("02070b"), 5.4, true)
+			draw_line(start, end, Color(color.r, color.g, color.b, alpha), 2.4, true)
 			draw_line(start + normal * 0.6, end + normal * 0.6, Color(1, 1, 1, 0.45 * alpha), 1.0, true)
 
 	func _draw_step_atom(pos: Vector2, element: String) -> void:
-		var radius := 17.0 if element == "C" else 15.0
+		var radius := 12.5 if element == "C" else 11.0
 		var base := _atom_color(element)
 		draw_circle(pos, radius + 4.0, Color("02070b"))
 		draw_circle(pos, radius + 1.0, base.lightened(0.3))
@@ -588,7 +591,7 @@ class EnzymeStepBox:
 			_draw_step_atom_alpha(pos, str(atom.get("element", "C")), alpha)
 
 	func _draw_step_atom_alpha(pos: Vector2, element: String, alpha: float) -> void:
-		var radius := 13.0 if element == "C" else 11.5
+		var radius := 9.5 if element == "C" else 8.5
 		var base := _atom_color(element)
 		draw_circle(pos, radius + 3.0, Color(0.0, 0.0, 0.0, alpha))
 		draw_circle(pos, radius + 1.0, Color(base.lightened(0.3).r, base.lightened(0.3).g, base.lightened(0.3).b, alpha))

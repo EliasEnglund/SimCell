@@ -12,6 +12,8 @@ var fixed_zoom := 1.0
 var selection_glow := false
 var physical_touch := false
 var draw_background := true
+var atom_scale := 1.0
+var bond_scale := 1.0
 
 var _visual_offsets: Array[Vector2] = []
 var _visual_velocities: Array[Vector2] = []
@@ -134,7 +136,7 @@ func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 		var atom: Dictionary = atoms[i]
 		var pos: Vector2 = _atom_screen_position(i, transform)
 		var element: String = atom.get("element", "C")
-		var radius := _atom_radius(element) * zoom
+		var radius := _atom_radius(element) * zoom * atom_scale
 		var base := _atom_color(element)
 		if i == _hover_atom or i == _grabbed_atom:
 			draw_circle(pos, radius + 12.0 * zoom, Color(0.45, 1.0, 0.9, 0.16))
@@ -147,26 +149,26 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 	var color := Color("dbeff2").lerp(Color("ffe064"), tension)
 	var outline := Color("02070b")
 	var inner := Color("f4fbff").lerp(Color("fff1a8"), tension)
-	var width := (8.0 + tension * 3.0) * zoom
+	var width := (8.0 + tension * 3.0) * zoom * bond_scale
 	if highlight:
 		color = Color("73e6ff").lerp(Color("ffe064"), tension)
 		inner = Color("c8fbff")
-		width = 9.0 * zoom
+		width = 9.0 * zoom * bond_scale
 	if touched:
-		width = (11.0 + tension * 4.0) * zoom
+		width = (11.0 + tension * 4.0) * zoom * bond_scale
 	if selected:
 		color = Color("8cff6a").lerp(Color("ffe064"), tension * 0.5)
 		inner = Color("e7ffd8")
-		width = 10.0 * zoom
+		width = 10.0 * zoom * bond_scale
 	var offsets := [0.0]
 	if order == 2:
-		offsets = [-7.0 * zoom, 7.0 * zoom]
+		offsets = [-7.0 * zoom * bond_scale, 7.0 * zoom * bond_scale]
 	for offset in offsets:
-		var trim := 32.0 * zoom
+		var trim := 28.0 * zoom * atom_scale
 		var start: Vector2 = a + dir * trim + normal * offset
 		var end: Vector2 = b - dir * trim + normal * offset
-		draw_line(start, end, outline, width + 7.0 * zoom, true)
-		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom, true)
+		draw_line(start, end, outline, width + 7.0 * zoom * bond_scale, true)
+		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom * bond_scale, true)
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
 		if tension > 0.08:
 			_draw_electric_bond(start, end, normal, zoom, tension, offset)
@@ -213,18 +215,18 @@ func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
 	draw_circle(_pointer_position, 9.0 + 8.0 * _pull_warning, Color(tension_color.r, tension_color.g, tension_color.b, 0.26))
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
-	draw_circle(pos, radius + 5.0, Color("02070b"))
-	draw_circle(pos, radius + 1.5, base.lightened(0.35))
+	draw_circle(pos, radius + 4.6, Color("02070b"))
+	draw_circle(pos, radius + 1.2, base.lightened(0.30))
 	draw_circle(pos, radius - 1.0, base.darkened(0.16))
 	var steps := 8
 	for i in steps:
 		var t := float(i) / float(steps - 1)
 		var r := lerpf(radius * 0.84, radius * 0.20, t)
-		var offset := Vector2(-radius * 0.16, -radius * 0.15) * (1.0 - t)
-		var shade := base.darkened(0.12).lerp(base.lightened(0.28), t)
-		draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.28))
-	draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
-	draw_circle(pos + Vector2(radius * 0.31, -radius * 0.43), radius * 0.10, Color(1, 1, 1, 0.22))
+		var offset := Vector2(-radius * 0.12, -radius * 0.10) * (1.0 - t)
+		var shade := base.darkened(0.16).lerp(base.lightened(0.22), t)
+		draw_circle(pos + offset, r, Color(shade.r, shade.g, shade.b, 0.24))
+	draw_circle(pos + Vector2(radius * 0.28, -radius * 0.40), radius * 0.19, Color(1, 1, 1, 0.38))
+	draw_circle(pos + Vector2(radius * 0.32, -radius * 0.44), radius * 0.09, Color(1, 1, 1, 0.18))
 
 func _atom_radius(element: String) -> float:
 	if element == "C":
