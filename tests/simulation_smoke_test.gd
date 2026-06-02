@@ -38,12 +38,17 @@ func _init() -> void:
 	assert(sim.design_enzyme("lyase", glucose_id, target) == true)
 	assert(sim.protein_queue.size() == 1)
 	assert(sim.pathway_list().size() == 1)
+	var blueprint_id: String = sim.pathway_list()[0].get("id", "")
 	assert(sim.pathway_list()[0].get("status", "") == "Building")
 	assert(sim.pathway_list()[0].get("products", []).size() == 1)
+	assert(sim.queue_enzyme_build(blueprint_id, 2) == true)
+	assert(sim.protein_queue.size() == 3)
 	assert(sim.metabolism_molecule_ids().size() > sim.present_molecule_ids().size())
 	for i in 40:
 		sim.tick(0.1)
-	assert(sim.active_enzymes.size() == 1)
+	assert(int(sim.active_enzymes.get(blueprint_id, 0)) == 3)
+	assert(sim.destroy_active_enzyme(blueprint_id) == true)
+	assert(int(sim.active_enzymes.get(blueprint_id, 0)) == 2)
 	assert(sim.pathway_arrows()[0].get("status", "") == "Active")
 	for i in 80:
 		sim.tick(0.1)

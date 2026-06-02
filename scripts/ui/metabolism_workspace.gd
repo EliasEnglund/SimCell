@@ -3,12 +3,14 @@ class_name MetabolismWorkspace
 
 signal molecule_requested(molecule_id: String)
 signal empty_requested
+signal pathway_requested(blueprint_id: String)
 
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const WORLD_BOUNDS := Rect2(Vector2(-1500.0, 22.0), Vector2(4200.0, 3200.0))
 const EDGE_VISIBLE_MARGIN := Vector2(96.0, 120.0)
 
 var simulation
+var selected_pathway := ""
 var pan_offset := Vector2.ZERO
 var zoom := 1.0
 var _dragging := false
@@ -41,7 +43,10 @@ func _input(event: InputEvent) -> void:
 		elif not event.pressed:
 			if _press_started_in_workspace and _drag_distance <= 6.0 and get_global_rect().has_point(event.position):
 				var molecule_id := _molecule_at(event.position - global_position)
-				if molecule_id.is_empty():
+				var pathway_id := _pathway_at(event.position - global_position)
+				if not pathway_id.is_empty():
+					emit_signal("pathway_requested", pathway_id)
+				elif molecule_id.is_empty():
 					emit_signal("empty_requested")
 				else:
 					emit_signal("molecule_requested", molecule_id)
@@ -130,6 +135,14 @@ func _rebuild() -> void:
 func _molecule_at(local_position: Vector2) -> String:
 	for id in _visible_positions.keys():
 		var rect := Rect2(_visible_positions[id], _visible_sizes[id])
+		if rect.has_point(local_position):
+			return id
+	return ""
+
+func _pathway_at(local_position: Vector2) -> String:
+	for id in _visible_reaction_steps.keys():
+		var item: Dictionary = _visible_reaction_steps[id]
+		var rect: Rect2 = item.get("rect", Rect2())
 		if rect.has_point(local_position):
 			return id
 	return ""
@@ -230,6 +243,7 @@ func _reaction_step_node(item: Dictionary) -> Control:
 	box.simulation = simulation
 	box.reaction = reaction
 	box.fixed_zoom = _fixed_zoom * zoom * 0.72
+	box.selected = selected_pathway == str(reaction.get("blueprint_id", ""))
 	box.position = rect.position
 	box.size = rect.size
 	box.custom_minimum_size = rect.size
@@ -260,7 +274,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 			var source_size: Vector2 = sizes[substrate_id]
 			var product_size: Vector2 = sizes[product_id]
 			var x_offset := (float(i) - float(products.size() - 1) * 0.5) * (product_size.x + 70.0)
-			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 120.0)
+			var preferred := Vector2(source_pos.x + source_size.x * 0.5 - product_size.x * 0.5 + x_offset, source_pos.y + source_size.y + 250.0)
 			_layout_positions[product_id] = _open_position(preferred, product_size, sizes)
 	var gap := Vector2(90.0, 110.0)
 	var row_y := 380.0
@@ -380,6 +394,7 @@ class EnzymeStepBox:
 	var simulation
 	var reaction: Dictionary = {}
 	var fixed_zoom := 0.52
+	var selected := false
 
 	func _ready() -> void:
 		set_process(true)
@@ -389,10 +404,10 @@ class EnzymeStepBox:
 
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size).grow(-4.0)
-		var cyan := Color("76f4ff")
+		var cyan := Color("8cff6a") if selected else Color("76f4ff")
 		draw_rect(rect, Color(0.08, 0.16, 0.20, 0.86), true)
-		draw_rect(rect, Color(cyan.r, cyan.g, cyan.b, 0.20), false, 9.0)
-		draw_rect(rect, cyan, false, 2.0)
+		draw_rect(rect, Color(cyan.r, cyan.g, cyan.b, 0.28 if selected else 0.20), false, 12.0 if selected else 9.0)
+		draw_rect(rect, cyan, false, 3.0 if selected else 2.0)
 		if simulation == null:
 			return
 		var substrate_id: String = reaction.get("substrate", "")

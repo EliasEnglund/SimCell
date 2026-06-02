@@ -30,6 +30,7 @@ var membrane_export_detail: VBoxContainer
 var membrane_scene: Control
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
+var selected_pathway := ""
 
 var designer_tool := "lyase"
 var designer_target := -1
@@ -252,6 +253,7 @@ func _build_metabolism_view() -> void:
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
 	metabolism_workspace.clip_contents = true
 	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
+	metabolism_workspace.pathway_requested.connect(_handle_pathway_click)
 	metabolism_workspace.empty_requested.connect(_handle_empty_metabolism_click)
 	map_layer.add_child(metabolism_workspace)
 
@@ -483,6 +485,7 @@ func _refresh_metabolism() -> void:
 	_refresh_selection_detail()
 	_refresh_pathways()
 	if metabolism_workspace != null:
+		metabolism_workspace.selected_pathway = selected_pathway
 		metabolism_workspace.rebuild()
 
 func _molecule_list_button(id: String) -> Button:
@@ -503,8 +506,11 @@ func _molecule_list_button(id: String) -> Button:
 
 func _refresh_selection_detail() -> void:
 	_clear(detail_panel)
+	if sim.enzyme_blueprints.has(selected_pathway):
+		_refresh_pathway_detail(selected_pathway)
+		return
 	if not sim.molecule_types.has(sim.selected_molecule):
-		detail_panel.add_child(_title("No molecule selected", "Click a molecule once to select it, then click it again to design an enzyme."))
+		detail_panel.add_child(_title("No selection", "Click a molecule to design enzymes, or click an enzyme step box to manage that pathway."))
 		return
 	var molecule: Dictionary = sim.molecule_types[sim.selected_molecule]
 	var amount := float(sim.molecule_amounts.get(sim.selected_molecule, 0.0))
@@ -528,6 +534,63 @@ func _refresh_selection_detail() -> void:
 	button.pressed.connect(func(): _open_enzyme_designer(sim.selected_molecule))
 	detail_panel.add_child(button)
 
+func _refresh_pathway_detail(blueprint_id: String) -> void:
+	var pathway := _pathway_by_id(blueprint_id)
+	if pathway.is_empty():
+		detail_panel.add_child(_title("Pathway unavailable", "The selected enzyme pathway no longer exists."))
+		return
+	var product_labels: Array[String] = []
+	for product_id in pathway.get("products", []):
+		if sim.molecule_types.has(product_id):
+			product_labels.append(sim.molecule_types[product_id].get("formula", "Product"))
+	var substrate_id: String = pathway.get("substrate", "")
+	var substrate_formula: String = sim.molecule_types[substrate_id].get("formula", "Substrate") if sim.molecule_types.has(substrate_id) else "Substrate"
+	detail_panel.add_child(_title(pathway.get("name", "Enzyme"), "%s -> %s" % [substrate_formula, " + ".join(product_labels)]))
+	var metrics := Label.new()
+	metrics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	metrics.modulate = Color(0.78, 0.88, 0.86)
+	metrics.text = "Status %s | Rate %.2f/s\nActive %d | Queued %d | kcat %.2f/s | Stability %.0fs" % [
+		pathway.get("status", "Designed"),
+		float(pathway.get("rate", 0.0)),
+		int(pathway.get("active_count", 0)),
+		int(pathway.get("queued_count", 0)),
+		float(pathway.get("kcat", 0.0)),
+		float(pathway.get("stability", 0.0))
+	]
+	detail_panel.add_child(metrics)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var build_one := Button.new()
+	build_one.text = "+ Build 1"
+	build_one.custom_minimum_size = Vector2(0, 42)
+	build_one.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	build_one.pressed.connect(func():
+		sim.queue_enzyme_build(blueprint_id, 1)
+	)
+	row.add_child(build_one)
+	var build_five := Button.new()
+	build_five.text = "+ Build 5"
+	build_five.custom_minimum_size = Vector2(0, 42)
+	build_five.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	build_five.pressed.connect(func():
+		sim.queue_enzyme_build(blueprint_id, 5)
+	)
+	row.add_child(build_five)
+	detail_panel.add_child(row)
+	var remove := Button.new()
+	remove.text = "Destroy 1 Active Enzyme"
+	remove.custom_minimum_size = Vector2(0, 42)
+	remove.disabled = int(pathway.get("active_count", 0)) <= 0
+	remove.pressed.connect(func():
+		sim.destroy_active_enzyme(blueprint_id)
+	)
+	detail_panel.add_child(remove)
+	var hint := Label.new()
+	hint.text = "Queued enzymes appear in Protein Builder, then become active here when synthesis completes."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.modulate = Color(0.68, 0.78, 0.76)
+	detail_panel.add_child(hint)
+
 func _refresh_pathways() -> void:
 	_clear(pathway_box)
 	var pathways := sim.pathway_list()
@@ -538,7 +601,10 @@ func _refresh_pathways() -> void:
 		pathway_box.add_child(_pathway_card(pathway))
 
 func _pathway_card(pathway: Dictionary) -> VBoxContainer:
-	var box := VBoxContainer.new()
+	var box := GlowVBox.new()
+	box.fill = Color("1b3440") if selected_pathway == str(pathway.get("id", "")) else Color("142531")
+	box.border = Color("76f4ff") if selected_pathway == str(pathway.get("id", "")) else Color("2f7080")
+	box.border_width = 1.2
 	box.add_theme_constant_override("separation", 2)
 	var name := Label.new()
 	name.text = pathway.get("name", "Enzyme")
@@ -569,7 +635,20 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 	]
 	details.modulate = Color(0.68, 0.78, 0.76)
 	box.add_child(details)
+	var select := Button.new()
+	select.text = "Manage"
+	select.custom_minimum_size = Vector2(0, 32)
+	select.pressed.connect(func():
+		_handle_pathway_click(str(pathway.get("id", "")))
+	)
+	box.add_child(select)
 	return box
+
+func _pathway_by_id(blueprint_id: String) -> Dictionary:
+	for pathway in sim.pathway_list():
+		if str(pathway.get("id", "")) == blueprint_id:
+			return pathway
+	return {}
 
 func _open_enzyme_designer(molecule_id: String) -> void:
 	sim.select_molecule(molecule_id)
@@ -653,12 +732,21 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	_refresh_designer()
 
 func _handle_molecule_click(molecule_id: String) -> void:
+	selected_pathway = ""
 	if sim.selected_molecule == molecule_id:
 		_open_enzyme_designer(molecule_id)
 	else:
 		sim.select_molecule(molecule_id)
 
+func _handle_pathway_click(blueprint_id: String) -> void:
+	if not sim.enzyme_blueprints.has(blueprint_id):
+		return
+	selected_pathway = blueprint_id
+	sim.deselect_molecule()
+	_refresh()
+
 func _handle_empty_metabolism_click() -> void:
+	selected_pathway = ""
 	sim.deselect_molecule()
 
 func _tool_button(id: String, icon: String, label_text: String) -> Button:

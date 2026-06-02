@@ -358,13 +358,28 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		"build_time": 3.0
 	}
 	enzyme_blueprints[blueprint_id] = blueprint
-	protein_queue.append({
-		"id": blueprint_id,
-		"name": blueprint["name"],
-		"remaining": blueprint["build_time"],
-		"duration": blueprint["build_time"]
-	})
+	_queue_protein_build(blueprint_id)
 	emit_signal("event_logged", "Blueprint queued: %s." % blueprint["name"])
+	emit_signal("changed")
+	return true
+
+func queue_enzyme_build(blueprint_id: String, count: int = 1) -> bool:
+	if not enzyme_blueprints.has(blueprint_id) or count <= 0:
+		return false
+	for i in count:
+		_queue_protein_build(blueprint_id)
+	emit_signal("event_logged", "Queued %d enzyme build%s: %s." % [count, "" if count == 1 else "s", enzyme_blueprints[blueprint_id].get("name", "Enzyme")])
+	emit_signal("changed")
+	return true
+
+func destroy_active_enzyme(blueprint_id: String) -> bool:
+	var count := int(active_enzymes.get(blueprint_id, 0))
+	if count <= 0:
+		return false
+	active_enzymes[blueprint_id] = count - 1
+	if int(active_enzymes[blueprint_id]) <= 0:
+		active_enzymes.erase(blueprint_id)
+	emit_signal("event_logged", "Removed active enzyme: %s." % enzyme_blueprints.get(blueprint_id, {}).get("name", "Enzyme"))
 	emit_signal("changed")
 	return true
 
@@ -465,6 +480,17 @@ func _tick_protein_queue(dt: float) -> void:
 			active_enzymes[id] = int(active_enzymes.get(id, 0)) + 1
 			emit_signal("event_logged", "Enzyme built: %s." % item.get("name", id))
 			protein_queue.remove_at(i)
+
+func _queue_protein_build(blueprint_id: String) -> void:
+	if not enzyme_blueprints.has(blueprint_id):
+		return
+	var blueprint: Dictionary = enzyme_blueprints[blueprint_id]
+	protein_queue.append({
+		"id": blueprint_id,
+		"name": blueprint.get("name", "Enzyme"),
+		"remaining": float(blueprint.get("build_time", 3.0)),
+		"duration": float(blueprint.get("build_time", 3.0))
+	})
 
 func _tick_transporter_queue(dt: float) -> void:
 	for i in range(transporter_queue.size() - 1, -1, -1):
