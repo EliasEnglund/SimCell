@@ -889,9 +889,16 @@ class MembraneCrossSection:
 		return desired
 
 	func _append_side_particles(desired: Array[Dictionary], side: String, ids: Array[String]) -> void:
+		var counts := {}
+		var side_count := 0
 		for id in ids:
 			var amount := float(simulation.outside_amounts.get(id, 0.0)) if side == "outside" else float(simulation.molecule_amounts.get(id, 0.0))
-			var count := clampi(1 + int(sqrt(maxf(amount, 0.0)) / 4.0), 1, 7)
+			var count := clampi(int(ceil(sqrt(maxf(amount, 0.0)) / 1.35)), 1, 18)
+			counts[id] = count
+			side_count += count
+		var slot := 0
+		for id in ids:
+			var count := int(counts.get(id, 1))
 			for i in count:
 				var seed := float(abs(("%s:%s:%d" % [side, id, i]).hash() % 10000)) / 10000.0
 				desired.append({
@@ -899,11 +906,14 @@ class MembraneCrossSection:
 					"id": id,
 					"side": side,
 					"seed": seed,
-					"x_seed": fmod(seed * 7.13 + 0.19, 1.0),
-					"y_seed": fmod(seed * 11.31 + 0.43, 1.0),
+					"slot": slot,
+					"side_count": side_count,
+					"x_jitter": fmod(seed * 7.13 + 0.19, 1.0) - 0.5,
+					"y_jitter": fmod(seed * 11.31 + 0.43, 1.0) - 0.5,
 					"motion_seed": fmod(seed * 17.71 + 0.29, 1.0),
 					"depth": 0.48 + fmod(seed * 3.71, 0.42)
 				})
+				slot += 1
 
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
@@ -962,15 +972,24 @@ class MembraneCrossSection:
 				continue
 			var molecule: Dictionary = simulation.molecule_types.get(item.get("id", ""), {})
 			var atom_count: int = maxi(1, int(molecule.get("atoms", []).size()))
-			var node_size := Vector2(70.0 + float(atom_count) * 6.0, 58.0 + float(mini(atom_count, 7)) * 4.0)
+			var node_size := Vector2(58.0 + float(atom_count) * 5.0, 46.0 + float(mini(atom_count, 7)) * 3.5)
 			node.custom_minimum_size = node_size
 			node.size = node_size
 			var seed := float(item.get("seed", 0.0))
-			var x_seed := float(item.get("x_seed", seed))
-			var y_seed := float(item.get("y_seed", seed))
+			var x_jitter := float(item.get("x_jitter", 0.0))
+			var y_jitter := float(item.get("y_jitter", 0.0))
 			var motion_seed := float(item.get("motion_seed", seed))
 			var depth := float(item.get("depth", 0.7))
 			var side := str(item.get("side", "outside"))
+			var side_count := maxi(1, int(item.get("side_count", 1)))
+			var slot := int(item.get("slot", 0))
+			var columns := maxi(1, int(ceil(sqrt(float(side_count) * 1.35))))
+			var rows := maxi(1, int(ceil(float(side_count) / float(columns))))
+			var spread_slot := int(fposmod(float(slot * 7) + seed * float(side_count), float(side_count)))
+			var col := spread_slot % columns
+			var row := spread_slot / columns
+			var x_seed := (float(col) + 0.5 + x_jitter * 0.45) / float(columns)
+			var y_seed := (float(row) + 0.5 + y_jitter * 0.45) / float(rows)
 			var y_min: float = 52.0 if side == "outside" else size.y * 0.61
 			var y_max: float = size.y * 0.36 if side == "outside" else size.y - 80.0
 			var x: float = lerpf(72.0, maxf(84.0, size.x - 96.0), x_seed)
@@ -979,7 +998,7 @@ class MembraneCrossSection:
 				sin(_elapsed * (0.12 + motion_seed * 0.06) + seed * 19.0),
 				cos(_elapsed * (0.10 + motion_seed * 0.05) + seed * 13.0)
 			) * (12.0 + 12.0 * depth)
-			var perspective: float = 0.48 + depth * 0.22 + sin(_elapsed * 0.35 + seed * 23.0) * 0.025
+			var perspective: float = 0.40 + depth * 0.18 + sin(_elapsed * 0.35 + seed * 23.0) * 0.018
 			node.position = Vector2(x, y) + drift - node_size * 0.5
 			node.rotation = sin(_elapsed * (0.10 + motion_seed * 0.05) + seed * TAU) * 0.06
 			node.scale = Vector2(perspective, perspective)
@@ -1048,7 +1067,7 @@ class FloatingMolecule3D:
 		var graph_center := (min_pos + max_pos) * 0.5
 		var graph_size := max_pos - min_pos
 		var fit := minf(size.x / maxf(1.0, graph_size.x + 120.0), size.y / maxf(1.0, graph_size.y + 120.0))
-		var scale := clampf(fit * 1.45, 0.32, 0.58)
+		var scale := clampf(fit * 1.25, 0.26, 0.46)
 		var yaw := _elapsed * (0.18 + spin_seed * 0.16) + spin_seed * TAU
 		var pitch := sin(_elapsed * (0.12 + spin_seed * 0.08) + spin_seed * 9.0) * 0.52
 		var roll := _elapsed * (0.10 + spin_seed * 0.12) + spin_seed * 5.0
@@ -1126,8 +1145,8 @@ class FloatingMolecule3D:
 
 	func _atom_radius(element: String) -> float:
 		if element == "C":
-			return 18.0
-		return 16.0
+			return 15.0
+		return 13.5
 
 	func _atom_color(element: String) -> Color:
 		if element == "O":
