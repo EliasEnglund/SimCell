@@ -406,6 +406,7 @@ class EnzymeStepBox:
 			_draw_breaking_bond(molecule, transform, target_index)
 		else:
 			_draw_reaction_pulse(rect)
+		_draw_product_preview(rect)
 		_draw_enzyme_icon(rect)
 		_draw_step_label(rect)
 
@@ -421,8 +422,19 @@ class EnzymeStepBox:
 		var scale := minf(size.x * 0.62 / graph_size.x, size.y * 0.66 / graph_size.y)
 		scale = minf(scale, fixed_zoom)
 		var graph_center := (min_pos + max_pos) * 0.5
-		var center := Vector2(size.x * 0.43, size.y * 0.52)
+		var center := Vector2(size.x * 0.35, size.y * 0.50)
 		return Transform2D(Vector2(scale, 0.0), Vector2(0.0, scale), center - graph_center * scale)
+
+	func _product_transform(product: Dictionary, origin: Vector2, product_scale: float) -> Transform2D:
+		var atoms: Array = product.get("atoms", [])
+		var min_pos := Vector2(INF, INF)
+		var max_pos := Vector2(-INF, -INF)
+		for atom in atoms:
+			var pos: Vector2 = atom.get("pos", Vector2.ZERO)
+			min_pos = min_pos.min(pos)
+			max_pos = max_pos.max(pos)
+		var graph_center := (min_pos + max_pos) * 0.5
+		return Transform2D(Vector2(product_scale, 0.0), Vector2(0.0, product_scale), origin - graph_center * product_scale)
 
 	func _draw_molecule(molecule: Dictionary, transform: Transform2D) -> void:
 		var atoms: Array = molecule.get("atoms", [])
@@ -470,6 +482,28 @@ class EnzymeStepBox:
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.004)
 		draw_circle(rect.get_center(), 24.0 + 20.0 * pulse, Color(0.45, 0.95, 1.0, 0.10 * (1.0 - pulse)))
 
+	func _draw_product_preview(rect: Rect2) -> void:
+		var products := _product_molecules()
+		if products.is_empty():
+			return
+		var progress := smoothstep(0.05, 0.95, fmod(Time.get_ticks_msec() * 0.00055, 1.0))
+		var count := products.size()
+		for i in count:
+			var product: Dictionary = products[i]
+			var offset_y := (float(i) - float(count - 1) * 0.5) * rect.size.y * 0.22
+			var start := Vector2(rect.position.x + rect.size.x * 0.52, rect.position.y + rect.size.y * 0.52 + offset_y * 0.4)
+			var end := Vector2(rect.position.x + rect.size.x * 0.74, rect.position.y + rect.size.y * 0.52 + offset_y)
+			var origin := start.lerp(end, progress)
+			var transform := _product_transform(product, origin, minf(fixed_zoom * 0.64, 0.36))
+			var alpha := 0.22 + 0.78 * progress
+			_draw_molecule_with_alpha(product, transform, alpha)
+		var arrow_start := Vector2(rect.position.x + rect.size.x * 0.50, rect.position.y + rect.size.y * 0.80)
+		var arrow_end := Vector2(rect.position.x + rect.size.x * 0.68, rect.position.y + rect.size.y * 0.80)
+		draw_line(arrow_start, arrow_end, Color("02070b"), 5.0, true)
+		draw_line(arrow_start, arrow_end, Color("8cff6a"), 2.0, true)
+		var dir := (arrow_end - arrow_start).normalized()
+		draw_colored_polygon(PackedVector2Array([arrow_end, arrow_end - dir * 10.0 + Vector2(-dir.y, dir.x) * 5.0, arrow_end - dir * 10.0 - Vector2(-dir.y, dir.x) * 5.0]), Color("8cff6a"))
+
 	func _draw_enzyme_icon(rect: Rect2) -> void:
 		var center := Vector2(rect.position.x + rect.size.x * 0.74, rect.position.y + rect.size.y * 0.45)
 		var size_scale := minf(rect.size.x, rect.size.y) / 132.0
@@ -496,7 +530,8 @@ class EnzymeStepBox:
 	func _draw_step_label(rect: Rect2) -> void:
 		var text := str(reaction.get("tool", "enzyme")).to_upper()
 		var color := Color("8cff6a") if int(reaction.get("active_count", 0)) > 0 else Color("76f4ff")
-		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 12.0, rect.end.y - 12.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, color)
+		var status := "ACTIVE" if int(reaction.get("active_count", 0)) > 0 else ("BUILDING" if int(reaction.get("queued_count", 0)) > 0 else "DESIGNED")
+		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 12.0, rect.end.y - 12.0), "%s | %s" % [text, status], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, color)
 
 	func _draw_step_bond(a: Vector2, b: Vector2, order: int, alpha: float, color_override: Color = Color.TRANSPARENT) -> void:
 		if a.distance_to(b) < 4.0:
@@ -522,6 +557,29 @@ class EnzymeStepBox:
 		draw_circle(pos, radius - 1.0, base.darkened(0.14))
 		draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
 
+	func _draw_molecule_with_alpha(molecule: Dictionary, transform: Transform2D, alpha: float) -> void:
+		var atoms: Array = molecule.get("atoms", [])
+		var bonds: Array = molecule.get("bonds", [])
+		for bond in bonds:
+			var a_index := int(bond.get("a", 0))
+			var b_index := int(bond.get("b", 0))
+			if a_index >= atoms.size() or b_index >= atoms.size():
+				continue
+			var a: Vector2 = transform * atoms[a_index].get("pos", Vector2.ZERO)
+			var b: Vector2 = transform * atoms[b_index].get("pos", Vector2.ZERO)
+			_draw_step_bond(a, b, int(bond.get("order", 1)), alpha)
+		for atom in atoms:
+			var pos: Vector2 = transform * atom.get("pos", Vector2.ZERO)
+			_draw_step_atom_alpha(pos, str(atom.get("element", "C")), alpha)
+
+	func _draw_step_atom_alpha(pos: Vector2, element: String, alpha: float) -> void:
+		var radius := 13.0 if element == "C" else 11.5
+		var base := _atom_color(element)
+		draw_circle(pos, radius + 3.0, Color(0.0, 0.0, 0.0, alpha))
+		draw_circle(pos, radius + 1.0, Color(base.lightened(0.3).r, base.lightened(0.3).g, base.lightened(0.3).b, alpha))
+		draw_circle(pos, radius - 1.0, Color(base.darkened(0.14).r, base.darkened(0.14).g, base.darkened(0.14).b, alpha))
+		draw_circle(pos + Vector2(radius * 0.26, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.36 * alpha))
+
 	func _atom_color(element: String) -> Color:
 		if element == "O":
 			return Color("e95058")
@@ -538,6 +596,13 @@ class EnzymeStepBox:
 		if simulation != null and simulation.enzyme_blueprints.has(blueprint_id):
 			return int(simulation.enzyme_blueprints[blueprint_id].get("target_index", -1))
 		return -1
+
+	func _product_molecules() -> Array[Dictionary]:
+		var output: Array[Dictionary] = []
+		for product_id in reaction.get("products", []):
+			if simulation != null and simulation.molecule_types.has(product_id):
+				output.append(simulation.molecule_types[product_id])
+		return output
 
 class BoundaryLayer:
 	extends Control
