@@ -134,7 +134,7 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		inner = Color("c8fbff")
 		width = 9.0 * zoom
 	if selected:
-		color = Color("8cff6a")
+		color = Color("8cff6a").lerp(Color("ffe064"), tension * 0.5)
 		inner = Color("e7ffd8")
 		width = 10.0 * zoom
 	var offsets := [0.0]
@@ -147,6 +147,38 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		draw_line(start, end, outline, width + 7.0 * zoom, true)
 		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom, true)
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
+		if tension > 0.08:
+			_draw_electric_bond(start, end, normal, zoom, tension, offset)
+
+func _draw_electric_bond(start: Vector2, end: Vector2, normal: Vector2, zoom: float, tension: float, offset: float) -> void:
+	var dir := (end - start).normalized()
+	var length := start.distance_to(end)
+	if length < 8.0:
+		return
+	var intensity := smoothstep(0.08, 0.85, tension)
+	var electric := Color("76f4ff").lerp(Color("ffe064"), intensity)
+	var hot := Color("f4fbff").lerp(Color("fff1a8"), intensity)
+	var segment_count := 5 + int(4.0 * intensity)
+	var points := PackedVector2Array()
+	for i in segment_count + 1:
+		var t := float(i) / float(segment_count)
+		var base := start.lerp(end, t)
+		var wave := sin(t * TAU * (2.0 + intensity) + offset * 0.19 + Time.get_ticks_msec() * 0.008)
+		var jag := sin((t + 0.37) * TAU * 5.0 + Time.get_ticks_msec() * 0.015)
+		var side := normal * (wave * 9.0 + jag * 4.0) * zoom * intensity
+		if i == 0 or i == segment_count:
+			side = Vector2.ZERO
+		points.append(base + side)
+	draw_polyline(points, Color(electric.r, electric.g, electric.b, 0.22 + 0.30 * intensity), (8.0 + intensity * 7.0) * zoom, true)
+	draw_polyline(points, electric, (2.0 + intensity * 2.0) * zoom, true)
+	draw_polyline(points, hot, maxf(1.0, 0.8 * zoom), true)
+	var spark_count := 1 + int(3.0 * intensity)
+	for s in spark_count:
+		var t := fmod(Time.get_ticks_msec() * 0.0015 + float(s) * 0.31 + offset * 0.01, 1.0)
+		var center := start.lerp(end, t)
+		var spark_normal := normal.rotated((float(s % 2) - 0.5) * 0.8)
+		var spark_len := (10.0 + 14.0 * intensity) * zoom
+		draw_line(center - spark_normal * spark_len * 0.35, center + spark_normal * spark_len, Color(electric.r, electric.g, electric.b, 0.52), maxf(1.0, 1.4 * zoom), true)
 
 func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
 	if _grabbed_atom < 0:
