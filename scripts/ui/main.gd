@@ -183,7 +183,7 @@ func _build_shell() -> void:
 	]:
 		var button := Button.new()
 		button.text = item[0]
-		button.icon = load(str(VIEW_ICON_PATHS.get(item[1], "")))
+		button.icon = _texture_from_png(str(VIEW_ICON_PATHS.get(item[1], "")))
 		button.expand_icon = true
 		button.custom_minimum_size = Vector2(136, 62)
 		button.add_theme_font_size_override("font_size", 12)
@@ -413,7 +413,7 @@ func _art_icon_card(label_text: String, path: String, image_size: float) -> Cont
 	card.custom_minimum_size = Vector2(maxf(150.0, image_size + 24.0), image_size + 48.0)
 	card.add_theme_constant_override("separation", 8)
 	var texture := TextureRect.new()
-	texture.texture = load(path)
+	texture.texture = _texture_from_png(path)
 	texture.custom_minimum_size = Vector2(image_size, image_size)
 	texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -435,13 +435,19 @@ func _art_sheet_section(label_text: String, items: Array) -> Control:
 		title.modulate = Color("76f4ff")
 		panel.add_child(title)
 		var texture := TextureRect.new()
-		texture.texture = load(str(item[1]))
+		texture.texture = _texture_from_png(str(item[1]))
 		texture.custom_minimum_size = Vector2(0.0, 190.0)
 		texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		panel.add_child(texture)
 	return panel
+
+func _texture_from_png(path: String) -> Texture2D:
+	var image := Image.load_from_file(path)
+	if image == null:
+		return null
+	return ImageTexture.create_from_image(image)
 
 func _refresh() -> void:
 	if status_label == null:
