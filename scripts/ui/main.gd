@@ -2191,7 +2191,7 @@ class DNATechTreeWorkspace:
 
 	func _ready() -> void:
 		mouse_default_cursor_shape = Control.CURSOR_DRAG
-		pan_offset = Vector2(0.0, -140.0)
+		pan_offset = _initial_pan_offset()
 		_background = _texture_from_png_local("res://assets/dna_tree/background.png")
 		_strand = _texture_from_png_local("res://assets/dna_tree/dna_strand_connector.png")
 		if simulation != null:
@@ -2216,7 +2216,7 @@ class DNATechTreeWorkspace:
 			_hovered = _tech_at(event.position)
 			if _dragging:
 				pan_offset += event.position - _last_mouse
-				pan_offset = pan_offset.clamp(Vector2(-900.0, -900.0), Vector2(900.0, 520.0))
+				pan_offset = pan_offset.clamp(Vector2(-1400.0, -1300.0), Vector2(1400.0, 720.0))
 				_drag_distance += event.position.distance_to(_last_mouse)
 				_last_mouse = event.position
 			queue_redraw()
@@ -2324,6 +2324,15 @@ class DNATechTreeWorkspace:
 			if local.distance_to(pos) <= radius:
 				return id
 		return ""
+
+	func _initial_pan_offset() -> Vector2:
+		if simulation == null:
+			return Vector2.ZERO
+		var origin: Dictionary = simulation.dna_tech_by_id("origin")
+		if origin.is_empty():
+			return Vector2.ZERO
+		var origin_pos: Vector2 = origin.get("pos", Vector2.ZERO)
+		return -origin_pos
 
 	func _texture_from_png_local(path: String) -> Texture2D:
 		var image := Image.load_from_file(path)
