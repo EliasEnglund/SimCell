@@ -22,6 +22,7 @@ var status_label: Label
 var view_title_label: Label
 var resource_summary_box: HBoxContainer
 var molecule_summary_box: HBoxContainer
+var top_stat_popup: PanelContainer
 var molecule_list: VBoxContainer
 var detail_panel: VBoxContainer
 var pathway_box: VBoxContainer
@@ -485,18 +486,18 @@ func _refresh() -> void:
 		view_title_label.text = _view_title(sim.active_view)
 	if resource_summary_box != null:
 		_set_top_stat_group(resource_summary_box, [
-			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a")],
-			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff")],
-			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a")],
-			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff")]
+			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
+			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff"), "Electrons (NADH)"],
+			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
+			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"]
 		])
 	if molecule_summary_box != null:
 		var glucose_id := _glucose_molecule_id()
 		var glucose_amount := float(sim.molecule_amounts.get(glucose_id, 0.0)) if not glucose_id.is_empty() else 0.0
 		_set_top_stat_group(molecule_summary_box, [
-			["res://assets/art_lab/icons/elements/glucose_simple.png", "%.0f" % glucose_amount, Color("8cff6a")],
-			["res://assets/art_lab/icons/views/metabolism.png", "%d" % sim.present_molecule_ids().size(), Color("dbeff2")],
-			["res://assets/art_lab/icons/views/proteins.png", "%d" % sim.active_enzymes.size(), Color("dbeff2")]
+			["res://assets/art_lab/icons/elements/glucose_simple.png", "%.0f" % glucose_amount, Color("8cff6a"), "Glucose"],
+			["res://assets/art_lab/icons/views/metabolism.png", "%d" % sim.present_molecule_ids().size(), Color("dbeff2"), "Molecule Types"],
+			["res://assets/art_lab/icons/views/proteins.png", "%d" % sim.active_enzymes.size(), Color("dbeff2"), "Active Enzymes"]
 		])
 	if sim.active_view == "metabolism" and molecule_list != null:
 		_refresh_metabolism()
@@ -1126,26 +1127,90 @@ func _glucose_molecule_id() -> String:
 	return ""
 
 func _set_top_stat_group(container: HBoxContainer, items: Array) -> void:
-	_clear(container)
-	for item in items:
-		container.add_child(_top_stat_item(str(item[0]), str(item[1]), item[2] if item.size() > 2 else Color("dbeff2")))
+	if container.get_child_count() != items.size():
+		_clear(container)
+		for item in items:
+			container.add_child(_top_stat_item(
+				str(item[0]),
+				str(item[1]),
+				item[2] if item.size() > 2 else Color("dbeff2"),
+				str(item[3]) if item.size() > 3 else "Resource"
+			))
+		return
+	for i in items.size():
+		var item: Array = items[i]
+		var row := container.get_child(i)
+		row.set_meta("icon_path", str(item[0]))
+		row.set_meta("stat_name", str(item[3]) if item.size() > 3 else "Resource")
+		row.set_meta("stat_value", str(item[1]))
+		var label := row.get_node_or_null("ValueLabel") as Label
+		if label != null:
+			label.text = str(item[1])
+			label.modulate = item[2] if item.size() > 2 else Color("dbeff2")
 
-func _top_stat_item(icon_path: String, value: String, color: Color) -> Control:
+func _top_stat_item(icon_path: String, value: String, color: Color, stat_name: String) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.set_meta("icon_path", icon_path)
+	row.set_meta("stat_name", stat_name)
+	row.set_meta("stat_value", value)
+	row.mouse_entered.connect(func():
+		_show_top_stat_popup(row)
+	)
+	row.mouse_exited.connect(_hide_top_stat_popup)
 	var icon := TextureRect.new()
 	icon.texture = _texture_from_png(icon_path)
 	icon.custom_minimum_size = Vector2(24, 24)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(icon)
 	var label := Label.new()
+	label.name = "ValueLabel"
 	label.text = value
 	label.add_theme_font_size_override("font_size", 14)
 	label.modulate = color
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(label)
 	return row
+
+func _show_top_stat_popup(source: Control) -> void:
+	_hide_top_stat_popup()
+	top_stat_popup = PanelContainer.new()
+	top_stat_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_stat_popup.add_theme_stylebox_override("panel", _glow_panel_style(Color("10242c"), Color("76f4ff"), 1.2, 7))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	top_stat_popup.add_child(row)
+	var icon := TextureRect.new()
+	icon.texture = _texture_from_png(str(source.get_meta("icon_path", "")))
+	icon.custom_minimum_size = Vector2(48, 48)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	row.add_child(icon)
+	var text_box := VBoxContainer.new()
+	text_box.add_theme_constant_override("separation", 2)
+	row.add_child(text_box)
+	var name_label := Label.new()
+	name_label.text = str(source.get_meta("stat_name", "Resource"))
+	name_label.add_theme_font_size_override("font_size", 15)
+	name_label.modulate = Color("f4fbff")
+	text_box.add_child(name_label)
+	var value_label := Label.new()
+	value_label.text = str(source.get_meta("stat_value", "0"))
+	value_label.add_theme_font_size_override("font_size", 22)
+	value_label.modulate = Color("76f4ff")
+	text_box.add_child(value_label)
+	add_child(top_stat_popup)
+	top_stat_popup.position = source.get_global_rect().position - global_position + Vector2(0, source.size.y + 8.0)
+
+func _hide_top_stat_popup() -> void:
+	if top_stat_popup == null:
+		return
+	top_stat_popup.queue_free()
+	top_stat_popup = null
 
 func _top_bar_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -2078,7 +2143,7 @@ class TitleBackground:
 				draw_line(Vector2(previous_x, previous_y), Vector2(x, y), Color("02070b"), 13.0, true)
 				draw_line(Vector2(previous_x, previous_y), Vector2(x, y), Color("dbeff2"), 6.0, true)
 		draw_line(Vector2(0, size.y - 88.0), Vector2(size.x, size.y - 88.0), Color(0.45, 0.95, 1.0, 0.18), 3.0, true)
-		draw_string(ThemeDB.fallback_font, Vector2(36, size.y - 42.0), "SIMULATION PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, cyan)
+		draw_string(ThemeDB.fallback_font, Vector2(36, size.y - 42.0), "Game designer: Elias Englund   Producer: Fredrik Jonsson", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, cyan)
 
 class TitleShade:
 	extends Control
@@ -2097,4 +2162,4 @@ class TitleShade:
 		draw_line(Vector2(0, 34), Vector2(size.x * 0.38, 34), Color(cyan.r, cyan.g, cyan.b, 0.7), 3.0, true)
 		draw_line(Vector2(size.x * 0.62, 34), Vector2(size.x, 34), Color(cyan.r, cyan.g, cyan.b, 0.7), 3.0, true)
 		draw_line(Vector2(0, size.y - 54), Vector2(size.x, size.y - 54), Color(cyan.r, cyan.g, cyan.b, 0.22), 2.0, true)
-		draw_string(ThemeDB.fallback_font, Vector2(74, size.y - 24), "SIMULATION PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(cyan.r, cyan.g, cyan.b, 0.85))
+		draw_string(ThemeDB.fallback_font, Vector2(74, size.y - 24), "Game designer: Elias Englund   Producer: Fredrik Jonsson", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(cyan.r, cyan.g, cyan.b, 0.85))
