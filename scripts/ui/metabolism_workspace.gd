@@ -1250,21 +1250,23 @@ class BoundaryLayer:
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(26.0, 32.0), "Drag the board. Click molecules to design enzyme machines.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.78, 0.95, 0.96, 0.70))
 
 	func _draw_grid(rect: Rect2) -> void:
-		var major := grid_cell * zoom
-		if major <= 8.0:
+		var major_screen := grid_cell * zoom
+		if major_screen <= 8.0:
 			return
-		var minor := major * 0.5
-		var first_x := rect.position.x + fposmod(-rect.position.x, minor)
-		var first_y := rect.position.y + fposmod(-rect.position.y, minor)
-		var x := first_x
-		while x <= rect.end.x:
-			var is_major := absf(fposmod(x - rect.position.x, major)) < 1.0
+		var minor_world: float = grid_cell * 0.5
+		var first_world_x: float = floor(world_bounds.position.x / minor_world) * minor_world
+		var first_world_y: float = floor(world_bounds.position.y / minor_world) * minor_world
+		var world_x: float = first_world_x
+		while world_x <= world_bounds.end.x:
+			var x: float = world_x * zoom + pan_offset.x
+			var is_major := absf(fposmod(world_x, grid_cell)) < 0.1
 			var alpha := 0.16 if is_major else 0.07
 			draw_line(Vector2(x, rect.position.y), Vector2(x, rect.end.y), Color(0.45, 1.0, 1.0, alpha), 1.0, true)
-			x += minor
-		var y := first_y
-		while y <= rect.end.y:
-			var is_major := absf(fposmod(y - rect.position.y, major)) < 1.0
+			world_x += minor_world
+		var world_y: float = first_world_y
+		while world_y <= world_bounds.end.y:
+			var y: float = world_y * zoom + pan_offset.y
+			var is_major := absf(fposmod(world_y, grid_cell)) < 0.1
 			var alpha := 0.16 if is_major else 0.07
 			draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), Color(0.45, 1.0, 1.0, alpha), 1.0, true)
-			y += minor
+			world_y += minor_world
