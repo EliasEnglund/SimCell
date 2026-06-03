@@ -9,7 +9,9 @@ const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const WORLD_BOUNDS := Rect2(Vector2(-1500.0, 22.0), Vector2(4200.0, 3200.0))
 const EDGE_VISIBLE_MARGIN := Vector2(96.0, 120.0)
 const GRID_CELL := 128.0
-const MOLECULE_CARD_SIZE := Vector2(272.0, 188.0)
+const MOLECULE_CARD_SIZE := Vector2(GRID_CELL * 2.0, GRID_CELL * 1.5)
+const ENZYME_CARD_SIZE := Vector2(GRID_CELL * 2.0, GRID_CELL)
+const GOAL_CARD_SIZE := Vector2(GRID_CELL * 2.0, GRID_CELL * 1.5)
 
 var simulation
 var selected_pathway := ""
@@ -283,7 +285,7 @@ func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictiona
 		var target_top := INF
 		for center in valid_products:
 			target_top = minf(target_top, center.y)
-		var step_size := Vector2(210.0, 112.0) * zoom
+		var step_size := ENZYME_CARD_SIZE * zoom
 		var center_x := source_rect.get_center().x
 		var upper_y := source_rect.end.y + 56.0 * zoom
 		var lower_y := target_top - 70.0 * zoom
@@ -291,8 +293,9 @@ func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictiona
 		if lower_y < upper_y:
 			center_y = source_rect.end.y + 96.0 * zoom
 		var center := Vector2(center_x, center_y)
+		var top_left := _snap_screen_to_grid(center - step_size * 0.5)
 		layout[blueprint_id] = {
-			"rect": Rect2(center - step_size * 0.5, step_size),
+			"rect": Rect2(top_left, step_size),
 			"reaction": reaction
 		}
 	return layout
@@ -335,7 +338,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 			continue
 		var source_pos: Vector2 = _layout_positions[substrate_id]
 		var source_size: Vector2 = sizes[substrate_id]
-		var group_gap := 86.0
+		var group_gap := GRID_CELL
 		var group_width := -group_gap
 		for product_id in placed_products:
 			var product_size: Vector2 = sizes[product_id]
@@ -351,9 +354,9 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 				opened.y = preferred.y
 			_layout_positions[product_id] = _snap_to_grid(opened)
 			cursor_x += product_size.x + group_gap
-	var gap := Vector2(72.0, 86.0)
-	var row_y := 320.0
-	var row_x := 96.0
+	var gap := Vector2(GRID_CELL, GRID_CELL)
+	var row_y := GRID_CELL * 3.0
+	var row_x := GRID_CELL
 	var row_height := 0.0
 	for i in ids.size():
 		var id := ids[i]
@@ -370,7 +373,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	return result
 
 func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true, ignore_id: String = "") -> Vector2:
-	var gap := Vector2(84.0, 104.0)
+	var gap := Vector2(GRID_CELL, GRID_CELL)
 	var candidate := preferred
 	for attempt in 18:
 		if not _overlaps_existing(candidate, node_size, sizes, ignore_id):
@@ -381,6 +384,10 @@ func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, a
 
 func _snap_to_grid(pos: Vector2) -> Vector2:
 	return Vector2(round(pos.x / GRID_CELL) * GRID_CELL, round(pos.y / GRID_CELL) * GRID_CELL)
+
+func _snap_screen_to_grid(pos: Vector2) -> Vector2:
+	var world := (pos - pan_offset) / zoom
+	return _snap_to_grid(world) * zoom + pan_offset
 
 func _overlaps_existing(pos: Vector2, node_size: Vector2, sizes: Dictionary, ignore_id: String = "") -> bool:
 	var rect := Rect2(pos, node_size).grow(34.0)
@@ -441,24 +448,22 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	return box
 
 func _goal_layout() -> Array[Dictionary]:
-	var base_x := (WORLD_BOUNDS.position.x + WORLD_BOUNDS.size.x - 540.0) * zoom + pan_offset.x
-	var amino_y := (WORLD_BOUNDS.position.y + 520.0) * zoom + pan_offset.y
-	var dna_y := (WORLD_BOUNDS.position.y + 860.0) * zoom + pan_offset.y
-	var size_px := Vector2(274.0, 164.0) * zoom
+	var base_world := _snap_to_grid(Vector2(WORLD_BOUNDS.position.x + WORLD_BOUNDS.size.x - GRID_CELL * 4.0, WORLD_BOUNDS.position.y + GRID_CELL * 4.0))
+	var size_px := GOAL_CARD_SIZE * zoom
 	return [
 		{
 			"id": "amino_acids",
 			"title": "AMINO ACID SINK",
 			"subtitle": "N-C-COOH -> protein points",
 			"color": Color("8cff6a"),
-			"rect": Rect2(Vector2(base_x, amino_y), size_px)
+			"rect": Rect2(base_world * zoom + pan_offset, size_px)
 		},
 		{
 			"id": "dna",
 			"title": "DNA POINT SINK",
 			"subtitle": "Build nucleotide route later",
 			"color": Color("76f4ff"),
-			"rect": Rect2(Vector2(base_x, dna_y), size_px)
+			"rect": Rect2((base_world + Vector2(0.0, GRID_CELL * 2.0)) * zoom + pan_offset, size_px)
 		}
 	]
 
@@ -668,6 +673,7 @@ class FactoryNodeFrame:
 		var alpha := 0.48 if depleted else 0.92
 		draw_rect(rect.grow(4.0), Color(border.r, border.g, border.b, 0.10 * alpha), true)
 		draw_rect(rect, Color(base.r, base.g, base.b, 0.76 * alpha), true)
+		_draw_footprint(rect, border, alpha)
 		draw_rect(rect.grow(-5.0), Color(0.02, 0.07, 0.09, 0.26 * alpha), true)
 		draw_rect(rect, Color(0.0, 0.0, 0.0, 0.70 * alpha), false, 3.0)
 		draw_rect(rect.grow(-2.0), Color(border.r, border.g, border.b, (0.88 if selected else 0.48) * alpha), false, 2.0)
@@ -675,6 +681,15 @@ class FactoryNodeFrame:
 		draw_rect(header, Color(border.r, border.g, border.b, 0.16 * alpha), true)
 		var text := "SUBSTRATE" if node_kind == "molecule" else "ENZYME"
 		draw_string(ThemeDB.fallback_font, Vector2(12.0, 16.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.86, 1.0, 1.0, 0.82 * alpha))
+
+	func _draw_footprint(rect: Rect2, border: Color, alpha: float) -> void:
+		var half_x := size.x * 0.5
+		var half_y := size.y / 3.0
+		draw_line(Vector2(half_x, 0.0), Vector2(half_x, size.y), Color(border.r, border.g, border.b, 0.12 * alpha), 1.0, true)
+		draw_line(Vector2(0.0, half_y), Vector2(size.x, half_y), Color(border.r, border.g, border.b, 0.10 * alpha), 1.0, true)
+		draw_line(Vector2(0.0, half_y * 2.0), Vector2(size.x, half_y * 2.0), Color(border.r, border.g, border.b, 0.10 * alpha), 1.0, true)
+		for corner in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+			draw_circle(corner, 4.0, Color(border.r, border.g, border.b, 0.55 * alpha))
 
 class FactoryGoalNode:
 	extends Control
@@ -693,6 +708,9 @@ class FactoryGoalNode:
 		var pulse := 0.55 + sin(Time.get_ticks_msec() * 0.003) * 0.18
 		draw_rect(rect.grow(5.0), Color(color.r, color.g, color.b, 0.10 + pulse * 0.06), true)
 		draw_rect(rect, Color(0.04, 0.11, 0.12, 0.92), true)
+		draw_line(Vector2(size.x * 0.5, 0.0), Vector2(size.x * 0.5, size.y), Color(color.r, color.g, color.b, 0.12), 1.0, true)
+		draw_line(Vector2(0.0, size.y / 3.0), Vector2(size.x, size.y / 3.0), Color(color.r, color.g, color.b, 0.10), 1.0, true)
+		draw_line(Vector2(0.0, size.y * 2.0 / 3.0), Vector2(size.x, size.y * 2.0 / 3.0), Color(color.r, color.g, color.b, 0.10), 1.0, true)
 		draw_rect(rect, Color(color.r, color.g, color.b, 0.32), false, 7.0)
 		draw_rect(rect.grow(-3.0), color, false, 2.0)
 		draw_string(ThemeDB.fallback_font, Vector2(16.0, 30.0), str(goal.get("title", "GOAL")), HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(10.0, 17.0 * _font_scale()), color)
@@ -766,6 +784,8 @@ class EnzymeStepBox:
 		var cyan := Color("8cff6a") if selected else Color("ff7a67")
 		draw_rect(rect.grow(4.0), Color(cyan.r, cyan.g, cyan.b, 0.08), true)
 		draw_rect(rect, Color(0.22, 0.07, 0.08, 0.88), true)
+		draw_line(Vector2(size.x * 0.5, 0.0), Vector2(size.x * 0.5, size.y), Color(cyan.r, cyan.g, cyan.b, 0.12), 1.0, true)
+		draw_line(Vector2(0.0, size.y * 0.5), Vector2(size.x, size.y * 0.5), Color(cyan.r, cyan.g, cyan.b, 0.10), 1.0, true)
 		draw_rect(rect.grow(-5.0), Color(0.05, 0.10, 0.12, 0.36), true)
 		draw_rect(rect, Color(cyan.r, cyan.g, cyan.b, 0.28 if selected else 0.20), false, 12.0 if selected else 9.0)
 		draw_rect(rect, cyan, false, 3.0 if selected else 2.0)
