@@ -17,6 +17,7 @@ var bond_scale := 1.0
 var graph_spacing_scale := 1.0
 var atom_outline_extra := 4.6
 var atom_inner_stroke_extra := 1.3
+var atom_inner_stroke_lighten := 0.12
 var atom_gloss_alpha := 0.42
 var bond_outline_extra := 7.0
 var bond_core_extra := 2.0
@@ -224,9 +225,11 @@ func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
 	draw_circle(pos, radius + atom_outline_extra, Color("02070b"))
-	draw_circle(pos, radius + atom_inner_stroke_extra, base.lightened(0.30))
-	draw_circle(pos, radius - 1.1, base.darkened(0.14))
-	draw_circle(pos + Vector2(-radius * 0.10, -radius * 0.08), radius * 0.62, Color(base.lightened(0.08).r, base.lightened(0.08).g, base.lightened(0.08).b, 0.20))
+	draw_circle(pos, radius + atom_inner_stroke_extra, base.lightened(atom_inner_stroke_lighten))
+	draw_circle(pos, radius - 0.8, base.darkened(0.18))
+	draw_circle(pos + Vector2(radius * 0.16, -radius * 0.18), radius * 0.82, Color(base.lightened(0.10).r, base.lightened(0.10).g, base.lightened(0.10).b, 0.40))
+	draw_circle(pos + Vector2(radius * 0.30, -radius * 0.36), radius * 0.46, Color(base.lightened(0.24).r, base.lightened(0.24).g, base.lightened(0.24).b, 0.22))
+	draw_circle(pos + Vector2(-radius * 0.34, radius * 0.32), radius * 0.54, Color(0.0, 0.0, 0.0, 0.12))
 	draw_circle(pos + Vector2(radius * 0.27, -radius * 0.39), radius * 0.20, Color(1, 1, 1, atom_gloss_alpha))
 
 func _atom_radius(element: String) -> float:

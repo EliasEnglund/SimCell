@@ -444,15 +444,15 @@ func _art_molecule_variant_section() -> Control:
 	if molecule.is_empty() and not sim.molecule_types.is_empty():
 		molecule = sim.molecule_types[sim.molecule_types.keys()[0]]
 	var variants := [
-		{"n": 1, "name": "Variant 3 Base", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 2.4, "trim": 1.05, "gap": 5.6, "gloss": 0.45},
-		{"n": 2, "name": "Slightly Smaller", "zoom": 0.58, "atom": 0.92, "bond": 0.70, "spacing": 1.13, "outline": 7.0, "rim": 2.3, "trim": 1.02, "gap": 5.7, "gloss": 0.45},
-		{"n": 3, "name": "Slightly Larger", "zoom": 0.58, "atom": 1.00, "bond": 0.70, "spacing": 1.12, "outline": 7.5, "rim": 2.5, "trim": 1.08, "gap": 5.5, "gloss": 0.46},
-		{"n": 4, "name": "More Air", "zoom": 0.57, "atom": 0.94, "bond": 0.68, "spacing": 1.18, "outline": 7.2, "rim": 2.4, "trim": 1.02, "gap": 5.9, "gloss": 0.45},
-		{"n": 5, "name": "Tighter Air", "zoom": 0.59, "atom": 0.96, "bond": 0.72, "spacing": 1.08, "outline": 7.4, "rim": 2.4, "trim": 1.08, "gap": 5.3, "gloss": 0.46},
-		{"n": 6, "name": "Heavier Edge", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 8.4, "rim": 2.2, "trim": 1.06, "gap": 5.6, "gloss": 0.43},
-		{"n": 7, "name": "Cleaner Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.68, "spacing": 1.12, "outline": 6.8, "rim": 3.0, "trim": 1.04, "gap": 5.7, "gloss": 0.44},
-		{"n": 8, "name": "Thicker Bonds", "zoom": 0.58, "atom": 0.94, "bond": 0.82, "spacing": 1.13, "outline": 7.2, "rim": 2.4, "trim": 1.04, "gap": 5.4, "gloss": 0.45},
-		{"n": 9, "name": "Closer Double Bond", "zoom": 0.58, "atom": 0.96, "bond": 0.72, "spacing": 1.12, "outline": 7.4, "rim": 2.5, "trim": 1.06, "gap": 4.6, "gloss": 0.46}
+		{"n": 1, "name": "Subtle Rim Base", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.9, "rim_light": 0.08, "trim": 1.05, "gap": 5.6, "gloss": 0.45},
+		{"n": 2, "name": "Darker Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.6, "rim_light": 0.04, "trim": 1.05, "gap": 5.6, "gloss": 0.44},
+		{"n": 3, "name": "Thin Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.3, "rim_light": 0.07, "trim": 1.05, "gap": 5.6, "gloss": 0.45},
+		{"n": 4, "name": "Soft Gradient", "zoom": 0.58, "atom": 0.96, "bond": 0.68, "spacing": 1.13, "outline": 7.0, "rim": 0.8, "rim_light": 0.06, "trim": 1.04, "gap": 5.7, "gloss": 0.40},
+		{"n": 5, "name": "Bright Highlight", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.8, "rim_light": 0.08, "trim": 1.05, "gap": 5.6, "gloss": 0.55},
+		{"n": 6, "name": "Heavy Edge Subtle Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 8.4, "rim": 0.6, "rim_light": 0.05, "trim": 1.06, "gap": 5.6, "gloss": 0.43},
+		{"n": 7, "name": "Small Atom Gradient", "zoom": 0.58, "atom": 0.92, "bond": 0.70, "spacing": 1.14, "outline": 7.0, "rim": 0.8, "rim_light": 0.07, "trim": 1.02, "gap": 5.7, "gloss": 0.45},
+		{"n": 8, "name": "Large Atom Gradient", "zoom": 0.58, "atom": 1.00, "bond": 0.70, "spacing": 1.12, "outline": 7.5, "rim": 0.9, "rim_light": 0.08, "trim": 1.08, "gap": 5.5, "gloss": 0.46},
+		{"n": 9, "name": "Thicker Bonds Subtle Rim", "zoom": 0.58, "atom": 0.94, "bond": 0.82, "spacing": 1.13, "outline": 7.2, "rim": 0.8, "rim_light": 0.06, "trim": 1.04, "gap": 5.4, "gloss": 0.45}
 	]
 	for variant in variants:
 		grid.add_child(_art_molecule_variant_card(molecule, variant))
@@ -473,6 +473,7 @@ func _art_molecule_variant_card(molecule: Dictionary, variant: Dictionary) -> Co
 	canvas.graph_spacing_scale = float(variant.get("spacing", 1.0))
 	canvas.atom_outline_extra = float(variant.get("outline", 4.6))
 	canvas.atom_inner_stroke_extra = float(variant.get("rim", 1.3))
+	canvas.atom_inner_stroke_lighten = float(variant.get("rim_light", 0.12))
 	canvas.atom_gloss_alpha = float(variant.get("gloss", 0.42))
 	canvas.bond_trim_scale = float(variant.get("trim", 1.0))
 	canvas.double_bond_gap = float(variant.get("gap", 7.0))
