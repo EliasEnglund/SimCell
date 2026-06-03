@@ -14,6 +14,14 @@ var physical_touch := false
 var draw_background := true
 var atom_scale := 1.0
 var bond_scale := 1.0
+var graph_spacing_scale := 1.0
+var atom_outline_extra := 4.6
+var atom_inner_stroke_extra := 1.3
+var atom_gloss_alpha := 0.42
+var bond_outline_extra := 7.0
+var bond_core_extra := 2.0
+var bond_trim_scale := 1.0
+var double_bond_gap := 7.0
 
 var _visual_offsets: Array[Vector2] = []
 var _visual_velocities: Array[Vector2] = []
@@ -162,13 +170,13 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		width = 10.0 * zoom * bond_scale
 	var offsets := [0.0]
 	if order == 2:
-		offsets = [-7.0 * zoom * bond_scale, 7.0 * zoom * bond_scale]
+		offsets = [-double_bond_gap * zoom * bond_scale, double_bond_gap * zoom * bond_scale]
 	for offset in offsets:
-		var trim := 28.0 * zoom * atom_scale
+		var trim := 28.0 * zoom * atom_scale * bond_trim_scale
 		var start: Vector2 = a + dir * trim + normal * offset
 		var end: Vector2 = b - dir * trim + normal * offset
-		draw_line(start, end, outline, width + 7.0 * zoom * bond_scale, true)
-		draw_line(start, end, color.darkened(0.08), width + 2.0 * zoom * bond_scale, true)
+		draw_line(start, end, outline, width + bond_outline_extra * zoom * bond_scale, true)
+		draw_line(start, end, color.darkened(0.08), width + bond_core_extra * zoom * bond_scale, true)
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
 		if tension > 0.08:
 			_draw_electric_bond(start, end, normal, zoom, tension, offset)
@@ -215,11 +223,11 @@ func _draw_touch_feedback(transform: Transform2D, zoom: float) -> void:
 	draw_circle(_pointer_position, 9.0 + 8.0 * _pull_warning, Color(tension_color.r, tension_color.g, tension_color.b, 0.26))
 
 func _draw_atom(pos: Vector2, radius: float, base: Color) -> void:
-	draw_circle(pos, radius + 4.6, Color("02070b"))
-	draw_circle(pos, radius + 1.3, base.lightened(0.30))
+	draw_circle(pos, radius + atom_outline_extra, Color("02070b"))
+	draw_circle(pos, radius + atom_inner_stroke_extra, base.lightened(0.30))
 	draw_circle(pos, radius - 1.1, base.darkened(0.14))
 	draw_circle(pos + Vector2(-radius * 0.10, -radius * 0.08), radius * 0.62, Color(base.lightened(0.08).r, base.lightened(0.08).g, base.lightened(0.08).b, 0.20))
-	draw_circle(pos + Vector2(radius * 0.27, -radius * 0.39), radius * 0.20, Color(1, 1, 1, 0.42))
+	draw_circle(pos + Vector2(radius * 0.27, -radius * 0.39), radius * 0.20, Color(1, 1, 1, atom_gloss_alpha))
 
 func _atom_radius(element: String) -> float:
 	if element == "C":
@@ -424,7 +432,25 @@ func _atom_screen_position(index: int, transform: Transform2D) -> Vector2:
 	var offset := Vector2.ZERO
 	if index < _visual_offsets.size():
 		offset = _visual_offsets[index]
-	return transform * (atoms[index].get("pos", Vector2.ZERO) + offset)
+	return transform * (_styled_graph_position(atoms[index].get("pos", Vector2.ZERO) + offset))
+
+func _styled_graph_position(pos: Vector2) -> Vector2:
+	if is_equal_approx(graph_spacing_scale, 1.0):
+		return pos
+	var center := _molecule_center()
+	return center + (pos - center) * graph_spacing_scale
+
+func _molecule_center() -> Vector2:
+	var atoms: Array = molecule.get("atoms", [])
+	if atoms.is_empty():
+		return Vector2.ZERO
+	var min_pos := Vector2(INF, INF)
+	var max_pos := Vector2(-INF, -INF)
+	for atom in atoms:
+		var pos: Vector2 = atom.get("pos", Vector2.ZERO)
+		min_pos = min_pos.min(pos)
+		max_pos = max_pos.max(pos)
+	return (min_pos + max_pos) * 0.5
 
 func _nearest_valid_bond(point: Vector2) -> int:
 	var atoms: Array = molecule.get("atoms", [])

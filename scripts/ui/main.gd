@@ -398,6 +398,7 @@ func _build_art_lab_view() -> void:
 	stack.add_theme_constant_override("separation", 18)
 	margin.add_child(stack)
 	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
+	stack.add_child(_art_molecule_variant_section())
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
 		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
@@ -426,6 +427,70 @@ func _build_art_lab_view() -> void:
 		["Detailed Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
 		["Views", "res://assets/art_lab/sheets/view_icons_sheet.png"]
 	]))
+
+func _art_molecule_variant_section() -> Control:
+	var panel := _glow_panel("Molecule Style Variants")
+	var note := Label.new()
+	note.text = "Pick the number you prefer. These variants test atom radius, black stroke, inner rim, bond thickness, bond spacing, and atom distance."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 14)
+	panel.add_child(grid)
+	var molecule: Dictionary = sim.molecule_types.get(sim.selected_molecule, {})
+	if molecule.is_empty() and not sim.molecule_types.is_empty():
+		molecule = sim.molecule_types[sim.molecule_types.keys()[0]]
+	var variants := [
+		{"n": 1, "name": "Current Compact", "atom": 0.68, "bond": 0.62, "spacing": 1.00, "outline": 4.6, "rim": 1.3, "trim": 1.00, "gap": 7.0, "gloss": 0.42},
+		{"n": 2, "name": "Reference Balanced", "atom": 0.82, "bond": 0.54, "spacing": 1.08, "outline": 5.4, "rim": 1.8, "trim": 1.04, "gap": 6.2, "gloss": 0.45},
+		{"n": 3, "name": "Heavy Outline", "atom": 0.84, "bond": 0.58, "spacing": 1.10, "outline": 7.0, "rim": 2.2, "trim": 1.06, "gap": 6.6, "gloss": 0.40},
+		{"n": 4, "name": "Long Bonds", "atom": 0.72, "bond": 0.48, "spacing": 1.20, "outline": 5.0, "rim": 1.4, "trim": 0.96, "gap": 7.4, "gloss": 0.38},
+		{"n": 5, "name": "Large Atoms", "atom": 0.94, "bond": 0.52, "spacing": 1.04, "outline": 5.8, "rim": 2.0, "trim": 1.12, "gap": 5.8, "gloss": 0.48},
+		{"n": 6, "name": "Thin Scientific", "atom": 0.76, "bond": 0.38, "spacing": 1.15, "outline": 4.0, "rim": 1.0, "trim": 1.00, "gap": 8.6, "gloss": 0.34},
+		{"n": 7, "name": "Chunky Bonds", "atom": 0.80, "bond": 0.76, "spacing": 1.08, "outline": 5.6, "rim": 1.6, "trim": 1.08, "gap": 6.0, "gloss": 0.42},
+		{"n": 8, "name": "Wide Double Bonds", "atom": 0.82, "bond": 0.52, "spacing": 1.12, "outline": 5.2, "rim": 1.8, "trim": 1.05, "gap": 10.0, "gloss": 0.42},
+		{"n": 9, "name": "Designer Close-up", "atom": 1.08, "bond": 0.70, "spacing": 1.10, "outline": 7.2, "rim": 2.4, "trim": 1.14, "gap": 7.2, "gloss": 0.50}
+	]
+	for variant in variants:
+		grid.add_child(_art_molecule_variant_card(molecule, variant))
+	return panel
+
+func _art_molecule_variant_card(molecule: Dictionary, variant: Dictionary) -> Control:
+	var card := VBoxContainer.new()
+	card.custom_minimum_size = Vector2(292, 260)
+	card.add_theme_constant_override("separation", 6)
+	var canvas = MoleculeCanvasScript.new()
+	canvas.custom_minimum_size = Vector2(292, 186)
+	canvas.size = canvas.custom_minimum_size
+	canvas.draw_background = true
+	canvas.scale_to_fit = false
+	canvas.fixed_zoom = 0.48
+	canvas.atom_scale = float(variant.get("atom", 1.0))
+	canvas.bond_scale = float(variant.get("bond", 1.0))
+	canvas.graph_spacing_scale = float(variant.get("spacing", 1.0))
+	canvas.atom_outline_extra = float(variant.get("outline", 4.6))
+	canvas.atom_inner_stroke_extra = float(variant.get("rim", 1.3))
+	canvas.atom_gloss_alpha = float(variant.get("gloss", 0.42))
+	canvas.bond_trim_scale = float(variant.get("trim", 1.0))
+	canvas.double_bond_gap = float(variant.get("gap", 7.0))
+	canvas.set_molecule(molecule)
+	card.add_child(canvas)
+	var number := Label.new()
+	number.text = "%d" % int(variant.get("n", 0))
+	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	number.add_theme_font_size_override("font_size", 30)
+	number.modulate = Color("76f4ff")
+	card.add_child(number)
+	var label := Label.new()
+	label.text = str(variant.get("name", "Variant"))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 13)
+	label.modulate = Color("dbeff2")
+	card.add_child(label)
+	return card
 
 func _art_icon_section(label_text: String, items: Array, image_size: float = 146.0) -> Control:
 	var panel := _glow_panel(label_text)
