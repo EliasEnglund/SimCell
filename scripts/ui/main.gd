@@ -4,6 +4,7 @@ const CellViewScript := preload("res://scripts/ui/cell_view.gd")
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const MetabolismWorkspaceScript := preload("res://scripts/ui/metabolism_workspace.gd")
 const SimulationStateScript := preload("res://scripts/core/simulation_state.gd")
+const MoleculeGraphScript := preload("res://scripts/core/molecule_graph.gd")
 
 const VIEW_ICON_PATHS := {
 	"cell": "res://assets/art_lab/icons/views/cell.png",
@@ -399,6 +400,7 @@ func _build_art_lab_view() -> void:
 	margin.add_child(stack)
 	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
 	stack.add_child(_art_molecule_variant_section())
+	stack.add_child(_art_selected_molecule_examples_section())
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
 		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
@@ -457,6 +459,59 @@ func _art_molecule_variant_section() -> Control:
 	for variant in variants:
 		grid.add_child(_art_molecule_variant_card(molecule, variant))
 	return panel
+
+func _selected_molecule_style() -> Dictionary:
+	return {"zoom": 0.60, "atom": 1.04, "bond": 0.68, "spacing": 1.05, "outline": 5.6, "rim": 0.8, "rim_light": 0.07, "trim": 1.13, "gap": 9.0, "gloss": 0.46}
+
+func _art_selected_molecule_examples_section() -> Control:
+	var panel := _glow_panel("Selected Molecule Style Examples")
+	var note := Label.new()
+	note.text = "Variant 5 applied to different molecule shapes and elements."
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var row := GridContainer.new()
+	row.columns = 3
+	row.add_theme_constant_override("h_separation", 14)
+	row.add_theme_constant_override("v_separation", 14)
+	panel.add_child(row)
+	var examples: Array = [
+		["Glucose substrate", MoleculeGraphScript.initial_glucose_like()],
+		["Amino acid target", MoleculeGraphScript.amino_acid_target()]
+	]
+	for demo in MoleculeGraphScript.demo_molecules():
+		examples.append([str(demo.get("name", demo.get("formula", "Molecule"))), demo])
+	for item in examples:
+		row.add_child(_art_molecule_example_card(str(item[0]), item[1], _selected_molecule_style()))
+	return panel
+
+func _art_molecule_example_card(label_text: String, molecule: Dictionary, style: Dictionary) -> Control:
+	var card := VBoxContainer.new()
+	card.custom_minimum_size = Vector2(292, 230)
+	card.add_theme_constant_override("separation", 6)
+	var canvas = MoleculeCanvasScript.new()
+	canvas.custom_minimum_size = Vector2(292, 176)
+	canvas.size = canvas.custom_minimum_size
+	canvas.draw_background = true
+	canvas.scale_to_fit = false
+	canvas.fixed_zoom = float(style.get("zoom", 0.60))
+	canvas.atom_scale = float(style.get("atom", 1.0))
+	canvas.bond_scale = float(style.get("bond", 1.0))
+	canvas.graph_spacing_scale = float(style.get("spacing", 1.0))
+	canvas.atom_outline_extra = float(style.get("outline", 4.6))
+	canvas.atom_inner_stroke_extra = float(style.get("rim", 1.3))
+	canvas.atom_inner_stroke_lighten = float(style.get("rim_light", 0.12))
+	canvas.atom_gloss_alpha = float(style.get("gloss", 0.42))
+	canvas.bond_trim_scale = float(style.get("trim", 1.0))
+	canvas.double_bond_gap = float(style.get("gap", 7.0))
+	canvas.set_molecule(molecule)
+	card.add_child(canvas)
+	var label := Label.new()
+	label.text = "%s  |  %s" % [label_text, molecule.get("formula", "")]
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 13)
+	label.modulate = Color("dbeff2")
+	card.add_child(label)
+	return card
 
 func _art_molecule_variant_card(molecule: Dictionary, variant: Dictionary) -> Control:
 	var card := VBoxContainer.new()
