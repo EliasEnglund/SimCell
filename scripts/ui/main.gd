@@ -19,6 +19,9 @@ var root: VBoxContainer
 var content: Control
 var bottom_nav: HBoxContainer
 var status_label: Label
+var view_title_label: Label
+var resource_summary_box: HBoxContainer
+var molecule_summary_box: HBoxContainer
 var molecule_list: VBoxContainer
 var detail_panel: VBoxContainer
 var pathway_box: VBoxContainer
@@ -141,17 +144,31 @@ func _build_shell() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
+	var header_panel := PanelContainer.new()
+	header_panel.custom_minimum_size = Vector2(0, 58)
+	header_panel.add_theme_stylebox_override("panel", _top_bar_style())
+	root.add_child(header_panel)
 	var header := HBoxContainer.new()
-	header.custom_minimum_size = Vector2(0, 42)
 	header.add_theme_constant_override("separation", 12)
-	root.add_child(header)
-	var title := Label.new()
-	title.text = "SIM CELL"
-	title.add_theme_font_size_override("font_size", 24)
-	title.modulate = Color("76f4ff")
-	header.add_child(title)
+	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	header_panel.add_child(header)
+	resource_summary_box = HBoxContainer.new()
+	resource_summary_box.custom_minimum_size = Vector2(430, 0)
+	resource_summary_box.add_theme_constant_override("separation", 14)
+	header.add_child(resource_summary_box)
+	view_title_label = Label.new()
+	view_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	view_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	view_title_label.add_theme_font_size_override("font_size", 24)
+	view_title_label.modulate = Color("76f4ff")
+	header.add_child(view_title_label)
+	molecule_summary_box = HBoxContainer.new()
+	molecule_summary_box.custom_minimum_size = Vector2(360, 0)
+	molecule_summary_box.alignment = BoxContainer.ALIGNMENT_END
+	molecule_summary_box.add_theme_constant_override("separation", 14)
+	header.add_child(molecule_summary_box)
 	status_label = Label.new()
-	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_label.visible = false
 	header.add_child(status_label)
 	music_button = Button.new()
 	music_button.text = "♪"
@@ -171,7 +188,7 @@ func _build_shell() -> void:
 	bottom_nav = HBoxContainer.new()
 	bottom_nav.custom_minimum_size = Vector2(0, 72)
 	bottom_nav.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_nav.add_theme_constant_override("separation", 8)
+	bottom_nav.add_theme_constant_override("separation", 14)
 	root.add_child(bottom_nav)
 	for item in [
 		["Cell", "cell"],
@@ -182,14 +199,13 @@ func _build_shell() -> void:
 		["Art Lab", "art_lab"]
 	]:
 		var button := Button.new()
-		button.text = item[0]
+		button.text = ""
 		button.icon = _texture_from_png(str(VIEW_ICON_PATHS.get(item[1], "")))
 		button.expand_icon = true
-		button.custom_minimum_size = Vector2(136, 62)
-		button.add_theme_font_size_override("font_size", 12)
-		button.add_theme_stylebox_override("normal", _nav_style(false))
-		button.add_theme_stylebox_override("hover", _nav_style(true))
-		button.add_theme_stylebox_override("pressed", _nav_style(true))
+		button.custom_minimum_size = Vector2(96, 62)
+		button.add_theme_stylebox_override("normal", _transparent_nav_style())
+		button.add_theme_stylebox_override("hover", _transparent_nav_style(Color(0.45, 1.0, 1.0, 0.12)))
+		button.add_theme_stylebox_override("pressed", _transparent_nav_style(Color(0.55, 1.0, 0.78, 0.16)))
 		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		button.pressed.connect(func(view_id = item[1]): _show_view(view_id))
 		bottom_nav.add_child(button)
@@ -373,17 +389,17 @@ func _build_art_lab_view() -> void:
 	margin.add_child(stack)
 	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
 	stack.add_child(_art_icon_section("Basic Resources", [
-		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp.png"],
-		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh.png"],
-		["Amino Acids", "res://assets/art_lab/icons/resources/amino_acids.png"],
-		["DNA", "res://assets/art_lab/icons/resources/dna.png"],
-		["RNA", "res://assets/art_lab/icons/resources/rna.png"]
+		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
+		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
+		["Amino Acids", "res://assets/art_lab/icons/resources/amino_acids_simple.png"],
+		["DNA", "res://assets/art_lab/icons/resources/dna_simple.png"],
+		["RNA", "res://assets/art_lab/icons/resources/rna_simple.png"]
 	]))
 	stack.add_child(_art_icon_section("Source Metabolites And Elements", [
-		["Glucose", "res://assets/art_lab/icons/elements/glucose.png"],
-		["Nitrogen", "res://assets/art_lab/icons/elements/nitrogen.png"],
-		["Sulfur", "res://assets/art_lab/icons/elements/sulfur.png"],
-		["Phosphorus", "res://assets/art_lab/icons/elements/phosphorus.png"]
+		["Glucose", "res://assets/art_lab/icons/elements/glucose_simple.png"],
+		["Nitrogen", "res://assets/art_lab/icons/elements/nitrogen_simple.png"],
+		["Sulfur", "res://assets/art_lab/icons/elements/sulfur_simple.png"],
+		["Phosphorus", "res://assets/art_lab/icons/elements/phosphorus_simple.png"]
 	]))
 	stack.add_child(_art_icon_section("View Navigation", [
 		["Cell", VIEW_ICON_PATHS["cell"]],
@@ -394,8 +410,10 @@ func _build_art_lab_view() -> void:
 		["Art Lab", VIEW_ICON_PATHS["art_lab"]]
 	], 132.0))
 	stack.add_child(_art_sheet_section("Generated Sheets", [
-		["Resources", "res://assets/art_lab/sheets/resource_icons_sheet.png"],
-		["Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
+		["Simple Resources", "res://assets/art_lab/sheets/resource_icons_simple_sheet.png"],
+		["Simple Elements", "res://assets/art_lab/sheets/source_icons_simple_sheet.png"],
+		["Detailed Resources", "res://assets/art_lab/sheets/resource_icons_sheet.png"],
+		["Detailed Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
 		["Views", "res://assets/art_lab/sheets/view_icons_sheet.png"]
 	]))
 
@@ -463,6 +481,23 @@ func _refresh() -> void:
 		sim.present_molecule_ids().size(),
 		sim.active_enzymes.size()
 	]
+	if view_title_label != null:
+		view_title_label.text = _view_title(sim.active_view)
+	if resource_summary_box != null:
+		_set_top_stat_group(resource_summary_box, [
+			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a")],
+			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff")],
+			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a")],
+			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff")]
+		])
+	if molecule_summary_box != null:
+		var glucose_id := _glucose_molecule_id()
+		var glucose_amount := float(sim.molecule_amounts.get(glucose_id, 0.0)) if not glucose_id.is_empty() else 0.0
+		_set_top_stat_group(molecule_summary_box, [
+			["res://assets/art_lab/icons/elements/glucose_simple.png", "%.0f" % glucose_amount, Color("8cff6a")],
+			["res://assets/art_lab/icons/views/metabolism.png", "%d" % sim.present_molecule_ids().size(), Color("dbeff2")],
+			["res://assets/art_lab/icons/views/proteins.png", "%d" % sim.active_enzymes.size(), Color("dbeff2")]
+		])
 	if sim.active_view == "metabolism" and molecule_list != null:
 		_refresh_metabolism()
 	if sim.active_view == "membrane" and membrane_outside_list != null:
@@ -1070,6 +1105,73 @@ func _resource_cost_text(cost: Dictionary) -> String:
 		if value > 0.0:
 			parts.append("%.0f %s" % [value, key])
 	return ", ".join(parts) if not parts.is_empty() else "free"
+
+func _view_title(view_id: String) -> String:
+	var titles := {
+		"cell": "CELL OVERVIEW",
+		"metabolism": "METABOLIC LANDSCAPE",
+		"membrane": "MEMBRANE TRANSPORT",
+		"proteins": "PROTEIN BUILDER",
+		"dna": "DNA TECH TREE",
+		"art_lab": "ART LAB",
+		"enzyme_designer": "ENZYME DESIGNER"
+	}
+	return titles.get(view_id, view_id.to_upper())
+
+func _glucose_molecule_id() -> String:
+	for id in sim.molecule_types.keys():
+		var molecule: Dictionary = sim.molecule_types[id]
+		if molecule.get("name", "") == "Glucose":
+			return id
+	return ""
+
+func _set_top_stat_group(container: HBoxContainer, items: Array) -> void:
+	_clear(container)
+	for item in items:
+		container.add_child(_top_stat_item(str(item[0]), str(item[1]), item[2] if item.size() > 2 else Color("dbeff2")))
+
+func _top_stat_item(icon_path: String, value: String, color: Color) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var icon := TextureRect.new()
+	icon.texture = _texture_from_png(icon_path)
+	icon.custom_minimum_size = Vector2(24, 24)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	row.add_child(icon)
+	var label := Label.new()
+	label.text = value
+	label.add_theme_font_size_override("font_size", 14)
+	label.modulate = color
+	row.add_child(label)
+	return row
+
+func _top_bar_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("07181c")
+	style.border_color = Color("4bc7d8")
+	style.set_border_width(SIDE_TOP, 2)
+	style.set_border_width(SIDE_BOTTOM, 2)
+	style.shadow_color = Color(0.2, 0.95, 1.0, 0.18)
+	style.shadow_size = 10
+	style.content_margin_left = 16
+	style.content_margin_top = 8
+	style.content_margin_right = 16
+	style.content_margin_bottom = 8
+	return style
+
+func _transparent_nav_style(fill: Color = Color.TRANSPARENT) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = Color.TRANSPARENT
+	style.set_border_width_all(0)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 2
+	style.content_margin_top = 2
+	style.content_margin_right = 2
+	style.content_margin_bottom = 2
+	return style
 
 func _glow_panel_style(fill: Color, border: Color, width: float, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
