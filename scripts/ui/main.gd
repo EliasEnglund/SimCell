@@ -444,15 +444,15 @@ func _art_molecule_variant_section() -> Control:
 	if molecule.is_empty() and not sim.molecule_types.is_empty():
 		molecule = sim.molecule_types[sim.molecule_types.keys()[0]]
 	var variants := [
-		{"n": 1, "name": "Current Compact", "atom": 0.68, "bond": 0.62, "spacing": 1.00, "outline": 4.6, "rim": 1.3, "trim": 1.00, "gap": 7.0, "gloss": 0.42},
-		{"n": 2, "name": "Reference Balanced", "atom": 0.82, "bond": 0.54, "spacing": 1.08, "outline": 5.4, "rim": 1.8, "trim": 1.04, "gap": 6.2, "gloss": 0.45},
-		{"n": 3, "name": "Heavy Outline", "atom": 0.84, "bond": 0.58, "spacing": 1.10, "outline": 7.0, "rim": 2.2, "trim": 1.06, "gap": 6.6, "gloss": 0.40},
-		{"n": 4, "name": "Long Bonds", "atom": 0.72, "bond": 0.48, "spacing": 1.20, "outline": 5.0, "rim": 1.4, "trim": 0.96, "gap": 7.4, "gloss": 0.38},
-		{"n": 5, "name": "Large Atoms", "atom": 0.94, "bond": 0.52, "spacing": 1.04, "outline": 5.8, "rim": 2.0, "trim": 1.12, "gap": 5.8, "gloss": 0.48},
-		{"n": 6, "name": "Thin Scientific", "atom": 0.76, "bond": 0.38, "spacing": 1.15, "outline": 4.0, "rim": 1.0, "trim": 1.00, "gap": 8.6, "gloss": 0.34},
-		{"n": 7, "name": "Chunky Bonds", "atom": 0.80, "bond": 0.76, "spacing": 1.08, "outline": 5.6, "rim": 1.6, "trim": 1.08, "gap": 6.0, "gloss": 0.42},
-		{"n": 8, "name": "Wide Double Bonds", "atom": 0.82, "bond": 0.52, "spacing": 1.12, "outline": 5.2, "rim": 1.8, "trim": 1.05, "gap": 10.0, "gloss": 0.42},
-		{"n": 9, "name": "Designer Close-up", "atom": 1.08, "bond": 0.70, "spacing": 1.10, "outline": 7.2, "rim": 2.4, "trim": 1.14, "gap": 7.2, "gloss": 0.50}
+		{"n": 1, "name": "Reference Match A", "zoom": 0.62, "atom": 1.18, "bond": 0.74, "spacing": 0.94, "outline": 7.4, "rim": 2.3, "trim": 1.26, "gap": 5.2, "gloss": 0.46},
+		{"n": 2, "name": "Reference Match B", "zoom": 0.64, "atom": 1.22, "bond": 0.70, "spacing": 0.96, "outline": 8.2, "rim": 2.6, "trim": 1.30, "gap": 5.0, "gloss": 0.44},
+		{"n": 3, "name": "Slightly Wider", "zoom": 0.61, "atom": 1.14, "bond": 0.72, "spacing": 1.00, "outline": 7.5, "rim": 2.4, "trim": 1.24, "gap": 5.4, "gloss": 0.45},
+		{"n": 4, "name": "Chunkier Atoms", "zoom": 0.63, "atom": 1.30, "bond": 0.68, "spacing": 0.93, "outline": 8.6, "rim": 2.8, "trim": 1.36, "gap": 4.8, "gloss": 0.48},
+		{"n": 5, "name": "Thicker Bonds", "zoom": 0.62, "atom": 1.18, "bond": 0.88, "spacing": 0.95, "outline": 7.8, "rim": 2.4, "trim": 1.28, "gap": 5.1, "gloss": 0.45},
+		{"n": 6, "name": "Cleaner Stroke", "zoom": 0.64, "atom": 1.20, "bond": 0.76, "spacing": 0.94, "outline": 6.8, "rim": 3.0, "trim": 1.29, "gap": 5.0, "gloss": 0.43},
+		{"n": 7, "name": "Darker Outer Edge", "zoom": 0.62, "atom": 1.22, "bond": 0.74, "spacing": 0.96, "outline": 9.5, "rim": 2.2, "trim": 1.31, "gap": 5.0, "gloss": 0.42},
+		{"n": 8, "name": "Tight Double Bonds", "zoom": 0.63, "atom": 1.20, "bond": 0.76, "spacing": 0.95, "outline": 8.0, "rim": 2.5, "trim": 1.28, "gap": 4.1, "gloss": 0.45},
+		{"n": 9, "name": "Large Close-up", "zoom": 0.66, "atom": 1.28, "bond": 0.78, "spacing": 0.92, "outline": 8.8, "rim": 2.7, "trim": 1.38, "gap": 4.8, "gloss": 0.48}
 	]
 	for variant in variants:
 		grid.add_child(_art_molecule_variant_card(molecule, variant))
@@ -467,7 +467,7 @@ func _art_molecule_variant_card(molecule: Dictionary, variant: Dictionary) -> Co
 	canvas.size = canvas.custom_minimum_size
 	canvas.draw_background = true
 	canvas.scale_to_fit = false
-	canvas.fixed_zoom = 0.48
+	canvas.fixed_zoom = float(variant.get("zoom", 0.62))
 	canvas.atom_scale = float(variant.get("atom", 1.0))
 	canvas.bond_scale = float(variant.get("bond", 1.0))
 	canvas.graph_spacing_scale = float(variant.get("spacing", 1.0))
