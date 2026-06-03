@@ -5,6 +5,15 @@ const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const MetabolismWorkspaceScript := preload("res://scripts/ui/metabolism_workspace.gd")
 const SimulationStateScript := preload("res://scripts/core/simulation_state.gd")
 
+const VIEW_ICON_PATHS := {
+	"cell": "res://assets/art_lab/icons/views/cell.png",
+	"metabolism": "res://assets/art_lab/icons/views/metabolism.png",
+	"membrane": "res://assets/art_lab/icons/views/membrane.png",
+	"proteins": "res://assets/art_lab/icons/views/proteins.png",
+	"dna": "res://assets/art_lab/icons/views/dna.png",
+	"art_lab": "res://assets/art_lab/icons/views/art_lab.png"
+}
+
 var sim = SimulationStateScript.new()
 var root: VBoxContainer
 var content: Control
@@ -165,21 +174,24 @@ func _build_shell() -> void:
 	bottom_nav.add_theme_constant_override("separation", 8)
 	root.add_child(bottom_nav)
 	for item in [
-		["◎", "Cell", "cell"],
-		["⌬", "Metabolism", "metabolism"],
-		["⇄", "Membrane", "membrane"],
-		["▤", "Proteins", "proteins"],
-		["⌁", "DNA", "dna"]
+		["Cell", "cell"],
+		["Metabolism", "metabolism"],
+		["Membrane", "membrane"],
+		["Proteins", "proteins"],
+		["DNA", "dna"],
+		["Art Lab", "art_lab"]
 	]:
 		var button := Button.new()
-		button.text = "%s\n%s" % [item[0], item[1]]
-		button.custom_minimum_size = Vector2(142, 58)
-		button.add_theme_font_size_override("font_size", 15)
+		button.text = item[0]
+		button.icon = load(str(VIEW_ICON_PATHS.get(item[1], "")))
+		button.expand_icon = true
+		button.custom_minimum_size = Vector2(136, 62)
+		button.add_theme_font_size_override("font_size", 12)
 		button.add_theme_stylebox_override("normal", _nav_style(false))
 		button.add_theme_stylebox_override("hover", _nav_style(true))
 		button.add_theme_stylebox_override("pressed", _nav_style(true))
 		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		button.pressed.connect(func(view_id = item[2]): _show_view(view_id))
+		button.pressed.connect(func(view_id = item[1]): _show_view(view_id))
 		bottom_nav.add_child(button)
 
 func _setup_music() -> void:
@@ -215,6 +227,8 @@ func _show_view(view_id: String) -> void:
 		_build_protein_view()
 	elif view_id == "dna":
 		_build_placeholder("DNA TECH TREE", "DNA research unlocks new transporters, enzyme classes, movement, and defense.")
+	elif view_id == "art_lab":
+		_build_art_lab_view()
 	_refresh()
 
 func _build_cell_view() -> void:
@@ -341,6 +355,93 @@ func _build_placeholder(title: String, subtitle: String) -> void:
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	content.add_child(box)
 	box.add_child(_title(title, subtitle))
+
+func _build_art_lab_view() -> void:
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.add_child(scroll)
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 26)
+	margin.add_theme_constant_override("margin_right", 26)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	scroll.add_child(margin)
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.add_theme_constant_override("separation", 18)
+	margin.add_child(stack)
+	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
+	stack.add_child(_art_icon_section("Basic Resources", [
+		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp.png"],
+		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh.png"],
+		["Amino Acids", "res://assets/art_lab/icons/resources/amino_acids.png"],
+		["DNA", "res://assets/art_lab/icons/resources/dna.png"],
+		["RNA", "res://assets/art_lab/icons/resources/rna.png"]
+	]))
+	stack.add_child(_art_icon_section("Source Metabolites And Elements", [
+		["Glucose", "res://assets/art_lab/icons/elements/glucose.png"],
+		["Nitrogen", "res://assets/art_lab/icons/elements/nitrogen.png"],
+		["Sulfur", "res://assets/art_lab/icons/elements/sulfur.png"],
+		["Phosphorus", "res://assets/art_lab/icons/elements/phosphorus.png"]
+	]))
+	stack.add_child(_art_icon_section("View Navigation", [
+		["Cell", VIEW_ICON_PATHS["cell"]],
+		["Metabolism", VIEW_ICON_PATHS["metabolism"]],
+		["Membrane", VIEW_ICON_PATHS["membrane"]],
+		["Proteins", VIEW_ICON_PATHS["proteins"]],
+		["DNA", VIEW_ICON_PATHS["dna"]],
+		["Art Lab", VIEW_ICON_PATHS["art_lab"]]
+	], 132.0))
+	stack.add_child(_art_sheet_section("Generated Sheets", [
+		["Resources", "res://assets/art_lab/sheets/resource_icons_sheet.png"],
+		["Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
+		["Views", "res://assets/art_lab/sheets/view_icons_sheet.png"]
+	]))
+
+func _art_icon_section(label_text: String, items: Array, image_size: float = 146.0) -> Control:
+	var panel := _glow_panel(label_text)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	panel.add_child(row)
+	for item in items:
+		row.add_child(_art_icon_card(str(item[0]), str(item[1]), image_size))
+	return panel
+
+func _art_icon_card(label_text: String, path: String, image_size: float) -> Control:
+	var card := VBoxContainer.new()
+	card.custom_minimum_size = Vector2(maxf(150.0, image_size + 24.0), image_size + 48.0)
+	card.add_theme_constant_override("separation", 8)
+	var texture := TextureRect.new()
+	texture.texture = load(path)
+	texture.custom_minimum_size = Vector2(image_size, image_size)
+	texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	card.add_child(texture)
+	var label := Label.new()
+	label.text = label_text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 13)
+	label.modulate = Color("dbeff2")
+	card.add_child(label)
+	return card
+
+func _art_sheet_section(label_text: String, items: Array) -> Control:
+	var panel := _glow_panel(label_text)
+	for item in items:
+		var title := Label.new()
+		title.text = str(item[0])
+		title.add_theme_font_size_override("font_size", 16)
+		title.modulate = Color("76f4ff")
+		panel.add_child(title)
+		var texture := TextureRect.new()
+		texture.texture = load(str(item[1]))
+		texture.custom_minimum_size = Vector2(0.0, 190.0)
+		texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		panel.add_child(texture)
+	return panel
 
 func _refresh() -> void:
 	if status_label == null:
