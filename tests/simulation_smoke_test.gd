@@ -37,6 +37,12 @@ func _init() -> void:
 	assert(float(sim.resources.get("N", 0.0)) > 0.0)
 	assert(float(sim.resources.get("ATP", 0.0)) > 0.0)
 	assert(float(sim.resources.get("Amino Acids", 0.0)) > 0.0)
+	assert(float(sim.resources.get("DNA Points", 0.0)) > 0.0)
+	assert(sim.dna_tech_available("transporters") == true)
+	var starting_dna_points := float(sim.resources.get("DNA Points", 0.0))
+	assert(sim.invest_dna_research("transporters", 50.0) == true)
+	assert(float(sim.resources.get("DNA Points", 0.0)) < starting_dna_points)
+	assert(float(sim.dna_tech_state("transporters").get("progress", 0.0)) > 0.0)
 	assert(sim.is_target_molecule(sim.target_molecule()) == true)
 	var target_graph: Dictionary = sim.target_molecule()
 	var target_id: String = target_graph["signature"]

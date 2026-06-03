@@ -14,8 +14,10 @@ const RESOURCE_AMINO_ACIDS := "Amino Acids"
 const RESOURCE_ATP := "ATP"
 const RESOURCE_NADH := "NADH"
 const RESOURCE_NITROGEN := "N"
+const RESOURCE_DNA_POINTS := "DNA Points"
 const STARTING_AMINO_ACIDS := 40.0
 const STARTING_ATP := 80.0
+const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
 
@@ -41,6 +43,7 @@ var active_enzymes: Dictionary = {}
 var protein_queue: Array[Dictionary] = []
 var reactions: Array[Dictionary] = []
 var research_points := 0.0
+var dna_research: Dictionary = {}
 var toxicity := 0.0
 var hostility := 0.0
 var starvation := 0.0
@@ -63,7 +66,8 @@ func reset() -> void:
 		RESOURCE_ATP: STARTING_ATP,
 		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
 		RESOURCE_NADH: 8.0,
-		RESOURCE_NITROGEN: 6.0
+		RESOURCE_NITROGEN: 6.0,
+		RESOURCE_DNA_POINTS: STARTING_DNA_POINTS
 	}
 	resource_rates = {}
 	ensure_default_resources()
@@ -76,6 +80,8 @@ func reset() -> void:
 	protein_queue = []
 	reactions = []
 	research_points = 0.0
+	dna_research = {}
+	ensure_dna_research_defaults()
 	toxicity = 0.0
 	hostility = 0.0
 	starvation = 0.0
@@ -104,13 +110,76 @@ func ensure_default_resources() -> void:
 		RESOURCE_ATP: STARTING_ATP,
 		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
 		RESOURCE_NADH: 8.0,
-		RESOURCE_NITROGEN: 6.0
+		RESOURCE_NITROGEN: 6.0,
+		RESOURCE_DNA_POINTS: STARTING_DNA_POINTS
 	}
 	for id in defaults.keys():
 		if not resources.has(id):
 			resources[id] = defaults[id]
 		if not resource_rates.has(id):
 			resource_rates[id] = {"production": 0.0, "consumption": 0.0}
+
+func ensure_dna_research_defaults() -> void:
+	if dna_research.is_empty():
+		dna_research = {
+			"origin": {"progress": 0.0, "unlocked": true}
+		}
+
+func dna_techs() -> Array[Dictionary]:
+	return [
+		{"id": "origin", "name": "Origin Genome", "cost": 0.0, "parents": [], "icon": "res://assets/dna_tree/icons/origin_genome.png", "pos": Vector2(0.0, 980.0)},
+		{"id": "transporters", "name": "Transporter Design", "cost": 180.0, "parents": ["origin"], "icon": "res://assets/dna_tree/icons/transporters.png", "pos": Vector2(-430.0, 660.0)},
+		{"id": "enzymes", "name": "Enzyme Classes", "cost": 200.0, "parents": ["origin"], "icon": "res://assets/dna_tree/icons/enzymes.png", "pos": Vector2(0.0, 610.0)},
+		{"id": "proteins", "name": "Protein Synthesis", "cost": 180.0, "parents": ["origin"], "icon": "res://assets/dna_tree/icons/protein_synthesis.png", "pos": Vector2(430.0, 660.0)},
+		{"id": "atp", "name": "ATP Economy", "cost": 220.0, "parents": ["enzymes"], "icon": "res://assets/dna_tree/icons/atp_economy.png", "pos": Vector2(-220.0, 290.0)},
+		{"id": "redox", "name": "Redox Balance", "cost": 220.0, "parents": ["enzymes"], "icon": "res://assets/dna_tree/icons/redox_balance.png", "pos": Vector2(220.0, 290.0)},
+		{"id": "membrane_stability", "name": "Membrane Stability", "cost": 240.0, "parents": ["transporters"], "icon": "res://assets/dna_tree/icons/membrane_stability.png", "pos": Vector2(-640.0, 260.0)},
+		{"id": "dna_editing", "name": "DNA Editing", "cost": 260.0, "parents": ["proteins"], "icon": "res://assets/dna_tree/icons/dna_editing.png", "pos": Vector2(640.0, 260.0)},
+		{"id": "metabolic_branching", "name": "Metabolic Branching", "cost": 300.0, "parents": ["atp", "redox"], "icon": "res://assets/dna_tree/icons/metabolic_branching.png", "pos": Vector2(0.0, -40.0)}
+	]
+
+func dna_tech_by_id(tech_id: String) -> Dictionary:
+	for tech in dna_techs():
+		if tech.get("id", "") == tech_id:
+			return tech
+	return {}
+
+func dna_tech_state(tech_id: String) -> Dictionary:
+	ensure_dna_research_defaults()
+	return dna_research.get(tech_id, {"progress": 0.0, "unlocked": false})
+
+func dna_tech_available(tech_id: String) -> bool:
+	var tech := dna_tech_by_id(tech_id)
+	if tech.is_empty():
+		return false
+	for parent_id in tech.get("parents", []):
+		if not bool(dna_tech_state(str(parent_id)).get("unlocked", false)):
+			return false
+	return true
+
+func invest_dna_research(tech_id: String, amount: float = 25.0) -> bool:
+	var tech := dna_tech_by_id(tech_id)
+	if tech.is_empty() or tech_id == "origin" or not dna_tech_available(tech_id):
+		return false
+	var state := dna_tech_state(tech_id)
+	if bool(state.get("unlocked", false)):
+		return false
+	var cost := float(tech.get("cost", 0.0))
+	var remaining := maxf(0.0, cost - float(state.get("progress", 0.0)))
+	var spent := minf(minf(amount, remaining), float(resources.get(RESOURCE_DNA_POINTS, 0.0)))
+	if spent <= 0.0:
+		emit_signal("event_logged", "Not enough DNA points for research.")
+		return false
+	resources[RESOURCE_DNA_POINTS] = float(resources.get(RESOURCE_DNA_POINTS, 0.0)) - spent
+	state["progress"] = float(state.get("progress", 0.0)) + spent
+	if float(state["progress"]) >= cost:
+		state["unlocked"] = true
+		emit_signal("event_logged", "DNA technology unlocked: %s." % tech.get("name", tech_id))
+	else:
+		state["unlocked"] = false
+	dna_research[tech_id] = state
+	emit_signal("changed")
+	return true
 
 func target_molecule() -> Dictionary:
 	return Graph.amino_acid_target()

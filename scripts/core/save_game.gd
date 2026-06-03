@@ -17,6 +17,7 @@ static func save_state(sim) -> bool:
 		"active_enzymes": sim.active_enzymes,
 		"protein_queue": sim.protein_queue,
 		"research_points": sim.research_points,
+		"dna_research": sim.dna_research,
 		"toxicity": sim.toxicity,
 		"hostility": sim.hostility,
 		"starvation": sim.starvation,
@@ -50,6 +51,8 @@ static func load_state(sim) -> bool:
 	sim.active_enzymes = parsed.get("active_enzymes", sim.active_enzymes)
 	sim.protein_queue = parsed.get("protein_queue", [])
 	sim.research_points = float(parsed.get("research_points", 0.0))
+	sim.dna_research = parsed.get("dna_research", {})
+	sim.ensure_dna_research_defaults()
 	sim.toxicity = float(parsed.get("toxicity", 0.0))
 	sim.hostility = float(parsed.get("hostility", 0.12))
 	sim.starvation = float(parsed.get("starvation", 0.0))

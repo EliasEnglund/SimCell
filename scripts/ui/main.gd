@@ -243,7 +243,7 @@ func _show_view(view_id: String) -> void:
 	elif view_id == "proteins":
 		_build_protein_view()
 	elif view_id == "dna":
-		_build_placeholder("DNA TECH TREE", "DNA research unlocks new transporters, enzyme classes, movement, and defense.")
+		_build_dna_view()
 	elif view_id == "art_lab":
 		_build_art_lab_view()
 	_refresh()
@@ -373,6 +373,15 @@ func _build_placeholder(title: String, subtitle: String) -> void:
 	content.add_child(box)
 	box.add_child(_title(title, subtitle))
 
+func _build_dna_view() -> void:
+	var tree := DNATechTreeWorkspace.new()
+	tree.simulation = sim
+	tree.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tree.tech_clicked.connect(func(tech_id: String):
+		sim.invest_dna_research(tech_id, 50.0)
+	)
+	content.add_child(tree)
+
 func _build_art_lab_view() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -489,7 +498,8 @@ func _refresh() -> void:
 			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
 			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff"), "Electrons (NADH)"],
 			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
-			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"]
+			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"],
+			["res://assets/art_lab/icons/resources/dna_simple.png", "%.0f" % float(sim.resources.get("DNA Points", 0.0)), Color("76f4ff"), "DNA Points"]
 		])
 	if molecule_summary_box != null:
 		var glucose_id := _glucose_molecule_id()
@@ -2163,3 +2173,160 @@ class TitleShade:
 		draw_line(Vector2(size.x * 0.62, 34), Vector2(size.x, 34), Color(cyan.r, cyan.g, cyan.b, 0.7), 3.0, true)
 		draw_line(Vector2(0, size.y - 54), Vector2(size.x, size.y - 54), Color(cyan.r, cyan.g, cyan.b, 0.22), 2.0, true)
 		draw_string(ThemeDB.fallback_font, Vector2(74, size.y - 24), "Game designer: Elias Englund   Producer: Fredrik Jonsson", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(cyan.r, cyan.g, cyan.b, 0.85))
+
+class DNATechTreeWorkspace:
+	extends Control
+
+	signal tech_clicked(tech_id: String)
+
+	var simulation
+	var pan_offset := Vector2.ZERO
+	var _dragging := false
+	var _last_mouse := Vector2.ZERO
+	var _drag_distance := 0.0
+	var _hovered := ""
+	var _background: Texture2D
+	var _strand: Texture2D
+	var _icons := {}
+
+	func _ready() -> void:
+		mouse_default_cursor_shape = Control.CURSOR_DRAG
+		pan_offset = Vector2(0.0, -140.0)
+		_background = _texture_from_png_local("res://assets/dna_tree/background.png")
+		_strand = _texture_from_png_local("res://assets/dna_tree/dna_strand_connector.png")
+		if simulation != null:
+			for tech in simulation.dna_techs():
+				_icons[tech.get("id", "")] = _texture_from_png_local(str(tech.get("icon", "")))
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_dragging = true
+				_drag_distance = 0.0
+				_last_mouse = event.position
+				mouse_default_cursor_shape = Control.CURSOR_MOVE
+			else:
+				if _dragging and _drag_distance <= 6.0:
+					var tech_id := _tech_at(event.position)
+					if not tech_id.is_empty():
+						emit_signal("tech_clicked", tech_id)
+				_dragging = false
+				mouse_default_cursor_shape = Control.CURSOR_DRAG
+		elif event is InputEventMouseMotion:
+			_hovered = _tech_at(event.position)
+			if _dragging:
+				pan_offset += event.position - _last_mouse
+				pan_offset = pan_offset.clamp(Vector2(-900.0, -900.0), Vector2(900.0, 520.0))
+				_drag_distance += event.position.distance_to(_last_mouse)
+				_last_mouse = event.position
+			queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
+		if _background != null:
+			var bg_rect := Rect2(Vector2.ZERO, size)
+			draw_texture_rect(_background, bg_rect, false, Color(1, 1, 1, 0.24))
+		if simulation == null:
+			return
+		var center := size * 0.5 + pan_offset
+		_draw_links(center)
+		for tech in simulation.dna_techs():
+			_draw_tech_node(tech, center)
+		_draw_hint()
+
+	func _draw_links(center: Vector2) -> void:
+		for tech in simulation.dna_techs():
+			var child_id := str(tech.get("id", ""))
+			for parent_id in tech.get("parents", []):
+				var parent: Dictionary = simulation.dna_tech_by_id(str(parent_id))
+				if parent.is_empty():
+					continue
+				var parent_pos: Vector2 = center + parent.get("pos", Vector2.ZERO)
+				var child_pos: Vector2 = center + tech.get("pos", Vector2.ZERO)
+				var state: Dictionary = simulation.dna_tech_state(child_id)
+				var cost := maxf(1.0, float(tech.get("cost", 1.0)))
+				var progress := 1.0 if bool(state.get("unlocked", false)) else clampf(float(state.get("progress", 0.0)) / cost, 0.0, 1.0)
+				_draw_dna_link(parent_pos, child_pos, progress, simulation.dna_tech_available(child_id))
+
+	func _draw_dna_link(a: Vector2, b: Vector2, progress: float, available: bool) -> void:
+		var delta := b - a
+		var length := delta.length()
+		if length < 10.0:
+			return
+		var dir := delta.normalized()
+		var angle := dir.angle()
+		var mid := a.lerp(b, 0.5)
+		var transform := Transform2D(angle, mid)
+		var rect := Rect2(Vector2(-length * 0.5, -18.0), Vector2(length, 36.0))
+		if _strand != null:
+			draw_set_transform_matrix(transform)
+			draw_texture_rect(_strand, rect, false, Color(0.35, 0.55, 0.58, 0.34 if available else 0.18))
+			if progress > 0.0:
+				var progress_rect := Rect2(rect.position, Vector2(rect.size.x * progress, rect.size.y))
+				draw_texture_rect(_strand, progress_rect, false, Color(0.55, 1.0, 0.72, 0.82))
+			draw_set_transform_matrix(Transform2D())
+		else:
+			draw_line(a, b, Color(0.32, 0.82, 0.86, 0.30), 6.0, true)
+			draw_line(a, a.lerp(b, progress), Color("8cff6a"), 6.0, true)
+
+	func _draw_tech_node(tech: Dictionary, center: Vector2) -> void:
+		var id := str(tech.get("id", ""))
+		var pos: Vector2 = center + tech.get("pos", Vector2.ZERO)
+		var state: Dictionary = simulation.dna_tech_state(id)
+		var unlocked := bool(state.get("unlocked", false))
+		var available: bool = simulation.dna_tech_available(id)
+		var cost := maxf(1.0, float(tech.get("cost", 1.0)))
+		var progress := 1.0 if unlocked else clampf(float(state.get("progress", 0.0)) / cost, 0.0, 1.0)
+		var radius := 58.0 if id == "origin" else 50.0
+		var border := Color("8cff6a") if unlocked else (Color("76f4ff") if available else Color("415962"))
+		var fill := Color(0.05, 0.13, 0.16, 0.96)
+		draw_circle(pos, radius + 10.0, Color(border.r, border.g, border.b, 0.13 if available else 0.05))
+		draw_circle(pos, radius + 3.0, Color("02070b"))
+		draw_circle(pos, radius, fill)
+		draw_arc(pos, radius + 2.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 48, Color("8cff6a"), 5.0, true)
+		draw_arc(pos, radius + 2.0, 0.0, TAU, 64, border, 2.0, true)
+		var icon: Texture2D = _icons.get(id, null)
+		if icon != null:
+			var icon_rect := Rect2(pos - Vector2(radius * 0.68, radius * 0.68), Vector2(radius * 1.36, radius * 1.36))
+			var tint := Color(1, 1, 1, 1.0 if unlocked or available else 0.32)
+			if not unlocked and not available:
+				tint = Color(0.48, 0.58, 0.60, 0.34)
+			draw_texture_rect(icon, icon_rect, false, tint)
+		if not unlocked and not available:
+			draw_circle(pos, radius, Color(0, 0, 0, 0.48))
+		var label_color := Color("f4fbff") if unlocked or available else Color("71878c")
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-70.0, radius + 28.0), str(tech.get("name", id)), HORIZONTAL_ALIGNMENT_CENTER, 140.0, 13, label_color)
+		if id == _hovered:
+			_draw_tech_tooltip(tech, pos, progress, unlocked, available)
+
+	func _draw_tech_tooltip(tech: Dictionary, pos: Vector2, progress: float, unlocked: bool, available: bool) -> void:
+		var rect := Rect2(pos + Vector2(62.0, -48.0), Vector2(210.0, 82.0))
+		draw_rect(rect, Color(0.04, 0.10, 0.13, 0.94), true)
+		draw_rect(rect, Color("76f4ff"), false, 1.4)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(12, 22), str(tech.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f4fbff"))
+		var status := "Unlocked" if unlocked else ("Available" if available else "Locked")
+		var cost := float(tech.get("cost", 0.0))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(12, 45), "%s  %.0f/%.0f DNA" % [status, progress * cost, cost], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("8cff6a") if available else Color("9aaeb2"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(12, 66), "Click to invest 50 DNA points", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
+
+	func _draw_hint() -> void:
+		var text := "DNA Points %.0f | Drag to pan | Click available technologies to research" % float(simulation.resources.get("DNA Points", 0.0))
+		draw_string(ThemeDB.fallback_font, Vector2(28.0, size.y - 26.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("dbeff2"))
+
+	func _tech_at(local: Vector2) -> String:
+		if simulation == null:
+			return ""
+		var center := size * 0.5 + pan_offset
+		for tech in simulation.dna_techs():
+			var id := str(tech.get("id", ""))
+			var radius := 58.0 if id == "origin" else 50.0
+			var pos: Vector2 = center + tech.get("pos", Vector2.ZERO)
+			if local.distance_to(pos) <= radius:
+				return id
+		return ""
+
+	func _texture_from_png_local(path: String) -> Texture2D:
+		var image := Image.load_from_file(path)
+		if image == null:
+			return null
+		return ImageTexture.create_from_image(image)
