@@ -444,15 +444,15 @@ func _art_molecule_variant_section() -> Control:
 	if molecule.is_empty() and not sim.molecule_types.is_empty():
 		molecule = sim.molecule_types[sim.molecule_types.keys()[0]]
 	var variants := [
-		{"n": 1, "name": "Subtle Rim Base", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.9, "rim_light": 0.08, "trim": 1.05, "gap": 5.6, "gloss": 0.45},
-		{"n": 2, "name": "Darker Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.6, "rim_light": 0.04, "trim": 1.05, "gap": 5.6, "gloss": 0.44},
-		{"n": 3, "name": "Thin Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.3, "rim_light": 0.07, "trim": 1.05, "gap": 5.6, "gloss": 0.45},
-		{"n": 4, "name": "Soft Gradient", "zoom": 0.58, "atom": 0.96, "bond": 0.68, "spacing": 1.13, "outline": 7.0, "rim": 0.8, "rim_light": 0.06, "trim": 1.04, "gap": 5.7, "gloss": 0.40},
-		{"n": 5, "name": "Bright Highlight", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 7.2, "rim": 0.8, "rim_light": 0.08, "trim": 1.05, "gap": 5.6, "gloss": 0.55},
-		{"n": 6, "name": "Heavy Edge Subtle Rim", "zoom": 0.58, "atom": 0.96, "bond": 0.70, "spacing": 1.12, "outline": 8.4, "rim": 0.6, "rim_light": 0.05, "trim": 1.06, "gap": 5.6, "gloss": 0.43},
-		{"n": 7, "name": "Small Atom Gradient", "zoom": 0.58, "atom": 0.92, "bond": 0.70, "spacing": 1.14, "outline": 7.0, "rim": 0.8, "rim_light": 0.07, "trim": 1.02, "gap": 5.7, "gloss": 0.45},
-		{"n": 8, "name": "Large Atom Gradient", "zoom": 0.58, "atom": 1.00, "bond": 0.70, "spacing": 1.12, "outline": 7.5, "rim": 0.9, "rim_light": 0.08, "trim": 1.08, "gap": 5.5, "gloss": 0.46},
-		{"n": 9, "name": "Thicker Bonds Subtle Rim", "zoom": 0.58, "atom": 0.94, "bond": 0.82, "spacing": 1.13, "outline": 7.2, "rim": 0.8, "rim_light": 0.06, "trim": 1.04, "gap": 5.4, "gloss": 0.45}
+		{"n": 1, "name": "Thin Edge Base", "zoom": 0.58, "atom": 1.00, "bond": 0.66, "spacing": 1.08, "outline": 5.2, "rim": 0.8, "rim_light": 0.07, "trim": 1.08, "gap": 8.8, "gloss": 0.45},
+		{"n": 2, "name": "Closer Atoms", "zoom": 0.59, "atom": 1.00, "bond": 0.64, "spacing": 1.04, "outline": 5.0, "rim": 0.7, "rim_light": 0.06, "trim": 1.10, "gap": 9.0, "gloss": 0.45},
+		{"n": 3, "name": "Larger Atoms", "zoom": 0.58, "atom": 1.06, "bond": 0.64, "spacing": 1.06, "outline": 5.2, "rim": 0.8, "rim_light": 0.07, "trim": 1.15, "gap": 9.0, "gloss": 0.46},
+		{"n": 4, "name": "Very Thin Edge", "zoom": 0.58, "atom": 1.02, "bond": 0.64, "spacing": 1.07, "outline": 4.2, "rim": 0.6, "rim_light": 0.06, "trim": 1.10, "gap": 9.2, "gloss": 0.44},
+		{"n": 5, "name": "Balanced Close", "zoom": 0.60, "atom": 1.04, "bond": 0.68, "spacing": 1.05, "outline": 5.6, "rim": 0.8, "rim_light": 0.07, "trim": 1.13, "gap": 9.0, "gloss": 0.46},
+		{"n": 6, "name": "Soft Gradient Close", "zoom": 0.59, "atom": 1.02, "bond": 0.62, "spacing": 1.06, "outline": 5.0, "rim": 0.7, "rim_light": 0.05, "trim": 1.10, "gap": 9.6, "gloss": 0.40},
+		{"n": 7, "name": "Clear Double Bonds", "zoom": 0.58, "atom": 1.00, "bond": 0.62, "spacing": 1.08, "outline": 5.2, "rim": 0.8, "rim_light": 0.07, "trim": 1.08, "gap": 10.5, "gloss": 0.45},
+		{"n": 8, "name": "Thicker Clear Bonds", "zoom": 0.58, "atom": 1.00, "bond": 0.76, "spacing": 1.08, "outline": 5.4, "rim": 0.7, "rim_light": 0.06, "trim": 1.10, "gap": 10.2, "gloss": 0.45},
+		{"n": 9, "name": "Designer Close Thin Edge", "zoom": 0.61, "atom": 1.08, "bond": 0.68, "spacing": 1.04, "outline": 5.6, "rim": 0.8, "rim_light": 0.07, "trim": 1.18, "gap": 9.4, "gloss": 0.48}
 	]
 	for variant in variants:
 		grid.add_child(_art_molecule_variant_card(molecule, variant))
