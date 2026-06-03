@@ -127,7 +127,7 @@ func _build_title_screen() -> void:
 	play.pressed.connect(func():
 		title_root.queue_free()
 		_build_shell()
-		_show_view("metabolism")
+		_show_view("cell")
 	)
 	menu.add_child(play)
 	var quit := Button.new()
