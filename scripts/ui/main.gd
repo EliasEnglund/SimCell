@@ -84,30 +84,29 @@ func _build_title_screen() -> void:
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title_root.add_child(shade)
-	var frame := TitleTopFrame.new()
-	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_root.add_child(frame)
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 74)
-	margin.add_theme_constant_override("margin_top", 104)
+	margin.add_theme_constant_override("margin_top", 72)
 	margin.add_theme_constant_override("margin_right", 74)
 	margin.add_theme_constant_override("margin_bottom", 78)
 	title_root.add_child(margin)
 	var menu := VBoxContainer.new()
-	menu.custom_minimum_size = Vector2(510, 360)
+	menu.custom_minimum_size = Vector2(680, 420)
 	menu.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	menu.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	menu.alignment = BoxContainer.ALIGNMENT_CENTER
 	menu.add_theme_constant_override("separation", 16)
 	margin.add_child(menu)
-	var title := Label.new()
-	title.text = "SIM CELL"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title.add_theme_font_size_override("font_size", 72)
-	title.modulate = Color("76f4ff")
-	menu.add_child(title)
+	var logo := TextureRect.new()
+	var logo_image := Image.load_from_file("res://assets/reference/sim-cell-logo.png")
+	if logo_image != null:
+		logo.texture = ImageTexture.create_from_image(logo_image)
+	logo.custom_minimum_size = Vector2(660, 236)
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu.add_child(logo)
 	var subtitle := Label.new()
 	subtitle.text = "Build metabolism. Design enzymes. Shape a living cell."
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
