@@ -1965,8 +1965,10 @@ class MembraneCrossSection:
 		for layer in 4:
 			var depth := float(layer) / 3.0
 			var distance_factor := lerpf(1.45, 1.0, depth)
-			var count := int(round(54.0 * distance_factor))
 			var scale := pow(1.0 / distance_factor, 0.28)
+			var layer_width := size.x * 1.24 * distance_factor
+			var head_radius := (8.4 * scale)
+			var count := int(ceil(layer_width / (head_radius * 1.55)))
 			var offset := lerpf(-42.0, 0.0, depth)
 			var alpha := lerpf(0.45, 1.0, depth)
 			for i in count:
@@ -1981,10 +1983,10 @@ class MembraneCrossSection:
 		var outside_normal := -inside_normal
 		var local_phase := float(seed % 17) * 0.21 + float(layer) * 0.7
 		var frame := int(floor(_elapsed * 8.0 + float(seed % 4) * 0.25)) % 4
-		var wave := sin(t * TAU * 2.0 - _elapsed * 0.82 + local_phase)
-		var ripple := sin(t * TAU * 4.4 + _elapsed * 0.95 + local_phase * 1.7) * 0.28
-		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 1.4 * scale)
-		var head_distance := lerpf(38.0, 48.0, scale) + wave * 1.2
+		var wave := sin(t * TAU * 1.85 - _elapsed * 1.25 + local_phase)
+		var ripple := sin(t * TAU * 4.4 + _elapsed * 1.35 + local_phase * 1.7) * 0.28
+		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 3.2 * scale)
+		var head_distance := lerpf(38.0, 48.0, scale) + wave * 2.4
 		var tail_spread := (4.8 + ripple) * scale
 		var head_radius := (8.4 + float(frame) * 0.08) * scale
 		var tail_width := 3.4 * scale
@@ -2031,7 +2033,7 @@ class MembraneCrossSection:
 		var arch := -sin(t * PI) * size.y * 0.15
 		var wave := 0.0
 		if animated:
-			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
+			wave = sin(t * TAU * 1.55 - _elapsed * 0.95) * 5.2 + sin(t * TAU * 3.1 + _elapsed * 0.72) * 1.5
 		var point := Vector2(x, size.y * 0.67 + arch + wave)
 		var dt := 0.006
 		var p2 := _anchor_point_static(clampf(t + dt, 0.0, 1.0), animated)
@@ -2047,7 +2049,7 @@ class MembraneCrossSection:
 		var arch := -sin(t * PI) * size.y * 0.15
 		var wave := 0.0
 		if animated:
-			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
+			wave = sin(t * TAU * 1.55 - _elapsed * 0.95) * 5.2 + sin(t * TAU * 3.1 + _elapsed * 0.72) * 1.5
 		return Vector2(x, size.y * 0.67 + arch + wave)
 
 	func _draw_curved_membrane() -> void:
