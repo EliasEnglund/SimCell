@@ -1792,7 +1792,7 @@ class MembraneCrossSection:
 	var _elapsed := 0.0
 
 	func _ready() -> void:
-		background_texture = load("res://assets/reference/membrane-base.png")
+		background_texture = _load_texture_from_file("res://assets/reference/membrane-base.png")
 		set_process(true)
 
 	func _process(delta: float) -> void:
@@ -1836,6 +1836,14 @@ class MembraneCrossSection:
 			_particles[key] = item
 		_update_particle_transforms()
 		queue_redraw()
+
+	func _load_texture_from_file(path: String) -> Texture2D:
+		var image := Image.new()
+		var error := image.load(ProjectSettings.globalize_path(path))
+		if error != OK:
+			push_warning("Could not load membrane background image: %s" % path)
+			return null
+		return ImageTexture.create_from_image(image)
 
 	func _desired_particles() -> Array[Dictionary]:
 		var desired: Array[Dictionary] = []
