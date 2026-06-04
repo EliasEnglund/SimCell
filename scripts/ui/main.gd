@@ -437,6 +437,7 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_sheet_section("Layered Phospholipid Palettes", [
 		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
 	], 520.0))
+	stack.add_child(_art_phospholipid_animation_section())
 
 func _art_molecule_variant_section() -> Control:
 	var panel := _glow_panel("Molecule Style Variants")
@@ -598,6 +599,38 @@ func _art_sheet_section(label_text: String, items: Array, image_height: float = 
 		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		panel.add_child(texture)
+	return panel
+
+func _art_phospholipid_animation_section() -> Control:
+	var panel := _glow_panel("Stationary Phospholipid Animation Test")
+	var note := Label.new()
+	note.text = "A phospholipid can stay in place while cycling subtle sprite-like frames: head shine, radius, and tail bend change without moving the anchor point."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	panel.add_child(row)
+	var variants := [
+		["Subtle", Color("58c7ef"), Color("f08b24")],
+		["Teal Amber", Color("28c7bc"), Color("f1b42c")],
+		["Pearl Rust", Color("dbe5e8"), Color("c96332")]
+	]
+	for item in variants:
+		var card := VBoxContainer.new()
+		card.custom_minimum_size = Vector2(240, 230)
+		card.add_theme_constant_override("separation", 8)
+		var preview := PhospholipidAnimationPreview.new()
+		preview.custom_minimum_size = Vector2(230, 176)
+		preview.head_color = item[1]
+		preview.tail_color = item[2]
+		card.add_child(preview)
+		var label := Label.new()
+		label.text = str(item[0])
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.modulate = Color("dbeff2")
+		card.add_child(label)
+		row.add_child(card)
 	return panel
 
 func _texture_from_png(path: String) -> Texture2D:
@@ -1931,28 +1964,30 @@ class MembraneCrossSection:
 	func _draw_layered_membrane() -> void:
 		for layer in 4:
 			var depth := float(layer) / 3.0
-			var count := int(42 + layer * 12)
-			var scale := lerpf(0.56, 1.0, depth)
-			var offset := lerpf(-56.0, 0.0, depth)
-			var alpha := lerpf(0.34, 1.0, depth)
+			var distance_factor := lerpf(1.45, 1.0, depth)
+			var count := int(round(34.0 * distance_factor))
+			var scale := pow(1.0 / distance_factor, 0.28)
+			var offset := lerpf(-58.0, 0.0, depth)
+			var alpha := lerpf(0.45, 1.0, depth)
 			for i in count:
 				var t := (float(i) + 0.5) / float(count)
-				_draw_phospholipid_pair(t, scale, offset, alpha, i + layer * 101)
+				_draw_phospholipid_pair(t, scale, offset, alpha, i + layer * 101, layer)
 
-	func _draw_phospholipid_pair(t: float, scale: float, layer_offset: float, alpha: float, seed: int) -> void:
+	func _draw_phospholipid_pair(t: float, scale: float, layer_offset: float, alpha: float, seed: int, layer: int) -> void:
 		var sample := _anchor_sample(t, true)
 		var anchor: Vector2 = sample["point"]
 		var tangent: Vector2 = sample["tangent"]
 		var inside_normal: Vector2 = sample["inside_normal"]
 		var outside_normal := -inside_normal
-		var frame := int(floor(_elapsed * 10.0 + float(seed % 3))) % 3
-		var wave := sin(t * TAU * 3.2 - _elapsed * 2.8 + float(seed % 9) * 0.18)
-		var ripple := sin(t * TAU * 8.0 + _elapsed * 3.4 + float(seed % 5)) * 0.45
-		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 3.0 * scale)
-		var head_distance := lerpf(44.0, 66.0, scale) + wave * 4.5
-		var tail_spread := (5.0 + ripple) * scale
-		var head_radius := (6.0 + scale * 7.0 + float(frame) * 0.25) * scale
-		var tail_width := (3.0 + scale * 2.0) * scale
+		var local_phase := float(seed % 17) * 0.21 + float(layer) * 0.7
+		var frame := int(floor(_elapsed * 8.0 + float(seed % 4) * 0.25)) % 4
+		var wave := sin(t * TAU * 2.0 - _elapsed * 0.82 + local_phase)
+		var ripple := sin(t * TAU * 4.4 + _elapsed * 0.95 + local_phase * 1.7) * 0.28
+		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 1.4 * scale)
+		var head_distance := lerpf(54.0, 66.0, scale) + wave * 1.8
+		var tail_spread := (4.8 + ripple) * scale
+		var head_radius := (12.0 + float(frame) * 0.10) * scale
+		var tail_width := 4.5 * scale
 		var outer_head := anchor + layer_shift + outside_normal * head_distance
 		var inner_head := anchor + layer_shift + inside_normal * head_distance
 		var tail_color := Color(0.93, 0.48, 0.16, alpha)
@@ -1972,7 +2007,7 @@ class MembraneCrossSection:
 		var points := PackedVector2Array()
 		for j in 7:
 			var p := float(j) / 6.0
-			var wave := sin(p * TAU * 1.4 + _elapsed * 5.2 + float(seed) * 0.37) * width * 0.75
+			var wave := sin(p * TAU * 1.15 + _elapsed * 1.05 + float(seed) * 0.37) * width * 0.28
 			points.append(start.lerp(end, p) + tangent * wave)
 		draw_polyline(points, Color(0.02, 0.01, 0.0, base.a), width + 3.2, true)
 		draw_polyline(points, base, width + 1.0, true)
@@ -1996,7 +2031,7 @@ class MembraneCrossSection:
 		var arch := -sin(t * PI) * size.y * 0.20
 		var wave := 0.0
 		if animated:
-			wave = sin(t * TAU * 2.4 - _elapsed * 2.1) * 6.0 + sin(t * TAU * 6.0 + _elapsed * 1.4) * 2.4
+			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
 		var point := Vector2(x, size.y * 0.60 + arch + wave)
 		var dt := 0.006
 		var p2 := _anchor_point_static(clampf(t + dt, 0.0, 1.0), animated)
@@ -2012,7 +2047,7 @@ class MembraneCrossSection:
 		var arch := -sin(t * PI) * size.y * 0.20
 		var wave := 0.0
 		if animated:
-			wave = sin(t * TAU * 2.4 - _elapsed * 2.1) * 6.0 + sin(t * TAU * 6.0 + _elapsed * 1.4) * 2.4
+			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
 		return Vector2(x, size.y * 0.60 + arch + wave)
 
 	func _draw_curved_membrane() -> void:
@@ -2079,8 +2114,6 @@ class MembraneCrossSection:
 				var scale := 1.0 - depth * 0.20
 				var alpha := 1.0
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
-			if count > 1:
-				draw_string(ThemeDB.fallback_font, top - normal * 68.0 + tangent * 22.0, "x%d" % count, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.88, 1.0, 0.92, 0.82))
 
 	func _membrane_placement(t: float) -> Dictionary:
 		var sample := _anchor_sample(t, true)
@@ -2239,6 +2272,49 @@ class MembraneCrossSection:
 			if formula.contains("S"):
 				return "circle"
 		return "circle"
+
+class PhospholipidAnimationPreview:
+	extends Control
+
+	var head_color := Color("58c7ef")
+	var tail_color := Color("f08b24")
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("0e2d34"), true)
+		var center := size * 0.5 + Vector2(0, 4)
+		var frame := int(floor(_elapsed * 8.0)) % 6
+		var bend := sin(float(frame) / 6.0 * TAU) * 2.2
+		var shine := 0.78 + 0.10 * sin(float(frame) / 6.0 * TAU)
+		var radius := 26.0 + sin(float(frame) / 6.0 * TAU + 0.7) * 0.7
+		var tail_top := center + Vector2(0, radius * 0.66)
+		for side in [-1.0, 1.0]:
+			var start := tail_top + Vector2(float(side) * 7.0, 0)
+			var end := center + Vector2(float(side) * (12.0 + bend), 70.0)
+			_draw_preview_tail(start, end, float(side), bend)
+		draw_circle(center, radius + 3.0, Color("02070b"))
+		draw_circle(center, radius, head_color)
+		draw_circle(center + Vector2(radius * 0.20, -radius * 0.28), radius * 0.32, Color(1, 1, 1, shine))
+		draw_arc(center, radius * 0.72, -1.0, 2.1, 18, Color(1, 1, 1, 0.13), 2.0, true)
+		var frame_text := "frame %d/6" % (frame + 1)
+		draw_string(ThemeDB.fallback_font, Vector2(12, size.y - 14), frame_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
+
+	func _draw_preview_tail(start: Vector2, end: Vector2, side: float, bend: float) -> void:
+		var points := PackedVector2Array()
+		for i in 8:
+			var t := float(i) / 7.0
+			var wiggle := sin(t * TAU * 1.1 + bend * 0.7) * 2.0
+			points.append(start.lerp(end, t) + Vector2(side * wiggle, 0))
+		draw_polyline(points, Color("02070b"), 9.0, true)
+		draw_polyline(points, tail_color, 6.2, true)
+		draw_polyline(points, tail_color.lightened(0.34), 2.0, true)
 
 class FloatingSourceParticle:
 	extends Control
