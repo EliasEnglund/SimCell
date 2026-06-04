@@ -1834,11 +1834,30 @@ class MembraneCrossSection:
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
+	var _membrane_scroll := 0.0
+	var _dragging := false
+	var _last_drag_position := Vector2.ZERO
+	const VISIBLE_MEMBRANE_ARC := 0.42
 
 	func _ready() -> void:
 		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-repeat-style4.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
+		mouse_filter = Control.MOUSE_FILTER_STOP
 		set_process(true)
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			_dragging = event.pressed
+			_last_drag_position = event.position
+			accept_event()
+		elif event is InputEventMouseMotion and _dragging:
+			var delta: Vector2 = event.position - _last_drag_position
+			_last_drag_position = event.position
+			if size.x > 1.0:
+				_membrane_scroll = fposmod(_membrane_scroll - delta.x / size.x * VISIBLE_MEMBRANE_ARC, 1.0)
+				_update_particle_transforms()
+				queue_redraw()
+			accept_event()
 
 	func _process(delta: float) -> void:
 		_elapsed += delta
@@ -1971,8 +1990,12 @@ class MembraneCrossSection:
 
 	func _draw_tiled_membrane() -> void:
 		var tile_count := 12
-		for i in tile_count:
-			var t := (float(i) + 0.5) / float(tile_count)
+		var spacing := 1.0 / float(tile_count)
+		var phase := fposmod(_membrane_scroll / VISIBLE_MEMBRANE_ARC * spacing, spacing)
+		for i in range(-1, tile_count + 1):
+			var t := (float(i) + 0.5) * spacing + phase
+			if t < -0.08 or t > 1.08:
+				continue
 			_draw_membrane_tile(t, 1.0, 0.0, 1.0)
 
 	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float) -> void:
@@ -2065,12 +2088,16 @@ class MembraneCrossSection:
 
 	func _draw_transporter_proteins() -> void:
 		var arrows: Array = simulation.membrane_transport_arrows()
-		var visible: int = mini(arrows.size(), 7)
-		if visible <= 0:
+		var total := arrows.size()
+		if total <= 0:
 			return
-		for i in visible:
+		for i in total:
 			var arrow: Dictionary = arrows[i]
-			var t := (float(i) + 1.0) / float(visible + 1)
+			var world_t := (float(i) + 0.5) / float(total)
+			var screen_t := _world_to_visible_t(world_t)
+			if screen_t < 0.0:
+				continue
+			var t := screen_t
 			var placement := _membrane_placement(t)
 			var top: Vector2 = placement["top"]
 			var bottom: Vector2 = placement["bottom"]
@@ -2086,6 +2113,16 @@ class MembraneCrossSection:
 				var scale := 1.0 - depth * 0.20
 				var alpha := 1.0
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
+
+	func _world_to_visible_t(world_t: float) -> float:
+		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5
+		var half_visible := VISIBLE_MEMBRANE_ARC * 0.5
+		if absf(rel) > half_visible:
+			return -1.0
+		return clampf(rel / VISIBLE_MEMBRANE_ARC + 0.5, 0.0, 1.0)
+
+	func _visible_to_world_t(screen_t: float) -> float:
+		return fposmod(_membrane_scroll + (screen_t - 0.5) * VISIBLE_MEMBRANE_ARC, 1.0)
 
 	func _membrane_placement(t: float) -> Dictionary:
 		var sample := _anchor_sample(t, true)
@@ -2195,7 +2232,12 @@ class MembraneCrossSection:
 			var y_seed := (float(row) + 0.5 + y_jitter * 0.45) / float(rows)
 			var y_min: float = 54.0 if side == "outside" else size.y * 0.63
 			var y_max: float = size.y * 0.38 if side == "outside" else size.y - 72.0
-			var x: float = lerpf(72.0, maxf(84.0, size.x - 96.0), x_seed)
+			var screen_x_seed := _world_to_visible_t(x_seed)
+			if screen_x_seed < 0.0:
+				node.visible = false
+				continue
+			node.visible = true
+			var x: float = lerpf(72.0, maxf(84.0, size.x - 96.0), screen_x_seed)
 			var y: float = lerpf(y_min, y_max, y_seed)
 			var drift := Vector2(
 				sin(_elapsed * (0.12 + motion_seed * 0.06) + seed * 19.0),
