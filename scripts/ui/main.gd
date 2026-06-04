@@ -1979,17 +1979,16 @@ class MembraneCrossSection:
 			var alpha := lerpf(0.45, 1.0, depth)
 			for i in tile_count:
 				var t := (float(i) + 0.5) / float(tile_count)
-				var phase := sin(_elapsed * 0.72 + float(layer) * 0.8 + float(i) * 0.35) * 0.006
-				_draw_membrane_tile(clampf(t + phase, 0.02, 0.98), scale, offset, alpha, layer, i)
+				_draw_membrane_tile(t, scale, offset, alpha, layer)
 
-	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float, layer: int, tile_index: int) -> void:
-		var sample := _anchor_sample(t, true)
+	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float, layer: int) -> void:
+		var sample := _anchor_sample(t, false)
 		var anchor: Vector2 = sample["point"]
 		var tangent: Vector2 = sample["tangent"]
 		var normal: Vector2 = sample["inside_normal"]
 		var source_size := membrane_texture.get_size()
 		var tile_source_width := source_size.x / 5.0
-		var frame := int(floor(_elapsed * 8.0 + float(layer) * 1.7 + float(tile_index) * 0.25)) % 5
+		var frame := layer % 5
 		var source := Rect2(Vector2(float(frame) * tile_source_width, 0.0), Vector2(tile_source_width, source_size.y))
 		var target_height := 102.0 * scale
 		var target_width := 176.0 * scale
