@@ -1828,6 +1828,7 @@ class ProteinContextDish:
 class MembraneCrossSection:
 	extends Control
 
+	var membrane_texture: Texture2D
 	var transporter_texture: Texture2D
 	var simulation
 	var _particles := {}
@@ -1835,6 +1836,7 @@ class MembraneCrossSection:
 	var _elapsed := 0.0
 
 	func _ready() -> void:
+		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-strip.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
 		set_process(true)
 
@@ -1962,64 +1964,41 @@ class MembraneCrossSection:
 			draw_circle(p + drift, 1.2 + fmod(seed * 5.0, 2.2), Color(0.82, 1.0, 0.94, 0.08 + seed * 0.06))
 
 	func _draw_layered_membrane() -> void:
+		if membrane_texture != null:
+			_draw_tiled_membrane()
+			return
+		_draw_curved_membrane()
+
+	func _draw_tiled_membrane() -> void:
 		for layer in 4:
 			var depth := float(layer) / 3.0
 			var distance_factor := lerpf(1.45, 1.0, depth)
-			var scale := pow(1.0 / distance_factor, 0.28)
-			var layer_width := size.x * 1.24 * distance_factor
-			var head_radius := (8.4 * scale)
-			var count := int(ceil(layer_width / (head_radius * 1.55)))
+			var scale := pow(1.0 / distance_factor, 0.22)
+			var tile_count := int(ceil(8.0 * distance_factor))
 			var offset := lerpf(-42.0, 0.0, depth)
 			var alpha := lerpf(0.45, 1.0, depth)
-			for i in count:
-				var t := (float(i) + 0.5) / float(count)
-				_draw_phospholipid_pair(t, scale, offset, alpha, i + layer * 101, layer)
+			for i in tile_count:
+				var t := (float(i) + 0.5) / float(tile_count)
+				var phase := sin(_elapsed * 0.72 + float(layer) * 0.8 + float(i) * 0.35) * 0.006
+				_draw_membrane_tile(clampf(t + phase, 0.02, 0.98), scale, offset, alpha, layer, i)
 
-	func _draw_phospholipid_pair(t: float, scale: float, layer_offset: float, alpha: float, seed: int, layer: int) -> void:
+	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float, layer: int, tile_index: int) -> void:
 		var sample := _anchor_sample(t, true)
 		var anchor: Vector2 = sample["point"]
 		var tangent: Vector2 = sample["tangent"]
-		var inside_normal: Vector2 = sample["inside_normal"]
-		var outside_normal := -inside_normal
-		var local_phase := float(seed % 17) * 0.21 + float(layer) * 0.7
-		var frame := int(floor(_elapsed * 8.0 + float(seed % 4) * 0.25)) % 4
-		var wave := sin(t * TAU * 1.85 - _elapsed * 1.25 + local_phase)
-		var ripple := sin(t * TAU * 4.4 + _elapsed * 1.35 + local_phase * 1.7) * 0.28
-		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 3.2 * scale)
-		var head_distance := lerpf(38.0, 48.0, scale) + wave * 2.4
-		var tail_spread := (4.8 + ripple) * scale
-		var head_radius := (8.4 + float(frame) * 0.08) * scale
-		var tail_width := 3.4 * scale
-		var outer_head := anchor + layer_shift + outside_normal * head_distance
-		var inner_head := anchor + layer_shift + inside_normal * head_distance
-		var tail_color := Color(0.93, 0.48, 0.16, alpha)
-		var tail_light := Color(1.0, 0.73, 0.31, alpha)
-		var head_color := Color(0.36, 0.78, 0.95, alpha)
-		var head_light := Color(0.82, 0.97, 1.0, alpha * 0.82)
-		for side in [-1.0, 1.0]:
-			var tail_anchor := anchor + layer_shift + tangent * float(side) * tail_spread
-			var outer_tail_base := outer_head + inside_normal * head_radius * 0.50 + tangent * float(side) * tail_spread * 0.55
-			var inner_tail_base := inner_head + outside_normal * head_radius * 0.50 + tangent * float(side) * tail_spread * 0.55
-			_draw_wavy_tail(outer_tail_base, tail_anchor, tangent, tail_width, tail_color, tail_light, seed + int(side * 11.0))
-			_draw_wavy_tail(inner_tail_base, tail_anchor, tangent, tail_width, tail_color, tail_light, seed + int(side * 17.0))
-		_draw_lipid_head(outer_head, head_radius, head_color, head_light, alpha)
-		_draw_lipid_head(inner_head, head_radius, head_color, head_light, alpha)
-
-	func _draw_wavy_tail(start: Vector2, end: Vector2, tangent: Vector2, width: float, base: Color, light: Color, seed: int) -> void:
-		var points := PackedVector2Array()
-		for j in 7:
-			var p := float(j) / 6.0
-			var wave := sin(p * TAU * 1.15 + _elapsed * 1.05 + float(seed) * 0.37) * width * 0.28
-			points.append(start.lerp(end, p) + tangent * wave)
-		draw_polyline(points, Color(0.02, 0.01, 0.0, base.a), width + 3.2, true)
-		draw_polyline(points, base, width + 1.0, true)
-		draw_polyline(points, light, maxf(1.0, width * 0.38), true)
-
-	func _draw_lipid_head(center: Vector2, radius: float, color: Color, light: Color, alpha: float) -> void:
-		draw_circle(center, radius + 2.2, Color(0.0, 0.02, 0.04, alpha))
-		draw_circle(center, radius, color)
-		draw_circle(center + Vector2(radius * 0.18, -radius * 0.28), radius * 0.33, light)
-		draw_arc(center, radius * 0.72, -1.0, 2.2, 20, Color(1, 1, 1, alpha * 0.12), 1.5, true)
+		var normal: Vector2 = sample["inside_normal"]
+		var source_size := membrane_texture.get_size()
+		var tile_source_width := source_size.x / 5.0
+		var frame := int(floor(_elapsed * 8.0 + float(layer) * 1.7 + float(tile_index) * 0.25)) % 5
+		var source := Rect2(Vector2(float(frame) * tile_source_width, 0.0), Vector2(tile_source_width, source_size.y))
+		var target_height := 102.0 * scale
+		var target_width := 176.0 * scale
+		var center := anchor + normal * layer_offset
+		var angle := tangent.angle()
+		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
+		draw_set_transform(center, angle, Vector2.ONE)
+		draw_texture_rect_region(membrane_texture, rect, source, Color(1, 1, 1, alpha))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	func _anchor_points(steps: int, layer_offset: float = 0.0, animated: bool = true) -> PackedVector2Array:
 		var points := PackedVector2Array()
