@@ -428,6 +428,12 @@ func _build_art_lab_view() -> void:
 		["Detailed Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
 		["Views", "res://assets/art_lab/sheets/view_icons_sheet.png"]
 	]))
+	stack.add_child(_art_sheet_section("Membrane Transporter Concepts", [
+		["20 transporter variants", "res://assets/art_lab/membrane/transporter-variants.png"]
+	], 520.0))
+	stack.add_child(_art_sheet_section("Membrane Unit And Strip Concepts", [
+		["Phospholipid units and repeatable membrane strips", "res://assets/art_lab/membrane/membrane-variants.png"]
+	], 470.0))
 
 func _art_molecule_variant_section() -> Control:
 	var panel := _glow_panel("Molecule Style Variants")
@@ -574,7 +580,7 @@ func _art_icon_card(label_text: String, path: String, image_size: float) -> Cont
 	card.add_child(label)
 	return card
 
-func _art_sheet_section(label_text: String, items: Array) -> Control:
+func _art_sheet_section(label_text: String, items: Array, image_height: float = 190.0) -> Control:
 	var panel := _glow_panel(label_text)
 	for item in items:
 		var title := Label.new()
@@ -584,7 +590,7 @@ func _art_sheet_section(label_text: String, items: Array) -> Control:
 		panel.add_child(title)
 		var texture := TextureRect.new()
 		texture.texture = _texture_from_png(str(item[1]))
-		texture.custom_minimum_size = Vector2(0.0, 190.0)
+		texture.custom_minimum_size = Vector2(0.0, image_height)
 		texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -592,7 +598,8 @@ func _art_sheet_section(label_text: String, items: Array) -> Control:
 	return panel
 
 func _texture_from_png(path: String) -> Texture2D:
-	var image := Image.load_from_file(path)
+	var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+	var image := Image.load_from_file(actual_path)
 	if image == null:
 		return null
 	return ImageTexture.create_from_image(image)
@@ -1988,14 +1995,13 @@ class MembraneCrossSection:
 			var tangent: Vector2 = placement["tangent"]
 			var protein_color: Color = _source_color(str(arrow.get("molecule", ""))).lightened(0.12)
 			var count := maxi(1, int(arrow.get("count", 0)) + int(arrow.get("queued_count", 0)))
-			var copies := mini(8, count)
+			var copies := 1
 			for copy_index in range(copies - 1, -1, -1):
 				var depth := float(copy_index) / float(maxi(1, copies - 1))
 				var offset := tangent * (-depth * 22.0) - normal * (depth * 34.0)
 				var scale := 1.0 - depth * 0.20
-				var alpha := 1.0 - depth * 0.34
+				var alpha := 1.0
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
-			_draw_transport_arrow(mid, tangent, normal, str(arrow.get("direction", "import")), protein_color)
 			if count > 1:
 				draw_string(ThemeDB.fallback_font, top - normal * 68.0 + tangent * 22.0, "x%d" % count, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.88, 1.0, 0.92, 0.82))
 
@@ -2046,7 +2052,7 @@ class MembraneCrossSection:
 		var membrane_height := top.distance_to(bottom)
 		var target_height := membrane_height * (2.55 if front else 2.20) * scale
 		var target_width := target_height * (source.size.x / source.size.y)
-		var center := top.lerp(bottom, 0.48) - normal * (target_height * 0.24)
+		var center := top.lerp(bottom, 0.52) - normal * (target_height * 0.02)
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
 		draw_set_transform(center, 0.0, Vector2.ONE)
 		draw_texture_rect_region(transporter_texture, rect, source, Color(1, 1, 1, alpha))
@@ -2055,7 +2061,7 @@ class MembraneCrossSection:
 	func _transporter_source_rect(base_color: Color) -> Rect2:
 		var sheet_size := transporter_texture.get_size()
 		var slot_width := sheet_size.x / 4.0
-		var index := 0
+		var index := 1
 		if base_color.r > base_color.g and base_color.r > base_color.b:
 			index = 2
 		elif base_color.b > base_color.r and base_color.b > base_color.g:
