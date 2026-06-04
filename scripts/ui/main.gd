@@ -1785,14 +1785,16 @@ class ProteinContextDish:
 class MembraneCrossSection:
 	extends Control
 
-	var background_texture: Texture2D
+	var membrane_texture: Texture2D
+	var transporter_texture: Texture2D
 	var simulation
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
 
 	func _ready() -> void:
-		background_texture = _load_texture_from_file("res://assets/reference/membrane-base.png")
+		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-strip.png")
+		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
 		set_process(true)
 
 	func _process(delta: float) -> void:
@@ -1841,7 +1843,7 @@ class MembraneCrossSection:
 		var image := Image.new()
 		var error := image.load(ProjectSettings.globalize_path(path))
 		if error != OK:
-			push_warning("Could not load membrane background image: %s" % path)
+			push_warning("Could not load membrane image: %s" % path)
 			return null
 		return ImageTexture.create_from_image(image)
 
@@ -1883,7 +1885,9 @@ class MembraneCrossSection:
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		_draw_scene_background(rect)
-		if background_texture == null:
+		if membrane_texture != null:
+			_draw_membrane_art()
+		else:
 			_draw_curved_membrane()
 		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.66))
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
@@ -1892,10 +1896,6 @@ class MembraneCrossSection:
 		_draw_transporter_proteins()
 
 	func _draw_scene_background(rect: Rect2) -> void:
-		if background_texture != null:
-			draw_texture_rect(background_texture, rect, false)
-			draw_rect(rect, Color(0.0, 0.08, 0.10, 0.08), true)
-			return
 		draw_rect(rect, Color("102b34"), true)
 		for i in 26:
 			var t := float(i) / 25.0
@@ -1917,6 +1917,18 @@ class MembraneCrossSection:
 			var p := Vector2(lerpf(20.0, size.x - 20.0, fmod(seed * 7.31, 1.0)), lerpf(22.0, size.y - 22.0, fmod(seed * 11.17, 1.0)))
 			var drift := Vector2(sin(_elapsed * 0.08 + seed * 17.0), cos(_elapsed * 0.07 + seed * 13.0)) * 5.0
 			draw_circle(p + drift, 1.2 + fmod(seed * 5.0, 2.2), Color(0.82, 1.0, 0.94, 0.08 + seed * 0.06))
+
+	func _draw_membrane_art() -> void:
+		var target := _membrane_texture_rect()
+		draw_texture_rect(membrane_texture, target, false)
+
+	func _membrane_texture_rect() -> Rect2:
+		var height := clampf(size.y * 0.42, 245.0, 330.0)
+		var width := height * (2172.0 / 724.0)
+		width = maxf(width, size.x * 1.28)
+		var x := (size.x - width) * 0.5
+		var y := size.y * 0.28
+		return Rect2(Vector2(x, y), Vector2(width, height))
 
 	func _draw_curved_membrane() -> void:
 		var center := Vector2(size.x * 0.52, size.y * 1.04)
@@ -2003,6 +2015,9 @@ class MembraneCrossSection:
 		}
 
 	func _draw_single_transporter(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
+		if transporter_texture != null:
+			_draw_transporter_sprite(top, bottom, tangent, normal, base_color, scale, alpha, front)
+			return
 		var color := Color(base_color.r, base_color.g, base_color.b, alpha)
 		var dark := Color(base_color.darkened(0.34).r, base_color.darkened(0.34).g, base_color.darkened(0.34).b, alpha)
 		var light := Color(base_color.lightened(0.34).r, base_color.lightened(0.34).g, base_color.lightened(0.34).b, alpha)
@@ -2025,6 +2040,29 @@ class MembraneCrossSection:
 		var gate_bottom := bottom + normal * (12.0 * scale if front else 1.0)
 		draw_line(gate_top, gate_bottom, Color(0.0, 0.02, 0.04, alpha), 10.0 * scale, true)
 		draw_line(gate_top, gate_bottom, color.lightened(0.06), 6.0 * scale, true)
+
+	func _draw_transporter_sprite(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
+		var source := _transporter_source_rect(base_color)
+		var membrane_height := top.distance_to(bottom)
+		var target_height := membrane_height * (2.55 if front else 2.20) * scale
+		var target_width := target_height * (source.size.x / source.size.y)
+		var center := top.lerp(bottom, 0.48) - normal * (target_height * 0.24)
+		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
+		draw_set_transform(center, 0.0, Vector2.ONE)
+		draw_texture_rect_region(transporter_texture, rect, source, Color(1, 1, 1, alpha))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	func _transporter_source_rect(base_color: Color) -> Rect2:
+		var sheet_size := transporter_texture.get_size()
+		var slot_width := sheet_size.x / 4.0
+		var index := 0
+		if base_color.r > base_color.g and base_color.r > base_color.b:
+			index = 2
+		elif base_color.b > base_color.r and base_color.b > base_color.g:
+			index = 1
+		elif base_color.r > 0.55 and base_color.b > 0.55:
+			index = 3
+		return Rect2(Vector2(slot_width * float(index), 0.0), Vector2(slot_width, sheet_size.y))
 
 	func _draw_transport_arrow(mid: Vector2, tangent: Vector2, normal: Vector2, direction: String, source_color: Color) -> void:
 		var import_direction := direction == "import"
