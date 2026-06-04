@@ -1965,9 +1965,9 @@ class MembraneCrossSection:
 		for layer in 4:
 			var depth := float(layer) / 3.0
 			var distance_factor := lerpf(1.45, 1.0, depth)
-			var count := int(round(34.0 * distance_factor))
+			var count := int(round(54.0 * distance_factor))
 			var scale := pow(1.0 / distance_factor, 0.28)
-			var offset := lerpf(-58.0, 0.0, depth)
+			var offset := lerpf(-42.0, 0.0, depth)
 			var alpha := lerpf(0.45, 1.0, depth)
 			for i in count:
 				var t := (float(i) + 0.5) / float(count)
@@ -1984,10 +1984,10 @@ class MembraneCrossSection:
 		var wave := sin(t * TAU * 2.0 - _elapsed * 0.82 + local_phase)
 		var ripple := sin(t * TAU * 4.4 + _elapsed * 0.95 + local_phase * 1.7) * 0.28
 		var layer_shift := inside_normal * layer_offset + Vector2(0, wave * 1.4 * scale)
-		var head_distance := lerpf(54.0, 66.0, scale) + wave * 1.8
+		var head_distance := lerpf(38.0, 48.0, scale) + wave * 1.2
 		var tail_spread := (4.8 + ripple) * scale
-		var head_radius := (12.0 + float(frame) * 0.10) * scale
-		var tail_width := 4.5 * scale
+		var head_radius := (8.4 + float(frame) * 0.08) * scale
+		var tail_width := 3.4 * scale
 		var outer_head := anchor + layer_shift + outside_normal * head_distance
 		var inner_head := anchor + layer_shift + inside_normal * head_distance
 		var tail_color := Color(0.93, 0.48, 0.16, alpha)
@@ -2028,11 +2028,11 @@ class MembraneCrossSection:
 
 	func _anchor_sample(t: float, animated: bool = true) -> Dictionary:
 		var x := lerpf(-size.x * 0.12, size.x * 1.12, t)
-		var arch := -sin(t * PI) * size.y * 0.20
+		var arch := -sin(t * PI) * size.y * 0.15
 		var wave := 0.0
 		if animated:
 			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
-		var point := Vector2(x, size.y * 0.60 + arch + wave)
+		var point := Vector2(x, size.y * 0.67 + arch + wave)
 		var dt := 0.006
 		var p2 := _anchor_point_static(clampf(t + dt, 0.0, 1.0), animated)
 		var p1 := _anchor_point_static(clampf(t - dt, 0.0, 1.0), animated)
@@ -2044,11 +2044,11 @@ class MembraneCrossSection:
 
 	func _anchor_point_static(t: float, animated: bool) -> Vector2:
 		var x := lerpf(-size.x * 0.12, size.x * 1.12, t)
-		var arch := -sin(t * PI) * size.y * 0.20
+		var arch := -sin(t * PI) * size.y * 0.15
 		var wave := 0.0
 		if animated:
 			wave = sin(t * TAU * 1.55 - _elapsed * 0.55) * 3.0 + sin(t * TAU * 3.1 + _elapsed * 0.42) * 0.9
-		return Vector2(x, size.y * 0.60 + arch + wave)
+		return Vector2(x, size.y * 0.67 + arch + wave)
 
 	func _draw_curved_membrane() -> void:
 		var center := Vector2(size.x * 0.52, size.y * 1.04)
@@ -2119,8 +2119,8 @@ class MembraneCrossSection:
 		var sample := _anchor_sample(t, true)
 		var anchor: Vector2 = sample["point"]
 		var normal: Vector2 = sample["inside_normal"]
-		var top := anchor - normal * 66.0
-		var bottom := anchor + normal * 66.0
+		var top := anchor - normal * 48.0
+		var bottom := anchor + normal * 48.0
 		return {
 			"top": top,
 			"bottom": bottom,
@@ -2158,7 +2158,7 @@ class MembraneCrossSection:
 	func _draw_transporter_sprite(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
 		var source := _transporter_source_rect(base_color)
 		var membrane_height := top.distance_to(bottom)
-		var target_height := membrane_height * (2.55 if front else 2.20) * scale
+		var target_height := membrane_height * (2.18 if front else 1.90) * scale
 		var target_width := target_height * (source.size.x / source.size.y)
 		var center := top.lerp(bottom, 0.52) - normal * (target_height * 0.02)
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
@@ -2203,7 +2203,7 @@ class MembraneCrossSection:
 			var node: Control = item.get("node", null)
 			if node == null:
 				continue
-			var node_size := Vector2(34.0, 34.0) * (0.86 + float(item.get("depth", 0.7)) * 0.44)
+			var node_size := Vector2(8.5, 8.5) * (0.86 + float(item.get("depth", 0.7)) * 0.44)
 			node.custom_minimum_size = node_size
 			node.size = node_size
 			var seed := float(item.get("seed", 0.0))
