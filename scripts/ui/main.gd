@@ -1836,7 +1836,7 @@ class MembraneCrossSection:
 	var _elapsed := 0.0
 
 	func _ready() -> void:
-		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-strip.png")
+		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-repeat-style4.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
 		set_process(true)
 
@@ -1970,28 +1970,20 @@ class MembraneCrossSection:
 		_draw_curved_membrane()
 
 	func _draw_tiled_membrane() -> void:
-		for layer in 4:
-			var depth := float(layer) / 3.0
-			var distance_factor := lerpf(1.45, 1.0, depth)
-			var scale := pow(1.0 / distance_factor, 0.22)
-			var tile_count := int(ceil(8.0 * distance_factor))
-			var offset := lerpf(-42.0, 0.0, depth)
-			var alpha := lerpf(0.45, 1.0, depth)
-			for i in tile_count:
-				var t := (float(i) + 0.5) / float(tile_count)
-				_draw_membrane_tile(t, scale, offset, alpha, layer)
+		var tile_count := 12
+		for i in tile_count:
+			var t := (float(i) + 0.5) / float(tile_count)
+			_draw_membrane_tile(t, 1.0, 0.0, 1.0)
 
-	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float, layer: int) -> void:
+	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float) -> void:
 		var sample := _anchor_sample(t, false)
 		var anchor: Vector2 = sample["point"]
 		var tangent: Vector2 = sample["tangent"]
 		var normal: Vector2 = sample["inside_normal"]
 		var source_size := membrane_texture.get_size()
-		var tile_source_width := source_size.x / 5.0
-		var frame := layer % 5
-		var source := Rect2(Vector2(float(frame) * tile_source_width, 0.0), Vector2(tile_source_width, source_size.y))
-		var target_height := 102.0 * scale
-		var target_width := 176.0 * scale
+		var source := Rect2(Vector2.ZERO, source_size)
+		var target_height := 112.0 * scale
+		var target_width := 170.0 * scale
 		var center := anchor + normal * layer_offset
 		var angle := tangent.angle()
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
