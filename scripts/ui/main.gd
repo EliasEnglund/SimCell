@@ -1785,12 +1785,14 @@ class ProteinContextDish:
 class MembraneCrossSection:
 	extends Control
 
+	var background_texture: Texture2D
 	var simulation
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
 
 	func _ready() -> void:
+		background_texture = load("res://assets/reference/membrane-base.png")
 		set_process(true)
 
 	func _process(delta: float) -> void:
@@ -1827,6 +1829,7 @@ class MembraneCrossSection:
 			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			node.seed = float(item.get("seed", 0.0))
 			node.color = _source_color(str(item.get("id", "")))
+			node.shape = _source_shape(str(item.get("id", "")))
 			node.formula = simulation.molecule_types[item["id"]].get("formula", "")
 			add_child(node)
 			item["node"] = node
@@ -1872,7 +1875,8 @@ class MembraneCrossSection:
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		_draw_scene_background(rect)
-		_draw_curved_membrane()
+		if background_texture == null:
+			_draw_curved_membrane()
 		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.66))
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
 		if simulation == null:
@@ -1880,6 +1884,10 @@ class MembraneCrossSection:
 		_draw_transporter_proteins()
 
 	func _draw_scene_background(rect: Rect2) -> void:
+		if background_texture != null:
+			draw_texture_rect(background_texture, rect, false)
+			draw_rect(rect, Color(0.0, 0.08, 0.10, 0.08), true)
+			return
 		draw_rect(rect, Color("102b34"), true)
 		for i in 26:
 			var t := float(i) / 25.0
@@ -1990,21 +1998,25 @@ class MembraneCrossSection:
 		var color := Color(base_color.r, base_color.g, base_color.b, alpha)
 		var dark := Color(base_color.darkened(0.34).r, base_color.darkened(0.34).g, base_color.darkened(0.34).b, alpha)
 		var light := Color(base_color.lightened(0.34).r, base_color.lightened(0.34).g, base_color.lightened(0.34).b, alpha)
-		var top_pull := 34.0 * scale
-		var bottom_push := 24.0 * scale if front else 6.0 * scale
+		var top_pull := 56.0 * scale
+		var bottom_push := 18.0 * scale if front else 4.0 * scale
+		var bridge_a := top - normal * 20.0 * scale - tangent * 16.0 * scale
+		var bridge_b := top - normal * 28.0 * scale + tangent * 16.0 * scale
+		draw_line(bridge_a, bridge_b, Color(0.0, 0.02, 0.04, alpha), 22.0 * scale, true)
+		draw_line(bridge_a, bridge_b, color.darkened(0.08), 16.0 * scale, true)
 		for side in [-1.0, 1.0]:
-			var lane := tangent * float(side) * 10.0 * scale
+			var lane := tangent * float(side) * 13.0 * scale
 			var a := top + lane - normal * top_pull
 			var b := bottom + lane + normal * bottom_push
-			draw_line(a, b, Color(0.0, 0.02, 0.04, alpha), 17.0 * scale, true)
-			draw_line(a, b, dark, 13.0 * scale, true)
-			draw_line(a + tangent * 1.8 * scale, b + tangent * 1.8 * scale, light, 3.5 * scale, true)
-			draw_circle(a, 8.0 * scale, Color(0.0, 0.02, 0.04, alpha))
-			draw_circle(a, 5.8 * scale, color.lightened(0.16))
+			draw_line(a, b, Color(0.0, 0.02, 0.04, alpha), 20.0 * scale, true)
+			draw_line(a, b, dark, 15.0 * scale, true)
+			draw_line(a + tangent * 2.0 * scale, b + tangent * 2.0 * scale, light, 4.0 * scale, true)
+			draw_circle(a, 9.5 * scale, Color(0.0, 0.02, 0.04, alpha))
+			draw_circle(a, 7.0 * scale, color.lightened(0.18))
 		var gate_top := top - normal * 10.0 * scale
 		var gate_bottom := bottom + normal * (12.0 * scale if front else 1.0)
-		draw_line(gate_top, gate_bottom, Color(0.0, 0.02, 0.04, alpha), 8.0 * scale, true)
-		draw_line(gate_top, gate_bottom, color.lightened(0.06), 5.0 * scale, true)
+		draw_line(gate_top, gate_bottom, Color(0.0, 0.02, 0.04, alpha), 10.0 * scale, true)
+		draw_line(gate_top, gate_bottom, color.lightened(0.06), 6.0 * scale, true)
 
 	func _draw_transport_arrow(mid: Vector2, tangent: Vector2, normal: Vector2, direction: String, source_color: Color) -> void:
 		var import_direction := direction == "import"
@@ -2067,7 +2079,14 @@ class MembraneCrossSection:
 			var molecule: Dictionary = simulation.molecule_types[id]
 			var name := str(molecule.get("name", "")).to_lower()
 			if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
-				return Color("64d66f")
+				return Color("58d874")
+			var formula := str(molecule.get("formula", ""))
+			if formula.contains("N"):
+				return Color("4da7ff")
+			if formula.contains("P"):
+				return Color("b85ff2")
+			if formula.contains("S"):
+				return Color("ffe069")
 		var palette := [
 			Color("64d66f"),
 			Color("56a8ff"),
@@ -2079,10 +2098,26 @@ class MembraneCrossSection:
 		]
 		return palette[abs(id.hash()) % palette.size()]
 
+	func _source_shape(id: String) -> String:
+		if simulation != null and simulation.molecule_types.has(id):
+			var molecule: Dictionary = simulation.molecule_types[id]
+			var name := str(molecule.get("name", "")).to_lower()
+			var formula := str(molecule.get("formula", ""))
+			if name == "glucose" or formula == "C₆O₂":
+				return "hexagon"
+			if formula.contains("P"):
+				return "diamond"
+			if formula.contains("N"):
+				return "circle"
+			if formula.contains("S"):
+				return "circle"
+		return "circle"
+
 class FloatingSourceParticle:
 	extends Control
 
 	var color := Color("64d66f")
+	var shape := "circle"
 	var seed := 0.0
 	var formula := ""
 	var _elapsed := 0.0
@@ -2098,12 +2133,30 @@ class FloatingSourceParticle:
 		var center := size * 0.5
 		var radius := minf(size.x, size.y) * 0.38
 		var pulse := 0.5 + 0.5 * sin(_elapsed * 0.7 + seed * TAU)
-		draw_circle(center + Vector2(0, radius * 0.22), radius * 1.08, Color(0.0, 0.0, 0.0, 0.24))
-		draw_circle(center, radius + 3.0, Color("02070b"))
-		draw_circle(center, radius + 1.0, color.lightened(0.22))
-		draw_circle(center, radius - 1.0, color.darkened(0.10))
-		draw_arc(center, radius * (0.56 + pulse * 0.08), -0.9, 2.3, 24, Color(1, 1, 1, 0.14), 2.0, true)
-		draw_circle(center + Vector2(radius * 0.28, -radius * 0.38), radius * 0.18, Color(1, 1, 1, 0.38))
+		draw_circle(center + Vector2(0, radius * 0.24), radius * 1.05, Color(0.0, 0.0, 0.0, 0.22))
+		if shape == "hexagon":
+			_draw_regular_polygon(center, radius + 3.0, 6, Color("02070b"))
+			_draw_regular_polygon(center, radius + 0.5, 6, color.lightened(0.18))
+			_draw_regular_polygon(center, radius - 2.0, 6, color.darkened(0.05))
+			draw_circle(center + Vector2(radius * 0.22, -radius * 0.30), radius * 0.16, Color(1, 1, 1, 0.34))
+		elif shape == "diamond":
+			_draw_regular_polygon(center, radius + 3.0, 4, Color("02070b"), PI * 0.25)
+			_draw_regular_polygon(center, radius + 0.5, 4, color.lightened(0.20), PI * 0.25)
+			_draw_regular_polygon(center, radius - 2.0, 4, color.darkened(0.08), PI * 0.25)
+			draw_circle(center + Vector2(radius * 0.22, -radius * 0.30), radius * 0.15, Color(1, 1, 1, 0.32))
+		else:
+			draw_circle(center, radius + 3.0, Color("02070b"))
+			draw_circle(center, radius + 1.0, color.lightened(0.22))
+			draw_circle(center, radius - 1.0, color.darkened(0.10))
+			draw_arc(center, radius * (0.56 + pulse * 0.08), -0.9, 2.3, 24, Color(1, 1, 1, 0.14), 2.0, true)
+			draw_circle(center + Vector2(radius * 0.28, -radius * 0.38), radius * 0.18, Color(1, 1, 1, 0.38))
+
+	func _draw_regular_polygon(center: Vector2, radius: float, sides: int, fill: Color, rotation_offset: float = 0.0) -> void:
+		var points := PackedVector2Array()
+		for i in sides:
+			var angle := rotation_offset - PI * 0.5 + TAU * float(i) / float(sides)
+			points.append(center + Vector2(cos(angle), sin(angle)) * radius)
+		draw_colored_polygon(points, fill)
 
 class FloatingMolecule3D:
 	extends Control
