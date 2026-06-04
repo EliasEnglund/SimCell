@@ -1873,23 +1873,34 @@ class MembraneCrossSection:
 		var rect := Rect2(Vector2.ZERO, size)
 		_draw_scene_background(rect)
 		_draw_curved_membrane()
-		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
-		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.72))
+		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.66))
+		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
 		if simulation == null:
 			return
 		_draw_transporter_proteins()
 
 	func _draw_scene_background(rect: Rect2) -> void:
-		draw_rect(rect, Color("0e2730"), true)
-		for i in 18:
-			var t := float(i) / 17.0
-			var color := Color("244d5d").lerp(Color("f4b08c"), smoothstep(0.48, 1.0, t))
-			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 16.0 + 2.0)), Color(color.r, color.g, color.b, 0.10), true)
-		for i in 16:
-			var y := lerpf(26.0, size.y * 0.46, float(i) / 15.0)
-			var wave := sin(_elapsed * 0.18 + float(i) * 0.7) * 16.0
-			draw_line(Vector2(0, y + wave), Vector2(size.x, y - 22.0 + wave), Color(0.72, 0.95, 1.0, 0.035), 2.0, true)
-		draw_circle(Vector2(size.x * 0.50, size.y * 0.76), size.x * 0.48, Color(1.0, 0.74, 0.58, 0.13))
+		draw_rect(rect, Color("102b34"), true)
+		for i in 26:
+			var t := float(i) / 25.0
+			var y := size.y * t
+			var outside_mix := smoothstep(0.0, 0.56, t)
+			var inside_mix := smoothstep(0.46, 1.0, t)
+			var water := Color("2a7891").lerp(Color("133844"), outside_mix)
+			var cytoplasm := Color("ffe0bd").lerp(Color("f09d75"), inside_mix)
+			var color := water.lerp(cytoplasm, smoothstep(0.48, 0.74, t))
+			draw_rect(Rect2(Vector2(0, y), Vector2(size.x, size.y / 24.0 + 2.0)), Color(color.r, color.g, color.b, 0.11), true)
+		draw_circle(Vector2(size.x * 0.50, size.y * 0.77), size.x * 0.56, Color(1.0, 0.73, 0.54, 0.16))
+		draw_circle(Vector2(size.x * 0.54, size.y * 0.78), size.x * 0.42, Color(1.0, 0.93, 0.78, 0.08))
+		for i in 22:
+			var y := lerpf(22.0, size.y * 0.45, float(i) / 21.0)
+			var wave := sin(_elapsed * 0.16 + float(i) * 0.62) * 18.0
+			draw_line(Vector2(-40.0, y + wave), Vector2(size.x + 40.0, y - 28.0 + wave), Color(0.72, 0.96, 1.0, 0.035), 2.0, true)
+		for i in 36:
+			var seed := float(abs(("water-speck:%d" % i).hash() % 10000)) / 10000.0
+			var p := Vector2(lerpf(20.0, size.x - 20.0, fmod(seed * 7.31, 1.0)), lerpf(22.0, size.y - 22.0, fmod(seed * 11.17, 1.0)))
+			var drift := Vector2(sin(_elapsed * 0.08 + seed * 17.0), cos(_elapsed * 0.07 + seed * 13.0)) * 5.0
+			draw_circle(p + drift, 1.2 + fmod(seed * 5.0, 2.2), Color(0.82, 1.0, 0.94, 0.08 + seed * 0.06))
 
 	func _draw_curved_membrane() -> void:
 		var center := Vector2(size.x * 0.52, size.y * 1.04)
@@ -1903,24 +1914,32 @@ class MembraneCrossSection:
 			band.append(p)
 		for i in range(bottom_points.size() - 1, -1, -1):
 			band.append(bottom_points[i])
-		draw_colored_polygon(band, Color("8f5c3d"))
-		draw_polyline(top_points, Color("02070b"), 11.0, true)
-		draw_polyline(bottom_points, Color("02070b"), 11.0, true)
-		draw_polyline(top_points, Color("7fc6e8"), 7.0, true)
-		draw_polyline(bottom_points, Color("7fc6e8"), 7.0, true)
-		for i in 72:
-			var t := float(i) / 71.0
+		draw_colored_polygon(band, Color("9e6a43"))
+		for i in 4:
+			var offset := float(i) * 8.0
+			draw_polyline(_ellipse_arc_points(center, rx, top_ry + 12.0 + offset, PI * 1.08, PI * 1.92, 96), Color(0.26, 0.11, 0.06, 0.22), 1.6, true)
+		draw_polyline(top_points, Color("02070b"), 12.0, true)
+		draw_polyline(bottom_points, Color("02070b"), 12.0, true)
+		draw_polyline(top_points, Color("74c6e4"), 8.0, true)
+		draw_polyline(bottom_points, Color("74c6e4"), 8.0, true)
+		for i in 92:
+			var t := float(i) / 91.0
 			var angle := lerpf(PI * 1.08, PI * 1.92, t)
 			var top := center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
 			var bottom := center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
 			var wobble := sin(_elapsed * 0.8 + float(i) * 0.45) * 1.4
 			var normal := (bottom - top).normalized()
 			var tangent := Vector2(-normal.y, normal.x)
-			draw_line(top + normal * 8.0 + tangent * wobble, bottom - normal * 8.0 - tangent * wobble, Color("d49b6f"), 2.2, true)
+			var tail_start := top + normal * 9.0 + tangent * wobble
+			var tail_end := bottom - normal * 9.0 - tangent * wobble
+			draw_line(tail_start, tail_end, Color("33160c"), 4.0, true)
+			draw_line(tail_start, tail_end, Color("d89a69"), 2.4, true)
 			draw_circle(top, 7.2, Color("02070b"))
 			draw_circle(bottom, 7.2, Color("02070b"))
-			draw_circle(top, 5.5, Color("79bed9"))
-			draw_circle(bottom, 5.5, Color("79bed9"))
+			draw_circle(top, 5.8, Color("80cce8"))
+			draw_circle(bottom, 5.8, Color("80cce8"))
+			draw_circle(top + Vector2(-1.4, -1.6), 2.0, Color(1, 1, 1, 0.25))
+			draw_circle(bottom + Vector2(-1.4, -1.6), 2.0, Color(1, 1, 1, 0.20))
 		draw_polyline(top_points, Color(0.55, 1.0, 1.0, 0.28), 2.0, true)
 		draw_polyline(bottom_points, Color(0.55, 1.0, 1.0, 0.20), 2.0, true)
 
@@ -1933,30 +1952,71 @@ class MembraneCrossSection:
 			var arrow: Dictionary = arrows[i]
 			var t := (float(i) + 1.0) / float(visible + 1)
 			var angle := lerpf(PI * 1.16, PI * 1.84, t)
-			var center: Vector2 = Vector2(size.x * 0.52, size.y * 1.04)
-			var rx: float = size.x * 0.74
-			var top_ry: float = size.y * 0.56
-			var bottom_ry: float = top_ry + 56.0
-			var top: Vector2 = center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
-			var bottom: Vector2 = center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
+			var placement := _membrane_placement(angle)
+			var top: Vector2 = placement["top"]
+			var bottom: Vector2 = placement["bottom"]
 			var mid: Vector2 = top.lerp(bottom, 0.5)
-			var normal: Vector2 = (bottom - top).normalized()
-			var tangent: Vector2 = Vector2(-normal.y, normal.x)
+			var normal: Vector2 = placement["normal"]
+			var tangent: Vector2 = placement["tangent"]
 			var protein_color: Color = _source_color(str(arrow.get("molecule", ""))).lightened(0.12)
-			for side in [-1.0, 1.0]:
-				var a: Vector2 = top + tangent * float(side) * 12.0 - normal * 14.0
-				var b: Vector2 = bottom + tangent * float(side) * 12.0 + normal * 14.0
-				draw_line(a, b, Color("02070b"), 15.0, true)
-				draw_line(a, b, protein_color.darkened(0.20), 11.0, true)
-				draw_line(a + tangent * 1.5, b + tangent * 1.5, protein_color.lightened(0.28), 3.0, true)
-			var import_direction: bool = arrow.get("direction", "") == "import"
-			var from := mid - normal * (66.0 if import_direction else -66.0)
-			var to := mid + normal * (66.0 if import_direction else -66.0)
-			var arrow_color := Color("8cff6a") if import_direction else Color("ff6a6a")
-			draw_line(from, to, Color("02070b"), 8.0, true)
-			draw_line(from, to, arrow_color, 4.0, true)
-			var dir := (to - from).normalized()
-			draw_colored_polygon(PackedVector2Array([to, to - dir * 13.0 + tangent * 7.0, to - dir * 13.0 - tangent * 7.0]), arrow_color)
+			var count := maxi(1, int(arrow.get("count", 0)) + int(arrow.get("queued_count", 0)))
+			var copies := mini(8, count)
+			for copy_index in range(copies - 1, -1, -1):
+				var depth := float(copy_index) / float(maxi(1, copies - 1))
+				var offset := tangent * (-depth * 22.0) - normal * (depth * 34.0)
+				var scale := 1.0 - depth * 0.20
+				var alpha := 1.0 - depth * 0.34
+				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
+			_draw_transport_arrow(mid, tangent, normal, str(arrow.get("direction", "import")), protein_color)
+			if count > 1:
+				draw_string(ThemeDB.fallback_font, top - normal * 68.0 + tangent * 22.0, "x%d" % count, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.88, 1.0, 0.92, 0.82))
+
+	func _membrane_placement(angle: float) -> Dictionary:
+		var center := Vector2(size.x * 0.52, size.y * 1.04)
+		var rx := size.x * 0.74
+		var top_ry := size.y * 0.56
+		var bottom_ry := top_ry + 56.0
+		var top := center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
+		var bottom := center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
+		var normal := (bottom - top).normalized()
+		return {
+			"top": top,
+			"bottom": bottom,
+			"normal": normal,
+			"tangent": Vector2(-normal.y, normal.x)
+		}
+
+	func _draw_single_transporter(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
+		var color := Color(base_color.r, base_color.g, base_color.b, alpha)
+		var dark := Color(base_color.darkened(0.34).r, base_color.darkened(0.34).g, base_color.darkened(0.34).b, alpha)
+		var light := Color(base_color.lightened(0.34).r, base_color.lightened(0.34).g, base_color.lightened(0.34).b, alpha)
+		var top_pull := 34.0 * scale
+		var bottom_push := 24.0 * scale if front else 6.0 * scale
+		for side in [-1.0, 1.0]:
+			var lane := tangent * float(side) * 10.0 * scale
+			var a := top + lane - normal * top_pull
+			var b := bottom + lane + normal * bottom_push
+			draw_line(a, b, Color(0.0, 0.02, 0.04, alpha), 17.0 * scale, true)
+			draw_line(a, b, dark, 13.0 * scale, true)
+			draw_line(a + tangent * 1.8 * scale, b + tangent * 1.8 * scale, light, 3.5 * scale, true)
+			draw_circle(a, 8.0 * scale, Color(0.0, 0.02, 0.04, alpha))
+			draw_circle(a, 5.8 * scale, color.lightened(0.16))
+		var gate_top := top - normal * 10.0 * scale
+		var gate_bottom := bottom + normal * (12.0 * scale if front else 1.0)
+		draw_line(gate_top, gate_bottom, Color(0.0, 0.02, 0.04, alpha), 8.0 * scale, true)
+		draw_line(gate_top, gate_bottom, color.lightened(0.06), 5.0 * scale, true)
+
+	func _draw_transport_arrow(mid: Vector2, tangent: Vector2, normal: Vector2, direction: String, source_color: Color) -> void:
+		var import_direction := direction == "import"
+		var arrow_color := Color("89ff7b") if import_direction else Color("ff6c73")
+		arrow_color = arrow_color.lerp(source_color.lightened(0.2), 0.18)
+		var from := mid - normal * (82.0 if import_direction else -76.0)
+		var to := mid + normal * (76.0 if import_direction else -82.0)
+		draw_line(from, to, Color(0.0, 0.02, 0.03, 0.72), 10.0, true)
+		draw_line(from, to, arrow_color, 5.0, true)
+		draw_line(from, to, Color(1.0, 1.0, 1.0, 0.26), 1.8, true)
+		var dir := (to - from).normalized()
+		draw_colored_polygon(PackedVector2Array([to, to - dir * 16.0 + tangent * 8.5, to - dir * 16.0 - tangent * 8.5]), arrow_color)
 
 	func _ellipse_arc_points(center: Vector2, rx: float, ry: float, start_angle: float, end_angle: float, steps: int) -> PackedVector2Array:
 		var points := PackedVector2Array()
