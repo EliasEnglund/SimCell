@@ -434,6 +434,9 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_sheet_section("Membrane Unit And Strip Concepts", [
 		["Phospholipid units and repeatable membrane strips", "res://assets/art_lab/membrane/membrane-variants.png"]
 	], 470.0))
+	stack.add_child(_art_sheet_section("Layered Phospholipid Palettes", [
+		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
+	], 520.0))
 
 func _art_molecule_variant_section() -> Control:
 	var panel := _glow_panel("Molecule Style Variants")
