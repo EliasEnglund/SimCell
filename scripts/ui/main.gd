@@ -1840,7 +1840,7 @@ class MembraneCrossSection:
 	const VISIBLE_MEMBRANE_ARC := 0.42
 
 	func _ready() -> void:
-		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-repeat-style4.png")
+		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-repeat-straight-style4.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		set_process(true)
@@ -1989,14 +1989,13 @@ class MembraneCrossSection:
 		_draw_curved_membrane()
 
 	func _draw_tiled_membrane() -> void:
-		var tile_count := 12
-		var spacing := 1.0 / float(tile_count)
-		var phase := fposmod(_membrane_scroll / VISIBLE_MEMBRANE_ARC * spacing, spacing)
-		for i in range(-1, tile_count + 1):
-			var t := (float(i) + 0.5) * spacing + phase
-			if t < -0.08 or t > 1.08:
+		var total_tiles := int(ceil(16.0 / VISIBLE_MEMBRANE_ARC))
+		for i in total_tiles:
+			var world_t := (float(i) + 0.5) / float(total_tiles)
+			var screen_t := _world_to_visible_t(world_t)
+			if screen_t < 0.0:
 				continue
-			_draw_membrane_tile(t, 1.0, 0.0, 1.0)
+			_draw_membrane_tile(screen_t, 1.0, 0.0, 1.0)
 
 	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float) -> void:
 		var sample := _anchor_sample(t, false)
@@ -2006,7 +2005,7 @@ class MembraneCrossSection:
 		var source_size := membrane_texture.get_size()
 		var source := Rect2(Vector2.ZERO, source_size)
 		var target_height := 112.0 * scale
-		var target_width := 170.0 * scale
+		var target_width := 178.0 * scale
 		var center := anchor + normal * layer_offset
 		var angle := tangent.angle()
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
