@@ -41,6 +41,7 @@ var membrane_transporter_list: VBoxContainer
 var membrane_import_detail: VBoxContainer
 var membrane_export_detail: VBoxContainer
 var membrane_scene: Control
+var membrane_build_button: Button
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
 var hovered_membrane_molecule := ""
@@ -333,6 +334,8 @@ func _build_membrane_view() -> void:
 	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layout.add_theme_constant_override("separation", 10)
 	content.add_child(layout)
+	membrane_outside_signature = ""
+	membrane_transporter_signature = ""
 
 	var left_panel := _membrane_side_panel("MEMBRANE INVENTORY")
 	left_panel.custom_minimum_size = Vector2(340, 0)
@@ -358,14 +361,38 @@ func _build_membrane_view() -> void:
 	membrane_scene = _membrane_cross_section()
 	membrane_scene.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.add_child(membrane_scene)
+	membrane_build_button = Button.new()
+	membrane_build_button.visible = false
+	membrane_build_button.text = "Build Importer"
+	membrane_build_button.custom_minimum_size = Vector2(190, 44)
+	membrane_build_button.add_theme_font_size_override("font_size", 16)
+	membrane_build_button.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	membrane_build_button.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	membrane_build_button.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
+	membrane_build_button.pressed.connect(_build_selected_importer)
+	center.add_child(membrane_build_button)
+	membrane_build_button.set_anchor(SIDE_LEFT, 0.5)
+	membrane_build_button.set_anchor(SIDE_RIGHT, 0.5)
+	membrane_build_button.set_anchor(SIDE_TOP, 1.0)
+	membrane_build_button.set_anchor(SIDE_BOTTOM, 1.0)
+	membrane_build_button.offset_left = -95
+	membrane_build_button.offset_right = 95
+	membrane_build_button.offset_top = -68
+	membrane_build_button.offset_bottom = -24
 
 	var right_panel := _membrane_side_panel("OUTSIDE MOLECULES")
 	right_panel.custom_minimum_size = Vector2(340, 0)
+	right_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	right_panel.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
+	right_panel.gui_input.connect(_handle_membrane_empty_click)
 	layout.add_child(right_panel)
 	right_panel.add_child(_section_label("Extracellular Sources"))
 	var outside_scroll := ScrollContainer.new()
 	outside_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outside_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	outside_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	outside_scroll.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
+	outside_scroll.gui_input.connect(_handle_membrane_empty_click)
 	right_panel.add_child(outside_scroll)
 	membrane_outside_list = VBoxContainer.new()
 	membrane_outside_list.add_theme_constant_override("separation", 9)
@@ -699,9 +726,32 @@ func _refresh_membrane() -> void:
 	_apply_membrane_focus()
 
 func _apply_membrane_focus() -> void:
+	if membrane_build_button != null:
+		membrane_build_button.visible = not selected_membrane_molecule.is_empty() and sim.molecule_types.has(selected_membrane_molecule)
+		if membrane_build_button.visible:
+			membrane_build_button.text = "Build %s Importer" % sim.molecule_types[selected_membrane_molecule].get("formula", "Molecule")
 	if membrane_scene != null:
 		membrane_scene.highlight_molecule = selected_membrane_molecule if not selected_membrane_molecule.is_empty() else hovered_membrane_molecule
 		membrane_scene.update_from_simulation()
+
+func _clear_membrane_selection() -> void:
+	selected_membrane_molecule = ""
+	selected_membrane_direction = "import"
+	membrane_outside_signature = ""
+	membrane_transporter_signature = ""
+	_refresh_membrane()
+
+func _handle_membrane_empty_click(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_clear_membrane_selection()
+		accept_event()
+
+func _build_selected_importer() -> void:
+	if selected_membrane_molecule.is_empty():
+		return
+	sim.build_transporter("import", selected_membrane_molecule)
+	membrane_transporter_signature = ""
+	_refresh_membrane()
 
 func _membrane_source_card(id: String, location: String) -> Button:
 	var molecule: Dictionary = sim.molecule_types[id]
@@ -729,8 +779,12 @@ func _membrane_source_card(id: String, location: String) -> Button:
 	button.add_theme_stylebox_override("hover", _membrane_list_row_style(true, id, true))
 	button.add_theme_stylebox_override("pressed", _membrane_list_row_style(true, id, false))
 	button.pressed.connect(func():
-		selected_membrane_molecule = id
-		selected_membrane_direction = direction
+		if selected_membrane_molecule == id and selected_membrane_direction == direction:
+			selected_membrane_molecule = ""
+			selected_membrane_direction = "import"
+		else:
+			selected_membrane_molecule = id
+			selected_membrane_direction = direction
 		membrane_outside_signature = ""
 		membrane_transporter_signature = ""
 		_refresh_membrane()
@@ -759,7 +813,7 @@ func _refresh_transporter_list() -> void:
 	for transporter in list:
 		membrane_transporter_list.add_child(_transporter_card(transporter))
 
-func _transporter_card(transporter: Dictionary) -> VBoxContainer:
+func _transporter_card(transporter: Dictionary) -> Control:
 	var molecule_id: String = transporter.get("molecule", "")
 	var selected := selected_membrane_molecule == molecule_id and selected_membrane_direction == str(transporter.get("direction", ""))
 	var box := GlowVBox.new()
@@ -768,18 +822,27 @@ func _transporter_card(transporter: Dictionary) -> VBoxContainer:
 	box.border_width = 1.4 if selected else 0.8
 	box.custom_minimum_size = Vector2(0, 58)
 	box.add_theme_constant_override("separation", 2)
+	var inset := MarginContainer.new()
+	inset.add_theme_constant_override("margin_left", 14)
+	inset.add_theme_constant_override("margin_right", 12)
+	inset.add_theme_constant_override("margin_top", 8)
+	inset.add_theme_constant_override("margin_bottom", 8)
+	box.add_child(inset)
+	var labels := VBoxContainer.new()
+	labels.add_theme_constant_override("separation", 2)
+	inset.add_child(labels)
 	var molecule: Dictionary = sim.molecule_types.get(molecule_id, {})
 	var name := Label.new()
 	name.text = "%s %s" % [str(transporter.get("direction", "transport")).capitalize(), molecule.get("formula", "Molecule")]
 	name.add_theme_font_size_override("font_size", 16)
 	name.modulate = _molecule_color(molecule_id).lightened(0.44)
-	box.add_child(name)
+	labels.add_child(name)
 	var detail := Label.new()
 	var queued_count := int(transporter.get("queued_count", 0))
 	var build_text := " | %d building" % queued_count if queued_count > 0 else ""
 	detail.text = "%d active%s | %.1f/s total" % [int(transporter.get("count", 0)), build_text, float(transporter.get("rate", 0.0))]
 	detail.modulate = Color("b9d4d8")
-	box.add_child(detail)
+	labels.add_child(detail)
 	return box
 
 func _outside_molecule_ids_by_amount() -> Array[String]:
@@ -1563,6 +1626,20 @@ func _membrane_side_panel(title_text: String) -> VBoxContainer:
 	panel.add_child(title)
 	return panel
 
+func _build_importer_button_style(active: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("153d36") if active else Color("0e2c2f")
+	style.border_color = Color("8cff6a") if active else Color("5de5c7")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	style.shadow_color = Color(0.35, 1.0, 0.70, 0.30 if active else 0.16)
+	style.shadow_size = 10 if active else 6
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	return style
+
 func _protein_metric_row(left_label: String, left_value: int, right_label: String, right_value: int) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -1841,7 +1918,7 @@ class MembraneCrossSection:
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
-	var _membrane_scroll := 0.0
+	var _membrane_scroll := 0.5
 	var _dragging := false
 	var _last_drag_position := Vector2.ZERO
 	const VISIBLE_MEMBRANE_ARC := 0.42
@@ -2116,10 +2193,10 @@ class MembraneCrossSection:
 			var placement := _membrane_placement(t)
 			var top: Vector2 = placement["top"]
 			var bottom: Vector2 = placement["bottom"]
-			var mid: Vector2 = top.lerp(bottom, 0.5)
 			var normal: Vector2 = placement["normal"]
 			var tangent: Vector2 = placement["tangent"]
 			var molecule_id := str(arrow.get("molecule", ""))
+			var visual_variant := int(arrow.get("visual_variant", 0))
 			var protein_color: Color = _source_color(molecule_id).lightened(0.12)
 			var copies := 1
 			for copy_index in range(copies - 1, -1, -1):
@@ -2129,7 +2206,7 @@ class MembraneCrossSection:
 				var alpha := 1.0
 				if not highlight_molecule.is_empty() and molecule_id != highlight_molecule:
 					alpha = 0.26
-				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
+				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0, visual_variant)
 
 	func _world_to_visible_t(world_t: float) -> float:
 		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5
@@ -2154,9 +2231,9 @@ class MembraneCrossSection:
 			"tangent": sample["tangent"]
 		}
 
-	func _draw_single_transporter(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
+	func _draw_single_transporter(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool, visual_variant: int = 0) -> void:
 		if transporter_texture != null:
-			_draw_transporter_sprite(top, bottom, tangent, normal, base_color, scale, alpha, front)
+			_draw_transporter_sprite(top, bottom, tangent, normal, base_color, scale, alpha, front, visual_variant)
 			return
 		var color := Color(base_color.r, base_color.g, base_color.b, alpha)
 		var dark := Color(base_color.darkened(0.34).r, base_color.darkened(0.34).g, base_color.darkened(0.34).b, alpha)
@@ -2181,8 +2258,8 @@ class MembraneCrossSection:
 		draw_line(gate_top, gate_bottom, Color(0.0, 0.02, 0.04, alpha), 10.0 * scale, true)
 		draw_line(gate_top, gate_bottom, color.lightened(0.06), 6.0 * scale, true)
 
-	func _draw_transporter_sprite(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool) -> void:
-		var source := _transporter_source_rect(base_color)
+	func _draw_transporter_sprite(top: Vector2, bottom: Vector2, tangent: Vector2, normal: Vector2, base_color: Color, scale: float, alpha: float, front: bool, visual_variant: int) -> void:
+		var source := _transporter_source_rect(base_color, visual_variant)
 		var membrane_height := top.distance_to(bottom)
 		var target_height := membrane_height * (2.18 if front else 1.90) * scale
 		var target_width := target_height * (source.size.x / source.size.y)
@@ -2192,16 +2269,17 @@ class MembraneCrossSection:
 		draw_texture_rect_region(transporter_texture, rect, source, Color(1, 1, 1, alpha))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	func _transporter_source_rect(base_color: Color) -> Rect2:
+	func _transporter_source_rect(base_color: Color, visual_variant: int = -1) -> Rect2:
 		var sheet_size := transporter_texture.get_size()
 		var slot_width := sheet_size.x / 4.0
-		var index := 1
-		if base_color.r > base_color.g and base_color.r > base_color.b:
-			index = 2
-		elif base_color.b > base_color.r and base_color.b > base_color.g:
-			index = 1
-		elif base_color.r > 0.55 and base_color.b > 0.55:
-			index = 3
+		var index := wrapi(visual_variant, 0, 4) if visual_variant >= 0 else 1
+		if visual_variant < 0:
+			if base_color.r > base_color.g and base_color.r > base_color.b:
+				index = 2
+			elif base_color.b > base_color.r and base_color.b > base_color.g:
+				index = 1
+			elif base_color.r > 0.55 and base_color.b > 0.55:
+				index = 3
 		return Rect2(Vector2(slot_width * float(index), 0.0), Vector2(slot_width, sheet_size.y))
 
 	func _draw_transport_arrow(mid: Vector2, tangent: Vector2, normal: Vector2, direction: String, source_color: Color) -> void:

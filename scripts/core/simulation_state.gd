@@ -112,7 +112,8 @@ func reset() -> void:
 		"direction": "import",
 		"molecule": glucose_id,
 		"count": STARTING_GLUCOSE_TRANSPORTERS,
-		"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND
+		"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND,
+		"visual_variant": 0
 	}
 	selected_molecule = ""
 	emit_signal("event_logged", "New culture started with glucose importers at 8 molecules/s.")
@@ -353,7 +354,8 @@ func build_transporter(direction: String, molecule_id: String) -> bool:
 			"direction": direction,
 			"molecule": molecule_id,
 			"count": 0,
-			"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND
+			"rate_per_transporter": TRANSPORTER_RATE_PER_SECOND,
+			"visual_variant": randi() % 4
 		}
 	transporter_queue.append({
 		"id": id,
@@ -463,7 +465,8 @@ func membrane_transport_arrows() -> Array[Dictionary]:
 			"formula": molecule_types[molecule_id].get("formula", "Molecule"),
 			"rate": float(transporter.get("rate", 0.0)),
 			"count": int(transporter.get("count", 0)),
-			"queued_count": int(transporter.get("queued_count", 0))
+			"queued_count": int(transporter.get("queued_count", 0)),
+			"visual_variant": int(transporter.get("visual_variant", 0))
 		})
 	return output
 
