@@ -44,6 +44,8 @@ var membrane_scene: Control
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
 var hovered_membrane_molecule := ""
+var membrane_outside_signature := ""
+var membrane_transporter_signature := ""
 var selected_pathway := ""
 
 var designer_tool := "lyase"
@@ -683,18 +685,22 @@ func _refresh() -> void:
 		_refresh_protein_queue()
 
 func _refresh_membrane() -> void:
-	if selected_membrane_molecule.is_empty():
-		var outside_ids := sim.outside_molecule_ids()
-		if not outside_ids.is_empty():
-			selected_membrane_molecule = outside_ids[0]
-			selected_membrane_direction = "import"
-	_clear(membrane_outside_list)
-	for id in _outside_molecule_ids_by_amount():
-		membrane_outside_list.add_child(_membrane_source_card(id, "outside"))
+	var next_outside_signature := _membrane_outside_signature()
+	if next_outside_signature != membrane_outside_signature:
+		membrane_outside_signature = next_outside_signature
+		_clear(membrane_outside_list)
+		for id in _outside_molecule_ids_by_amount():
+			membrane_outside_list.add_child(_membrane_source_card(id, "outside"))
 	_refresh_membrane_detail()
-	_refresh_transporter_list()
+	var next_transporter_signature := _membrane_transporter_signature()
+	if next_transporter_signature != membrane_transporter_signature:
+		membrane_transporter_signature = next_transporter_signature
+		_refresh_transporter_list()
+	_apply_membrane_focus()
+
+func _apply_membrane_focus() -> void:
 	if membrane_scene != null:
-		membrane_scene.highlight_molecule = hovered_membrane_molecule
+		membrane_scene.highlight_molecule = selected_membrane_molecule if not selected_membrane_molecule.is_empty() else hovered_membrane_molecule
 		membrane_scene.update_from_simulation()
 
 func _membrane_source_card(id: String, location: String) -> Button:
@@ -725,20 +731,18 @@ func _membrane_source_card(id: String, location: String) -> Button:
 	button.pressed.connect(func():
 		selected_membrane_molecule = id
 		selected_membrane_direction = direction
+		membrane_outside_signature = ""
+		membrane_transporter_signature = ""
 		_refresh_membrane()
 	)
 	button.mouse_entered.connect(func():
 		hovered_membrane_molecule = id
-		if membrane_scene != null:
-			membrane_scene.highlight_molecule = hovered_membrane_molecule
-			membrane_scene.queue_redraw()
+		_apply_membrane_focus()
 	)
 	button.mouse_exited.connect(func():
 		if hovered_membrane_molecule == id:
 			hovered_membrane_molecule = ""
-			if membrane_scene != null:
-				membrane_scene.highlight_molecule = ""
-				membrane_scene.queue_redraw()
+			_apply_membrane_focus()
 	)
 	return button
 
@@ -788,6 +792,23 @@ func _outside_molecule_ids_by_amount() -> Array[String]:
 		return sim.molecule_types[a].get("formula", "") < sim.molecule_types[b].get("formula", "")
 	)
 	return ids
+
+func _membrane_outside_signature() -> String:
+	var parts: Array[String] = [selected_membrane_molecule, selected_membrane_direction]
+	for id in _outside_molecule_ids_by_amount():
+		parts.append(id)
+	return "|".join(parts)
+
+func _membrane_transporter_signature() -> String:
+	var parts: Array[String] = [selected_membrane_molecule, selected_membrane_direction]
+	for transporter in sim.transporter_list():
+		parts.append("%s:%s:%d:%d" % [
+			transporter.get("direction", ""),
+			transporter.get("molecule", ""),
+			int(transporter.get("count", 0)),
+			int(transporter.get("queued_count", 0))
+		])
+	return "|".join(parts)
 
 func _membrane_cross_section() -> Control:
 	var scene := MembraneCrossSection.new()
