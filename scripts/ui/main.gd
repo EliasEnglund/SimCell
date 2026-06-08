@@ -332,12 +332,11 @@ func _build_membrane_view() -> void:
 	layout.add_theme_constant_override("separation", 10)
 	content.add_child(layout)
 
-	var left_panel := _glow_panel("MEMBRANE INVENTORY")
+	var left_panel := _membrane_side_panel("MEMBRANE INVENTORY")
 	left_panel.custom_minimum_size = Vector2(340, 0)
 	layout.add_child(left_panel)
 	left_panel.add_child(_section_label("Active Import / Export"))
 	var transporter_scroll := ScrollContainer.new()
-	transporter_scroll.custom_minimum_size = Vector2(0, 220)
 	transporter_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	transporter_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	left_panel.add_child(transporter_scroll)
@@ -345,13 +344,10 @@ func _build_membrane_view() -> void:
 	membrane_transporter_list.add_theme_constant_override("separation", 8)
 	membrane_transporter_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	transporter_scroll.add_child(membrane_transporter_list)
-	left_panel.add_child(_section_label("Selected Transporter"))
 	membrane_import_detail = VBoxContainer.new()
 	membrane_import_detail.add_theme_constant_override("separation", 10)
-	left_panel.add_child(membrane_import_detail)
 	membrane_export_detail = VBoxContainer.new()
 	membrane_export_detail.add_theme_constant_override("separation", 10)
-	left_panel.add_child(membrane_export_detail)
 
 	var center := Control.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -361,7 +357,7 @@ func _build_membrane_view() -> void:
 	membrane_scene.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.add_child(membrane_scene)
 
-	var right_panel := _glow_panel("OUTSIDE MOLECULES")
+	var right_panel := _membrane_side_panel("OUTSIDE MOLECULES")
 	right_panel.custom_minimum_size = Vector2(340, 0)
 	layout.add_child(right_panel)
 	right_panel.add_child(_section_label("Extracellular Sources"))
@@ -707,25 +703,25 @@ func _membrane_source_card(id: String, location: String) -> Button:
 	var rates: Dictionary = sim.outside_rates.get(id, {"production": 0.0, "consumption": 0.0}) if location == "outside" else sim.molecule_rates.get(id, {"production": 0.0, "consumption": 0.0})
 	var direction := "import" if location == "outside" else "export"
 	var button := Button.new()
-	var sign := "-" if location == "outside" else "+"
-	button.text = "%s  %s  %.0f\n%s%.1f/s  importers x%d" % [
+	var selected := selected_membrane_molecule == id and selected_membrane_direction == direction
+	button.text = "%s  %-8s  %7.0f   %+.1f/s   x%d" % [
 		_molecule_color_symbol(id),
 		molecule.get("formula", "Molecule"),
 		amount,
-		sign,
-		float(rates.get("consumption", 0.0) if location == "outside" else rates.get("production", 0.0)),
+		-float(rates.get("consumption", 0.0) if location == "outside" else rates.get("production", 0.0)),
 		sim.transporter_count(direction, id)
 	]
 	button.toggle_mode = true
-	button.button_pressed = selected_membrane_molecule == id and selected_membrane_direction == direction
-	button.custom_minimum_size = Vector2(0, 72)
-	button.add_theme_font_size_override("font_size", 15)
+	button.button_pressed = selected
+	button.custom_minimum_size = Vector2(0, 34)
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.add_theme_font_size_override("font_size", 14)
 	button.add_theme_color_override("font_color", _molecule_color(id).lightened(0.58))
 	button.add_theme_color_override("font_hover_color", Color("f4fbff"))
 	button.add_theme_color_override("font_pressed_color", Color("f4fbff"))
-	button.add_theme_stylebox_override("normal", _source_card_style(false, id))
-	button.add_theme_stylebox_override("hover", _source_card_style(true, id))
-	button.add_theme_stylebox_override("pressed", _source_card_style(true, id))
+	button.add_theme_stylebox_override("normal", _membrane_list_row_style(selected, id, false))
+	button.add_theme_stylebox_override("hover", _membrane_list_row_style(true, id, true))
+	button.add_theme_stylebox_override("pressed", _membrane_list_row_style(true, id, false))
 	button.pressed.connect(func():
 		selected_membrane_molecule = id
 		selected_membrane_direction = direction
@@ -749,53 +745,6 @@ func _membrane_source_card(id: String, location: String) -> Button:
 func _refresh_membrane_detail() -> void:
 	_clear(membrane_import_detail)
 	_clear(membrane_export_detail)
-	if not sim.molecule_types.has(selected_membrane_molecule):
-		membrane_import_detail.add_child(_title("No molecule selected", ""))
-		membrane_export_detail.add_child(_title("No molecule selected", ""))
-		return
-	var molecule: Dictionary = sim.molecule_types[selected_membrane_molecule]
-	var count := sim.transporter_count(selected_membrane_direction, selected_membrane_molecule)
-	var queued_count := sim.transporter_queued_count(selected_membrane_direction, selected_membrane_molecule)
-	var next_build := sim.transporter_next_build_remaining(selected_membrane_direction, selected_membrane_molecule)
-	var rate := sim.transporter_rate(selected_membrane_direction, selected_membrane_molecule)
-	var action := "Importer" if selected_membrane_direction == "import" else "Exporter"
-	var queue_text := " | %d building" % queued_count if queued_count > 0 else ""
-	var build_text := " | next %.1fs" % next_build if queued_count > 0 else ""
-	var target_detail := membrane_import_detail if selected_membrane_direction == "import" else membrane_export_detail
-	var idle_detail := membrane_export_detail if selected_membrane_direction == "import" else membrane_import_detail
-	idle_detail.add_child(_title("No molecule selected", ""))
-	target_detail.add_child(_title("%s %s" % [molecule.get("formula", "Molecule"), action], "%d active%s | %.1f molecules/s%s" % [count, queue_text, rate, build_text]))
-	var color_note := Label.new()
-	color_note.text = "%s colored source metabolite in the membrane scene" % _molecule_color_symbol(selected_membrane_molecule)
-	color_note.modulate = _molecule_color(selected_membrane_molecule).lightened(0.40)
-	color_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	target_detail.add_child(color_note)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	var build := Button.new()
-	build.text = "+ Queue Build"
-	build.custom_minimum_size = Vector2(128, 44)
-	build.pressed.connect(func():
-		sim.build_transporter(selected_membrane_direction, selected_membrane_molecule)
-	)
-	row.add_child(build)
-	var remove := Button.new()
-	remove.text = "- Destroy"
-	remove.custom_minimum_size = Vector2(128, 44)
-	remove.disabled = count <= 0
-	remove.pressed.connect(func():
-		sim.destroy_transporter(selected_membrane_direction, selected_membrane_molecule)
-	)
-	row.add_child(remove)
-	target_detail.add_child(row)
-	var canvas = MoleculeCanvasScript.new()
-	canvas.custom_minimum_size = Vector2(260, 150)
-	canvas.draw_background = false
-	canvas.scale_to_fit = true
-	canvas.atom_scale = 0.78
-	canvas.bond_scale = 0.76
-	canvas.set_molecule(molecule)
-	target_detail.add_child(canvas)
 
 func _refresh_transporter_list() -> void:
 	_clear(membrane_transporter_list)
@@ -807,20 +756,25 @@ func _refresh_transporter_list() -> void:
 		membrane_transporter_list.add_child(_transporter_card(transporter))
 
 func _transporter_card(transporter: Dictionary) -> VBoxContainer:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
 	var molecule_id: String = transporter.get("molecule", "")
+	var selected := selected_membrane_molecule == molecule_id and selected_membrane_direction == str(transporter.get("direction", ""))
+	var box := GlowVBox.new()
+	box.fill = Color("17303a") if selected else Color(0.05, 0.14, 0.18, 0.74)
+	box.border = _molecule_color(molecule_id).lightened(0.20) if selected else Color("2f7080")
+	box.border_width = 1.4 if selected else 0.8
+	box.custom_minimum_size = Vector2(0, 58)
+	box.add_theme_constant_override("separation", 2)
 	var molecule: Dictionary = sim.molecule_types.get(molecule_id, {})
 	var name := Label.new()
 	name.text = "%s %s" % [str(transporter.get("direction", "transport")).capitalize(), molecule.get("formula", "Molecule")]
 	name.add_theme_font_size_override("font_size", 16)
-	name.modulate = Color("76f4ff")
+	name.modulate = _molecule_color(molecule_id).lightened(0.44)
 	box.add_child(name)
 	var detail := Label.new()
 	var queued_count := int(transporter.get("queued_count", 0))
 	var build_text := " | %d building" % queued_count if queued_count > 0 else ""
 	detail.text = "%d active%s | %.1f/s total" % [int(transporter.get("count", 0)), build_text, float(transporter.get("rate", 0.0))]
-	detail.modulate = Color(0.72, 0.84, 0.82)
+	detail.modulate = Color("b9d4d8")
 	box.add_child(detail)
 	return box
 
@@ -1483,19 +1437,19 @@ func _molecule_color(id: String) -> Color:
 func _molecule_color_symbol(_id: String) -> String:
 	return "●"
 
-func _source_card_style(active: bool, id: String) -> StyleBoxFlat:
+func _membrane_list_row_style(active: bool, id: String, hover: bool) -> StyleBoxFlat:
 	var color := _molecule_color(id)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("1b3440") if active else Color("122532")
-	style.border_color = color.lightened(0.18) if active else Color(color.r, color.g, color.b, 0.48)
-	style.set_border_width_all(2 if active else 1)
-	style.set_corner_radius_all(6)
-	style.shadow_color = Color(color.r, color.g, color.b, 0.28 if active else 0.10)
-	style.shadow_size = 8 if active else 3
-	style.content_margin_left = 12
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	style.bg_color = Color(color.r, color.g, color.b, 0.18) if active else Color(0.02, 0.10, 0.13, 0.20 if hover else 0.04)
+	style.border_color = Color(color.r, color.g, color.b, 0.88 if active else 0.34 if hover else 0.0)
+	style.set_border_width_all(1 if active or hover else 0)
+	style.set_corner_radius_all(3)
+	style.shadow_color = Color(color.r, color.g, color.b, 0.18 if active else 0.0)
+	style.shadow_size = 5 if active else 0
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
 	return style
 
 func _formula_badge_style() -> StyleBoxFlat:
@@ -1572,6 +1526,19 @@ func _glow_panel(title_text: String) -> VBoxContainer:
 	title.text = title_text
 	title.add_theme_font_size_override("font_size", 18)
 	title.modulate = Color("9defff")
+	panel.add_child(title)
+	return panel
+
+func _membrane_side_panel(title_text: String) -> VBoxContainer:
+	var panel := GlowVBox.new()
+	panel.fill = Color(0.025, 0.105, 0.135, 0.90)
+	panel.border = Color("6df3ff")
+	panel.border_width = 1.4
+	panel.add_theme_constant_override("separation", 10)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 17)
+	title.modulate = Color("adfaff")
 	panel.add_child(title)
 	return panel
 
