@@ -45,6 +45,74 @@ static func initial_glucose_like() -> Dictionary:
 	]
 	return normalize({"name": "Glucose", "atoms": atoms, "bonds": bonds})
 
+static func outside_source_molecules() -> Array[Dictionary]:
+	return [
+		simple_molecule("Formic Acid", [
+			{"element": CARBON, "pos": Vector2(-42.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(44.0, -42.0)},
+			{"element": OXYGEN, "pos": Vector2(46.0, 42.0)}
+		], [
+			{"a": 0, "b": 1, "order": 2},
+			{"a": 0, "b": 2, "order": 1}
+		]),
+		simple_molecule("Ethanol", [
+			{"element": CARBON, "pos": Vector2(-82.0, 8.0)},
+			{"element": CARBON, "pos": Vector2(0.0, -8.0)},
+			{"element": OXYGEN, "pos": Vector2(82.0, -28.0)}
+		], [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1}
+		]),
+		simple_molecule("Pyruvate", [
+			{"element": CARBON, "pos": Vector2(-104.0, 28.0)},
+			{"element": CARBON, "pos": Vector2(-20.0, -18.0)},
+			{"element": CARBON, "pos": Vector2(72.0, 24.0)},
+			{"element": OXYGEN, "pos": Vector2(-20.0, -96.0)},
+			{"element": OXYGEN, "pos": Vector2(146.0, -18.0)},
+			{"element": OXYGEN, "pos": Vector2(150.0, 70.0)}
+		], [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 1, "b": 2, "order": 1},
+			{"a": 1, "b": 3, "order": 2},
+			{"a": 2, "b": 4, "order": 1},
+			{"a": 2, "b": 5, "order": 2}
+		]),
+		simple_molecule("Hydrogen", [
+			{"element": "H", "pos": Vector2(-34.0, 0.0)},
+			{"element": "H", "pos": Vector2(34.0, 0.0)}
+		], [
+			{"a": 0, "b": 1, "order": 1}
+		], "H₂"),
+		simple_molecule("Nitrate", [
+			{"element": NITROGEN, "pos": Vector2(0.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(0.0, -78.0)},
+			{"element": OXYGEN, "pos": Vector2(-68.0, 42.0)},
+			{"element": OXYGEN, "pos": Vector2(68.0, 42.0)}
+		], [
+			{"a": 0, "b": 1, "order": 1},
+			{"a": 0, "b": 2, "order": 1},
+			{"a": 0, "b": 3, "order": 2}
+		], "NO₃"),
+		simple_molecule("Sulfate", [
+			{"element": "S", "pos": Vector2(0.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(0.0, -82.0)},
+			{"element": OXYGEN, "pos": Vector2(-74.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(74.0, 0.0)},
+			{"element": OXYGEN, "pos": Vector2(0.0, 82.0)}
+		], [
+			{"a": 0, "b": 1, "order": 2},
+			{"a": 0, "b": 2, "order": 1},
+			{"a": 0, "b": 3, "order": 1},
+			{"a": 0, "b": 4, "order": 2}
+		], "SO₄")
+	]
+
+static func simple_molecule(name: String, atoms: Array[Dictionary], bonds: Array[Dictionary], display_formula: String = "") -> Dictionary:
+	var graph := normalize({"name": name, "atoms": atoms, "bonds": bonds})
+	if not display_formula.is_empty():
+		graph["formula"] = display_formula
+	return graph
+
 static func demo_molecules() -> Array[Dictionary]:
 	return [
 		_demo_nitrogen_fragment(),

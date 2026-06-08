@@ -94,6 +94,19 @@ func reset() -> void:
 	molecule_rates[glucose_id] = {"production": 0.0, "consumption": 0.0}
 	outside_amounts[glucose_id] = 10000.0
 	outside_rates[glucose_id] = {"production": 0.0, "consumption": 0.0}
+	var outside_sources := {
+		"Formic Acid": 220.0,
+		"Ethanol": 180.0,
+		"Pyruvate": 140.0,
+		"Hydrogen": 120.0,
+		"Nitrate": 90.0,
+		"Sulfate": 70.0
+	}
+	for source in Graph.outside_source_molecules():
+		var source_id: String = source["signature"]
+		molecule_types[source_id] = source
+		outside_amounts[source_id] = float(outside_sources.get(source.get("name", ""), 100.0))
+		outside_rates[source_id] = {"production": 0.0, "consumption": 0.0}
 	transporters[_transporter_id("import", glucose_id)] = {
 		"id": _transporter_id("import", glucose_id),
 		"direction": "import",

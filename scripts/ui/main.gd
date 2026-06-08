@@ -37,13 +37,13 @@ var event_log: RichTextLabel
 var music_player: AudioStreamPlayer
 var music_button: Button
 var membrane_outside_list: VBoxContainer
-var membrane_inside_list: VBoxContainer
 var membrane_transporter_list: VBoxContainer
 var membrane_import_detail: VBoxContainer
 var membrane_export_detail: VBoxContainer
 var membrane_scene: Control
 var selected_membrane_molecule := ""
 var selected_membrane_direction := "import"
+var hovered_membrane_molecule := ""
 var selected_pathway := ""
 
 var designer_tool := "lyase"
@@ -332,16 +332,26 @@ func _build_membrane_view() -> void:
 	layout.add_theme_constant_override("separation", 10)
 	content.add_child(layout)
 
-	var outside_panel := _glow_panel("EXTRACELLULAR COMPOSITION")
-	outside_panel.custom_minimum_size = Vector2(340, 0)
-	layout.add_child(outside_panel)
-	membrane_outside_list = VBoxContainer.new()
-	membrane_outside_list.add_theme_constant_override("separation", 9)
-	outside_panel.add_child(membrane_outside_list)
-	outside_panel.add_child(_section_label("Importer Builder"))
+	var left_panel := _glow_panel("MEMBRANE INVENTORY")
+	left_panel.custom_minimum_size = Vector2(340, 0)
+	layout.add_child(left_panel)
+	left_panel.add_child(_section_label("Active Import / Export"))
+	var transporter_scroll := ScrollContainer.new()
+	transporter_scroll.custom_minimum_size = Vector2(0, 220)
+	transporter_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	transporter_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left_panel.add_child(transporter_scroll)
+	membrane_transporter_list = VBoxContainer.new()
+	membrane_transporter_list.add_theme_constant_override("separation", 8)
+	membrane_transporter_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	transporter_scroll.add_child(membrane_transporter_list)
+	left_panel.add_child(_section_label("Selected Transporter"))
 	membrane_import_detail = VBoxContainer.new()
 	membrane_import_detail.add_theme_constant_override("separation", 10)
-	outside_panel.add_child(membrane_import_detail)
+	left_panel.add_child(membrane_import_detail)
+	membrane_export_detail = VBoxContainer.new()
+	membrane_export_detail.add_theme_constant_override("separation", 10)
+	left_panel.add_child(membrane_export_detail)
 
 	var center := Control.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -351,21 +361,18 @@ func _build_membrane_view() -> void:
 	membrane_scene.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.add_child(membrane_scene)
 
-	var right_panel := _glow_panel("SOURCE METABOLITES")
+	var right_panel := _glow_panel("OUTSIDE MOLECULES")
 	right_panel.custom_minimum_size = Vector2(340, 0)
 	layout.add_child(right_panel)
-	right_panel.add_child(_section_label("Inside Cell"))
-	membrane_inside_list = VBoxContainer.new()
-	membrane_inside_list.add_theme_constant_override("separation", 9)
-	right_panel.add_child(membrane_inside_list)
-	right_panel.add_child(_section_label("Active Transporters"))
-	membrane_transporter_list = VBoxContainer.new()
-	membrane_transporter_list.add_theme_constant_override("separation", 8)
-	right_panel.add_child(membrane_transporter_list)
-	right_panel.add_child(_section_label("Exporter Builder"))
-	membrane_export_detail = VBoxContainer.new()
-	membrane_export_detail.add_theme_constant_override("separation", 10)
-	right_panel.add_child(membrane_export_detail)
+	right_panel.add_child(_section_label("Extracellular Sources"))
+	var outside_scroll := ScrollContainer.new()
+	outside_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outside_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_panel.add_child(outside_scroll)
+	membrane_outside_list = VBoxContainer.new()
+	membrane_outside_list.add_theme_constant_override("separation", 9)
+	membrane_outside_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outside_scroll.add_child(membrane_outside_list)
 
 func _build_placeholder(title: String, subtitle: String) -> void:
 	var box := CenterContainer.new()
@@ -686,37 +693,13 @@ func _refresh_membrane() -> void:
 			selected_membrane_molecule = outside_ids[0]
 			selected_membrane_direction = "import"
 	_clear(membrane_outside_list)
-	for id in sim.outside_molecule_ids():
+	for id in _outside_molecule_ids_by_amount():
 		membrane_outside_list.add_child(_membrane_source_card(id, "outside"))
-	_clear(membrane_inside_list)
-	for id in sim.outside_molecule_ids():
-		membrane_inside_list.add_child(_membrane_source_card(id, "inside"))
 	_refresh_membrane_detail()
 	_refresh_transporter_list()
 	if membrane_scene != null:
+		membrane_scene.highlight_molecule = hovered_membrane_molecule
 		membrane_scene.update_from_simulation()
-
-func _membrane_molecule_button(id: String, location: String) -> Button:
-	var molecule: Dictionary = sim.molecule_types[id]
-	var amount := float(sim.outside_amounts.get(id, 0.0)) if location == "outside" else float(sim.molecule_amounts.get(id, 0.0))
-	var rates: Dictionary = sim.outside_rates.get(id, {"production": 0.0, "consumption": 0.0}) if location == "outside" else sim.molecule_rates.get(id, {"production": 0.0, "consumption": 0.0})
-	var direction := "import" if location == "outside" else "export"
-	var button := Button.new()
-	button.text = "%s  %.0f\n+%.1f/s  -%.1f/s" % [
-		molecule.get("formula", "Molecule"),
-		amount,
-		float(rates.get("production", 0.0)),
-		float(rates.get("consumption", 0.0))
-	]
-	button.toggle_mode = true
-	button.button_pressed = selected_membrane_molecule == id and selected_membrane_direction == direction
-	button.custom_minimum_size = Vector2(0, 68)
-	button.pressed.connect(func():
-		selected_membrane_molecule = id
-		selected_membrane_direction = direction
-		_refresh_membrane()
-	)
-	return button
 
 func _membrane_source_card(id: String, location: String) -> Button:
 	var molecule: Dictionary = sim.molecule_types[id]
@@ -725,7 +708,7 @@ func _membrane_source_card(id: String, location: String) -> Button:
 	var direction := "import" if location == "outside" else "export"
 	var button := Button.new()
 	var sign := "-" if location == "outside" else "+"
-	button.text = "%s  %s  %.0f\n%s%.1f/s  transport x%d" % [
+	button.text = "%s  %s  %.0f\n%s%.1f/s  importers x%d" % [
 		_molecule_color_symbol(id),
 		molecule.get("formula", "Molecule"),
 		amount,
@@ -747,6 +730,19 @@ func _membrane_source_card(id: String, location: String) -> Button:
 		selected_membrane_molecule = id
 		selected_membrane_direction = direction
 		_refresh_membrane()
+	)
+	button.mouse_entered.connect(func():
+		hovered_membrane_molecule = id
+		if membrane_scene != null:
+			membrane_scene.highlight_molecule = hovered_membrane_molecule
+			membrane_scene.queue_redraw()
+	)
+	button.mouse_exited.connect(func():
+		if hovered_membrane_molecule == id:
+			hovered_membrane_molecule = ""
+			if membrane_scene != null:
+				membrane_scene.highlight_molecule = ""
+				membrane_scene.queue_redraw()
 	)
 	return button
 
@@ -827,6 +823,17 @@ func _transporter_card(transporter: Dictionary) -> VBoxContainer:
 	detail.modulate = Color(0.72, 0.84, 0.82)
 	box.add_child(detail)
 	return box
+
+func _outside_molecule_ids_by_amount() -> Array[String]:
+	var ids := sim.outside_molecule_ids()
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		var amount_a := float(sim.outside_amounts.get(a, 0.0))
+		var amount_b := float(sim.outside_amounts.get(b, 0.0))
+		if not is_equal_approx(amount_a, amount_b):
+			return amount_a > amount_b
+		return sim.molecule_types[a].get("formula", "") < sim.molecule_types[b].get("formula", "")
+	)
+	return ids
 
 func _membrane_cross_section() -> Control:
 	var scene := MembraneCrossSection.new()
@@ -1450,6 +1457,18 @@ func _molecule_color(id: String) -> Color:
 		var name := str(molecule.get("name", "")).to_lower()
 		if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
 			return Color("64d66f")
+		if name.contains("formic"):
+			return Color("a5f3d0")
+		if name.contains("ethanol"):
+			return Color("8bd7ff")
+		if name.contains("pyruvate"):
+			return Color("ff8a7a")
+		if name.contains("hydrogen"):
+			return Color("d7f6ff")
+		if name.contains("nitrate"):
+			return Color("6fa8ff")
+		if name.contains("sulfate"):
+			return Color("ffe069")
 	var palette := [
 		Color("64d66f"),
 		Color("56a8ff"),
@@ -1830,6 +1849,7 @@ class MembraneCrossSection:
 
 	var transporter_texture: Texture2D
 	var simulation
+	var highlight_molecule := ""
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
@@ -2111,13 +2131,16 @@ class MembraneCrossSection:
 			var mid: Vector2 = top.lerp(bottom, 0.5)
 			var normal: Vector2 = placement["normal"]
 			var tangent: Vector2 = placement["tangent"]
-			var protein_color: Color = _source_color(str(arrow.get("molecule", ""))).lightened(0.12)
+			var molecule_id := str(arrow.get("molecule", ""))
+			var protein_color: Color = _source_color(molecule_id).lightened(0.12)
 			var copies := 1
 			for copy_index in range(copies - 1, -1, -1):
 				var depth := float(copy_index) / float(maxi(1, copies - 1))
 				var offset := tangent * (-depth * 22.0) - normal * (depth * 34.0)
 				var scale := 1.0 - depth * 0.20
 				var alpha := 1.0
+				if not highlight_molecule.is_empty() and molecule_id != highlight_molecule:
+					alpha = 0.26
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0)
 
 	func _world_to_visible_t(world_t: float) -> float:
@@ -2214,6 +2237,11 @@ class MembraneCrossSection:
 			var node_size := Vector2(8.5, 8.5) * (0.86 + float(item.get("depth", 0.7)) * 0.44)
 			node.custom_minimum_size = node_size
 			node.size = node_size
+			var molecule_id := str(item.get("id", ""))
+			var focus_alpha := 1.0
+			if not highlight_molecule.is_empty() and molecule_id != highlight_molecule:
+				focus_alpha = 0.18
+			node.modulate = Color(1.0, 1.0, 1.0, focus_alpha)
 			var seed := float(item.get("seed", 0.0))
 			var x_jitter := float(item.get("x_jitter", 0.0))
 			var y_jitter := float(item.get("y_jitter", 0.0))
@@ -2253,6 +2281,18 @@ class MembraneCrossSection:
 			var name := str(molecule.get("name", "")).to_lower()
 			if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
 				return Color("58d874")
+			if name.contains("formic"):
+				return Color("a5f3d0")
+			if name.contains("ethanol"):
+				return Color("8bd7ff")
+			if name.contains("pyruvate"):
+				return Color("ff8a7a")
+			if name.contains("hydrogen"):
+				return Color("d7f6ff")
+			if name.contains("nitrate"):
+				return Color("6fa8ff")
+			if name.contains("sulfate"):
+				return Color("ffe069")
 			var formula := str(molecule.get("formula", ""))
 			if formula.contains("N"):
 				return Color("4da7ff")
@@ -2278,12 +2318,16 @@ class MembraneCrossSection:
 			var formula := str(molecule.get("formula", ""))
 			if name == "glucose" or formula == "C₆O₂":
 				return "hexagon"
+			if name.contains("hydrogen"):
+				return "circle"
+			if name.contains("pyruvate"):
+				return "triangle"
 			if formula.contains("P"):
 				return "diamond"
 			if formula.contains("N"):
-				return "circle"
+				return "triangle"
 			if formula.contains("S"):
-				return "circle"
+				return "diamond"
 		return "circle"
 
 class PhospholipidAnimationPreview:
@@ -2355,6 +2399,11 @@ class FloatingSourceParticle:
 			_draw_regular_polygon(center, radius + 0.5, 6, color.lightened(0.18))
 			_draw_regular_polygon(center, radius - 2.0, 6, color.darkened(0.05))
 			draw_circle(center + Vector2(radius * 0.22, -radius * 0.30), radius * 0.16, Color(1, 1, 1, 0.34))
+		elif shape == "triangle":
+			_draw_regular_polygon(center, radius + 3.0, 3, Color("02070b"), PI * 0.5)
+			_draw_regular_polygon(center, radius + 0.5, 3, color.lightened(0.18), PI * 0.5)
+			_draw_regular_polygon(center, radius - 2.0, 3, color.darkened(0.06), PI * 0.5)
+			draw_circle(center + Vector2(radius * 0.10, -radius * 0.26), radius * 0.15, Color(1, 1, 1, 0.34))
 		elif shape == "diamond":
 			_draw_regular_polygon(center, radius + 3.0, 4, Color("02070b"), PI * 0.25)
 			_draw_regular_polygon(center, radius + 0.5, 4, color.lightened(0.20), PI * 0.25)
