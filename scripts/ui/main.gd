@@ -1828,7 +1828,6 @@ class ProteinContextDish:
 class MembraneCrossSection:
 	extends Control
 
-	var membrane_texture: Texture2D
 	var transporter_texture: Texture2D
 	var simulation
 	var _particles := {}
@@ -1840,7 +1839,6 @@ class MembraneCrossSection:
 	const VISIBLE_MEMBRANE_ARC := 0.42
 
 	func _ready() -> void:
-		membrane_texture = _load_texture_from_file("res://assets/membrane/membrane-repeat-straight-style4.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		set_process(true)
@@ -1947,12 +1945,12 @@ class MembraneCrossSection:
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		_draw_scene_background(rect)
-		_draw_layered_membrane()
+		_draw_membrane_body()
+		if simulation != null:
+			_draw_transporter_proteins()
+		_draw_membrane_front_heads()
 		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.66))
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
-		if simulation == null:
-			return
-		_draw_transporter_proteins()
 
 	func _draw_scene_background(rect: Rect2) -> void:
 		draw_rect(rect, Color("102b34"), true)
@@ -1982,36 +1980,87 @@ class MembraneCrossSection:
 			var drift := Vector2(sin(_elapsed * 0.08 + seed * 17.0), cos(_elapsed * 0.07 + seed * 13.0)) * 5.0
 			draw_circle(p + drift, 1.2 + fmod(seed * 5.0, 2.2), Color(0.82, 1.0, 0.94, 0.08 + seed * 0.06))
 
-	func _draw_layered_membrane() -> void:
-		if membrane_texture != null:
-			_draw_tiled_membrane()
-			return
-		_draw_curved_membrane()
+	func _draw_membrane_body() -> void:
+		var upper_edge := _membrane_edge_points(-43.0, 96)
+		var lower_edge := _membrane_edge_points(43.0, 96)
+		var membrane_band := PackedVector2Array()
+		for point in upper_edge:
+			membrane_band.append(point)
+		for i in range(lower_edge.size() - 1, -1, -1):
+			membrane_band.append(lower_edge[i])
+		draw_colored_polygon(membrane_band, Color("9d6134"))
+		draw_colored_polygon(_membrane_inner_band(-28.0, 28.0, 96), Color("ca8245"))
+		draw_polyline(upper_edge, Color(0.0, 0.03, 0.05, 0.86), 8.0, true)
+		draw_polyline(lower_edge, Color(0.0, 0.03, 0.05, 0.82), 8.0, true)
+		_draw_tail_lattice()
+		_draw_membrane_depth_rows()
 
-	func _draw_tiled_membrane() -> void:
-		var total_tiles := int(ceil(16.0 / VISIBLE_MEMBRANE_ARC))
-		for i in total_tiles:
-			var world_t := (float(i) + 0.5) / float(total_tiles)
+	func _draw_membrane_front_heads() -> void:
+		_draw_lipid_head_row(-44.0, 48, 1.0, 1.0)
+		_draw_lipid_head_row(44.0, 48, 0.94, 1.0)
+		draw_polyline(_membrane_edge_points(-43.0, 96), Color(0.62, 1.0, 1.0, 0.20), 1.8, true)
+		draw_polyline(_membrane_edge_points(43.0, 96), Color(0.62, 1.0, 1.0, 0.14), 1.6, true)
+
+	func _draw_membrane_depth_rows() -> void:
+		_draw_lipid_head_row(-57.0, 52, 0.52, 0.45, -15.0)
+		_draw_lipid_head_row(57.0, 52, 0.44, 0.38, -15.0)
+		_draw_lipid_head_row(-51.0, 50, 0.68, 0.58, -7.0)
+		_draw_lipid_head_row(51.0, 50, 0.60, 0.52, -7.0)
+
+	func _membrane_edge_points(offset: float, steps: int) -> PackedVector2Array:
+		var points := PackedVector2Array()
+		for i in steps + 1:
+			var sample := _anchor_sample(float(i) / float(steps), false)
+			points.append(sample["point"] + sample["inside_normal"] * offset)
+		return points
+
+	func _membrane_inner_band(top_offset: float, bottom_offset: float, steps: int) -> PackedVector2Array:
+		var top := _membrane_edge_points(top_offset, steps)
+		var bottom := _membrane_edge_points(bottom_offset, steps)
+		var band := PackedVector2Array()
+		for point in top:
+			band.append(point)
+		for i in range(bottom.size() - 1, -1, -1):
+			band.append(bottom[i])
+		return band
+
+	func _draw_tail_lattice() -> void:
+		var visible_tail_count := 60
+		var total_world_count := int(ceil(float(visible_tail_count) / VISIBLE_MEMBRANE_ARC))
+		for i in total_world_count:
+			var world_t := (float(i) + 0.5) / float(total_world_count)
 			var screen_t := _world_to_visible_t(world_t)
 			if screen_t < 0.0:
 				continue
-			_draw_membrane_tile(screen_t, 1.0, 0.0, 1.0)
+			var sample := _anchor_sample(screen_t, false)
+			var anchor: Vector2 = sample["point"]
+			var normal: Vector2 = sample["inside_normal"]
+			var tangent: Vector2 = sample["tangent"]
+			var phase := sin(world_t * TAU * 14.0) * 2.8
+			var top := anchor + normal * -31.0 + tangent * phase
+			var bottom := anchor + normal * 31.0 - tangent * phase
+			draw_line(top, bottom, Color(0.11, 0.045, 0.018, 0.56), 5.0, true)
+			draw_line(top, bottom, Color(0.86, 0.43, 0.14, 0.86), 3.2, true)
+			draw_line(top + tangent * 1.5, bottom + tangent * 1.5, Color(1.0, 0.70, 0.32, 0.42), 1.15, true)
 
-	func _draw_membrane_tile(t: float, scale: float, layer_offset: float, alpha: float) -> void:
-		var sample := _anchor_sample(t, false)
-		var anchor: Vector2 = sample["point"]
-		var tangent: Vector2 = sample["tangent"]
-		var normal: Vector2 = sample["inside_normal"]
-		var source_size := membrane_texture.get_size()
-		var source := Rect2(Vector2.ZERO, source_size)
-		var target_height := 112.0 * scale
-		var target_width := 178.0 * scale
-		var center := anchor + normal * layer_offset
-		var angle := tangent.angle()
-		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
-		draw_set_transform(center, angle, Vector2.ONE)
-		draw_texture_rect_region(membrane_texture, rect, source, Color(1, 1, 1, alpha))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	func _draw_lipid_head_row(edge_offset: float, visible_count: int, brightness: float, alpha: float, depth_shift: float = 0.0) -> void:
+		var total_world_count := int(ceil(float(visible_count) / VISIBLE_MEMBRANE_ARC))
+		for i in total_world_count:
+			var world_t := (float(i) + 0.5) / float(total_world_count)
+			var screen_t := _world_to_visible_t(world_t)
+			if screen_t < 0.0:
+				continue
+			var sample := _anchor_sample(screen_t, false)
+			var normal: Vector2 = sample["inside_normal"]
+			var tangent: Vector2 = sample["tangent"]
+			var point: Vector2 = sample["point"] + normal * edge_offset - normal * depth_shift
+			var radius := 7.3 + brightness * 1.2
+			var fill := Color(0.22, 0.62, 0.88, alpha).lightened(0.16 * brightness)
+			var rim := Color(0.005, 0.025, 0.035, alpha)
+			draw_circle(point, radius + 2.2, rim)
+			draw_circle(point, radius, fill)
+			draw_circle(point + tangent * -1.4 + normal * -2.5, radius * 0.46, Color(0.75, 0.96, 1.0, alpha * 0.30))
+			draw_circle(point + tangent * -2.2 + normal * -3.0, radius * 0.20, Color(1.0, 1.0, 1.0, alpha * 0.36))
 
 	func _anchor_points(steps: int, layer_offset: float = 0.0, animated: bool = true) -> PackedVector2Array:
 		var points := PackedVector2Array()
@@ -2044,47 +2093,6 @@ class MembraneCrossSection:
 			wave = sin(t * TAU * 1.55 - _elapsed * 0.95) * 5.2 + sin(t * TAU * 3.1 + _elapsed * 0.72) * 1.5
 		return Vector2(x, size.y * 0.67 + arch + wave)
 
-	func _draw_curved_membrane() -> void:
-		var center := Vector2(size.x * 0.52, size.y * 1.04)
-		var rx := size.x * 0.74
-		var top_ry := size.y * 0.56
-		var bottom_ry := top_ry + 56.0
-		var top_points := _ellipse_arc_points(center, rx, top_ry, PI * 1.08, PI * 1.92, 96)
-		var bottom_points := _ellipse_arc_points(center, rx, bottom_ry, PI * 1.08, PI * 1.92, 96)
-		var band := PackedVector2Array()
-		for p in top_points:
-			band.append(p)
-		for i in range(bottom_points.size() - 1, -1, -1):
-			band.append(bottom_points[i])
-		draw_colored_polygon(band, Color("9e6a43"))
-		for i in 4:
-			var offset := float(i) * 8.0
-			draw_polyline(_ellipse_arc_points(center, rx, top_ry + 12.0 + offset, PI * 1.08, PI * 1.92, 96), Color(0.26, 0.11, 0.06, 0.22), 1.6, true)
-		draw_polyline(top_points, Color("02070b"), 12.0, true)
-		draw_polyline(bottom_points, Color("02070b"), 12.0, true)
-		draw_polyline(top_points, Color("74c6e4"), 8.0, true)
-		draw_polyline(bottom_points, Color("74c6e4"), 8.0, true)
-		for i in 92:
-			var t := float(i) / 91.0
-			var angle := lerpf(PI * 1.08, PI * 1.92, t)
-			var top := center + Vector2(cos(angle) * rx, sin(angle) * top_ry)
-			var bottom := center + Vector2(cos(angle) * rx, sin(angle) * bottom_ry)
-			var wobble := sin(_elapsed * 0.8 + float(i) * 0.45) * 1.4
-			var normal := (bottom - top).normalized()
-			var tangent := Vector2(-normal.y, normal.x)
-			var tail_start := top + normal * 9.0 + tangent * wobble
-			var tail_end := bottom - normal * 9.0 - tangent * wobble
-			draw_line(tail_start, tail_end, Color("33160c"), 4.0, true)
-			draw_line(tail_start, tail_end, Color("d89a69"), 2.4, true)
-			draw_circle(top, 7.2, Color("02070b"))
-			draw_circle(bottom, 7.2, Color("02070b"))
-			draw_circle(top, 5.8, Color("80cce8"))
-			draw_circle(bottom, 5.8, Color("80cce8"))
-			draw_circle(top + Vector2(-1.4, -1.6), 2.0, Color(1, 1, 1, 0.25))
-			draw_circle(bottom + Vector2(-1.4, -1.6), 2.0, Color(1, 1, 1, 0.20))
-		draw_polyline(top_points, Color(0.55, 1.0, 1.0, 0.28), 2.0, true)
-		draw_polyline(bottom_points, Color(0.55, 1.0, 1.0, 0.20), 2.0, true)
-
 	func _draw_transporter_proteins() -> void:
 		var arrows: Array = simulation.membrane_transport_arrows()
 		var total := arrows.size()
@@ -2104,7 +2112,6 @@ class MembraneCrossSection:
 			var normal: Vector2 = placement["normal"]
 			var tangent: Vector2 = placement["tangent"]
 			var protein_color: Color = _source_color(str(arrow.get("molecule", ""))).lightened(0.12)
-			var count := maxi(1, int(arrow.get("count", 0)) + int(arrow.get("queued_count", 0)))
 			var copies := 1
 			for copy_index in range(copies - 1, -1, -1):
 				var depth := float(copy_index) / float(maxi(1, copies - 1))
@@ -2197,13 +2204,6 @@ class MembraneCrossSection:
 		draw_line(from, to, Color(1.0, 1.0, 1.0, 0.26), 1.8, true)
 		var dir := (to - from).normalized()
 		draw_colored_polygon(PackedVector2Array([to, to - dir * 16.0 + tangent * 8.5, to - dir * 16.0 - tangent * 8.5]), arrow_color)
-
-	func _ellipse_arc_points(center: Vector2, rx: float, ry: float, start_angle: float, end_angle: float, steps: int) -> PackedVector2Array:
-		var points := PackedVector2Array()
-		for i in steps + 1:
-			var angle := lerpf(start_angle, end_angle, float(i) / float(steps))
-			points.append(center + Vector2(cos(angle) * rx, sin(angle) * ry))
-		return points
 
 	func _update_particle_transforms() -> void:
 		for key in _particles.keys():
