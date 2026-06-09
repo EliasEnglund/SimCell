@@ -118,12 +118,12 @@ func _finish_drag(rebuild_after: bool = true) -> void:
 	_dragging = false
 	if _dragging_molecule and not _drag_molecule_id.is_empty() and _layout_positions.has(_drag_molecule_id):
 		var size_px: Vector2 = _visible_sizes.get(_drag_molecule_id, MOLECULE_CARD_SIZE * zoom)
-		_layout_positions[_drag_molecule_id] = _snap_node_to_grid(_layout_positions[_drag_molecule_id], size_px / zoom)
+		_layout_positions[_drag_molecule_id] = _snap_node_to_grid_cell(_layout_positions[_drag_molecule_id], size_px / zoom)
 		_manual_positions[_drag_molecule_id] = true
 		rebuild_after = true
 	elif _dragging_goal and not _drag_goal_id.is_empty() and _manual_goal_positions.has(_drag_goal_id):
 		var goal_size_px: Vector2 = _visible_goal_sizes.get(_drag_goal_id, GOAL_CARD_SIZE * zoom)
-		_manual_goal_positions[_drag_goal_id] = _snap_node_to_grid(_manual_goal_positions[_drag_goal_id], goal_size_px / zoom)
+		_manual_goal_positions[_drag_goal_id] = _snap_node_to_grid_cell(_manual_goal_positions[_drag_goal_id], goal_size_px / zoom)
 		rebuild_after = true
 	_dragging_molecule = false
 	_dragging_goal = false
@@ -284,22 +284,17 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout
 		if visible_products.is_empty():
 			continue
 		var source_center := _node_center(positions[substrate], sizes[substrate])
-		var product_centers: Array[Vector2] = []
-		for product_id in visible_products:
-			product_centers.append(_node_center(positions[product_id], sizes[product_id]))
-		var average_target := Vector2.ZERO
-		for center in product_centers:
-			average_target += center
-		average_target /= float(product_centers.size())
-		var source_dir := _primary_axis(average_target - source_center)
-		var source_port := _node_port(positions[substrate], sizes[substrate], source_dir)
 		for product_index in visible_products.size():
 			var product_id := visible_products[product_index]
 			var target_center := _node_center(positions[product_id], sizes[product_id])
-			var target_dir := _primary_axis(source_center - target_center)
+			var source_dir := _primary_axis(target_center - source_center)
+			var source_port := _node_port(positions[substrate], sizes[substrate], source_dir)
+			var target_dir := -source_dir
+			if absf((source_center - target_center).dot(target_dir)) < 0.001:
+				target_dir = _primary_axis(source_center - target_center)
 			var target_port := _node_port(positions[product_id], sizes[product_id], target_dir)
 			var arrow := RoutedArrowLine.new()
-			arrow.points = _routed_between_nodes(source_port, target_port, source_dir, target_dir, visible_products.size(), product_index)
+			arrow.points = _routed_between_nodes(source_port, target_port, source_dir)
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
 			arrow.queued = int(reaction.get("queued_count", 0)) > 0
@@ -314,28 +309,14 @@ func _primary_axis(delta: Vector2) -> Vector2:
 		return Vector2.RIGHT if delta.x >= 0.0 else Vector2.LEFT
 	return Vector2.DOWN if delta.y >= 0.0 else Vector2.UP
 
-func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2, end_dir: Vector2, branch_count: int = 1, branch_index: int = 0) -> Array[Vector2]:
-	var away_base := start + start_dir.normalized() * GRID_CELL * zoom * 0.34
-	var approach_base := end + end_dir.normalized() * GRID_CELL * zoom * 0.34
-	var lane_offset := (float(branch_index) - float(branch_count - 1) * 0.5) * GRID_CELL * zoom * 0.16
-	var away := away_base
-	var approach := approach_base
-	if start_dir.y != 0.0:
-		away.x += lane_offset
-	else:
-		away.y += lane_offset
-	if end_dir.y != 0.0:
-		approach.x += lane_offset
-	else:
-		approach.y += lane_offset
-	var route: Array[Vector2] = [start, away_base, away]
-	if absf(away.x - approach.x) > 1.0 and absf(away.y - approach.y) > 1.0:
+func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2) -> Array[Vector2]:
+	var away := start + start_dir.normalized() * GRID_CELL * zoom * 0.32
+	var route: Array[Vector2] = [start, away]
+	if absf(away.x - end.x) > 1.0 and absf(away.y - end.y) > 1.0:
 		if absf(start_dir.y) > 0.0:
-			route.append(Vector2(away.x, approach.y))
+			route.append(Vector2(away.x, end.y))
 		else:
-			route.append(Vector2(approach.x, away.y))
-	route.append(approach)
-	route.append(approach_base)
+			route.append(Vector2(end.x, away.y))
 	route.append(end)
 	return _clean_route(route)
 
@@ -490,7 +471,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	var first_id := ids[0]
 	if not _layout_positions.has(first_id):
 		var first_size: Vector2 = sizes[first_id]
-		_layout_positions[first_id] = _snap_to_grid(Vector2(map_width * 0.5 - first_size.x * 0.5, GRID_CELL * 0.75))
+		_layout_positions[first_id] = _snap_node_to_grid_cell(Vector2(map_width * 0.5 - first_size.x * 0.5, GRID_CELL * 0.75), first_size)
 	for pathway in simulation.pathway_arrows():
 		var substrate_id: String = pathway.get("substrate", "")
 		if not _layout_positions.has(substrate_id):
@@ -512,16 +493,16 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		var cursor_x := source_pos.x + source_size.x * 0.5 - group_width * 0.5
 		for product_id in placed_products:
 			var product_size: Vector2 = sizes[product_id]
-			if _manual_positions.has(product_id):
+			if _layout_positions.has(product_id):
 				cursor_x += product_size.x + group_gap
 				continue
-			var preferred := _snap_to_grid(Vector2(cursor_x, source_pos.y + source_size.y + GRID_CELL * 2.0))
+			var preferred := _snap_node_to_grid_cell(Vector2(cursor_x, source_pos.y + source_size.y + GRID_CELL * 2.0), product_size)
 			var opened := _open_position(preferred, product_size, sizes, false, product_id)
 			if opened.y > preferred.y + product_size.y * 0.5:
 				opened = _open_position(preferred + Vector2(0.0, product_size.y + 116.0), product_size, sizes, false, product_id)
 			if opened.y < preferred.y:
 				opened.y = preferred.y
-			_layout_positions[product_id] = _snap_to_grid(opened)
+			_layout_positions[product_id] = _snap_node_to_grid_cell(opened, product_size)
 			cursor_x += product_size.x + group_gap
 	var gap := Vector2(GRID_CELL, GRID_CELL)
 	var row_y := GRID_CELL * 3.0
@@ -535,7 +516,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 				row_x = 96.0
 				row_y += row_height + gap.y
 				row_height = 0.0
-			_layout_positions[id] = _snap_to_grid(_open_position(Vector2(row_x, row_y), node_size, sizes))
+			_layout_positions[id] = _snap_node_to_grid_cell(_open_position(Vector2(row_x, row_y), node_size, sizes), node_size)
 			row_x += node_size.x + gap.x
 			row_height = maxf(row_height, node_size.y)
 		result[id] = {"position": _layout_positions[id], "size": node_size}
@@ -557,6 +538,13 @@ func _snap_to_grid(pos: Vector2) -> Vector2:
 func _snap_node_to_grid(pos: Vector2, node_size: Vector2) -> Vector2:
 	var center := pos + node_size * 0.5
 	return _snap_to_grid(center) - node_size * 0.5
+
+func _snap_to_grid_cell_center(center: Vector2) -> Vector2:
+	return Vector2((floor(center.x / GRID_CELL) + 0.5) * GRID_CELL, (floor(center.y / GRID_CELL) + 0.5) * GRID_CELL)
+
+func _snap_node_to_grid_cell(pos: Vector2, node_size: Vector2) -> Vector2:
+	var center := pos + node_size * 0.5
+	return _snap_to_grid_cell_center(center) - node_size * 0.5
 
 func _snap_screen_to_grid(pos: Vector2) -> Vector2:
 	var world := (pos - pan_offset) / zoom
@@ -887,6 +875,10 @@ class RoutedArrowLine:
 				continue
 			draw_line(a, b, Color("02070b"), 7.0, true)
 			draw_line(a, b, line_color, 3.0, true)
+		for i in range(1, points.size() - 1):
+			var p: Vector2 = points[i]
+			draw_circle(p, 3.8, Color("02070b"))
+			draw_circle(p, 2.2, line_color)
 		var end: Vector2 = points[points.size() - 1]
 		var previous: Vector2 = points[points.size() - 2]
 		var dir := (end - previous).normalized()
