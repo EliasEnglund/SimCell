@@ -21,8 +21,10 @@ var zoom := 1.0
 var _dragging := false
 var _dragging_molecule := false
 var _dragging_goal := false
+var _dragging_route := false
 var _drag_molecule_id := ""
 var _drag_goal_id := ""
+var _drag_route_key := ""
 var _drag_grab_offset_world := Vector2.ZERO
 var _last_mouse := Vector2.ZERO
 var _drag_distance := 0.0
@@ -37,6 +39,8 @@ var _visible_reaction_steps := {}
 var _visible_routes: Array[Dictionary] = []
 var _flux_routes: Array[Dictionary] = []
 var _manual_goal_positions := {}
+var _manual_route_bends := {}
+var _manual_import_sources := {}
 var _press_started_in_workspace := false
 var _hover_popup: Control
 var _hover_key := ""
@@ -64,11 +68,14 @@ func _input(event: InputEvent) -> void:
 			var local_press: Vector2 = event.position - global_position
 			var molecule_id := _molecule_at(local_press)
 			var goal_id := _goal_at(local_press) if molecule_id.is_empty() else ""
+			var route := _reaction_route_at(local_press) if molecule_id.is_empty() and goal_id.is_empty() else {}
 			_dragging = true
 			_dragging_molecule = not molecule_id.is_empty()
 			_dragging_goal = not goal_id.is_empty()
+			_dragging_route = not route.is_empty()
 			_drag_molecule_id = molecule_id
 			_drag_goal_id = goal_id
+			_drag_route_key = str(route.get("key", ""))
 			if _dragging_molecule and _layout_positions.has(_drag_molecule_id):
 				_drag_grab_offset_world = (local_press - pan_offset) / zoom - _layout_positions[_drag_molecule_id]
 			elif _dragging_goal and _manual_goal_positions.has(_drag_goal_id):
@@ -76,12 +83,14 @@ func _input(event: InputEvent) -> void:
 			_drag_distance = 0.0
 			_last_mouse = event.position
 			_press_started_in_workspace = true
-			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if _dragging_molecule or _dragging_goal else Control.CURSOR_MOVE
+			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if _dragging_molecule or _dragging_goal or _dragging_route else Control.CURSOR_MOVE
 		elif not event.pressed:
 			if _press_started_in_workspace and _drag_distance <= 6.0 and get_global_rect().has_point(event.position):
 				var molecule_id := _molecule_at(event.position - global_position)
 				var pathway_id := _pathway_at(event.position - global_position)
-				if not pathway_id.is_empty():
+				if _dragging_route:
+					pass
+				elif not pathway_id.is_empty():
 					emit_signal("pathway_requested", pathway_id)
 				elif molecule_id.is_empty():
 					emit_signal("empty_requested")
@@ -98,6 +107,10 @@ func _input(event: InputEvent) -> void:
 			var local_goal: Vector2 = event.position - global_position
 			var world_goal_press: Vector2 = (local_goal - pan_offset) / zoom
 			_manual_goal_positions[_drag_goal_id] = world_goal_press - _drag_grab_offset_world
+		elif _dragging_route and not _drag_route_key.is_empty():
+			var local_route: Vector2 = event.position - global_position
+			if _drag_distance + event.position.distance_to(_last_mouse) > 6.0:
+				_manual_route_bends[_drag_route_key] = _snap_to_grid_cell_center((local_route - pan_offset) / zoom)
 		else:
 			pan_offset += event.position - _last_mouse
 		_drag_distance += event.position.distance_to(_last_mouse)
@@ -126,10 +139,15 @@ func _finish_drag(rebuild_after: bool = true) -> void:
 		var goal_size_px: Vector2 = _visible_goal_sizes.get(_drag_goal_id, GOAL_CARD_SIZE * zoom)
 		_manual_goal_positions[_drag_goal_id] = _snap_node_to_grid_cell(_manual_goal_positions[_drag_goal_id], goal_size_px / zoom)
 		rebuild_after = true
+	elif _dragging_route and not _drag_route_key.is_empty() and _manual_route_bends.has(_drag_route_key):
+		_manual_route_bends[_drag_route_key] = _snap_to_grid_cell_center(_manual_route_bends[_drag_route_key])
+		rebuild_after = true
 	_dragging_molecule = false
 	_dragging_goal = false
+	_dragging_route = false
 	_drag_molecule_id = ""
 	_drag_goal_id = ""
+	_drag_route_key = ""
 	_drag_grab_offset_world = Vector2.ZERO
 	_press_started_in_workspace = false
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
@@ -165,10 +183,12 @@ func _clamp_pan() -> void:
 func rebuild() -> void:
 	_rebuild()
 
-func use_persistent_layout(layout_positions: Dictionary, manual_positions: Dictionary, goal_positions: Dictionary) -> void:
+func use_persistent_layout(layout_positions: Dictionary, manual_positions: Dictionary, goal_positions: Dictionary, route_bends: Dictionary = {}, import_sources: Dictionary = {}) -> void:
 	_layout_positions = layout_positions
 	_manual_positions = manual_positions
 	_manual_goal_positions = goal_positions
+	_manual_route_bends = route_bends
+	_manual_import_sources = import_sources
 
 func _rebuild() -> void:
 	var restore_hover := _hover_inside and not _dragging and get_rect().has_point(_last_hover_local)
@@ -266,6 +286,21 @@ func _node_port(pos: Vector2, node_size: Vector2, direction: Vector2) -> Vector2
 		return center
 	return center + direction.normalized() * (_node_radius(node_size) + 10.0 * zoom)
 
+func _node_port_world(pos: Vector2, node_size: Vector2, direction: Vector2) -> Vector2:
+	var center := _node_center(pos, node_size)
+	if direction.length_squared() <= 0.001:
+		return center
+	return center + direction.normalized() * (_node_radius(node_size) + 10.0)
+
+func _screen_rect_to_world(pos: Vector2, node_size: Vector2) -> Rect2:
+	return Rect2((pos - pan_offset) / zoom, node_size / zoom)
+
+func _world_points_to_screen(points: Array[Vector2]) -> Array[Vector2]:
+	var screen_points: Array[Vector2] = []
+	for point in points:
+		screen_points.append(point * zoom + pan_offset)
+	return screen_points
+
 func _orthogonal_route(start: Vector2, end: Vector2, vertical_first: bool = true) -> Array[Vector2]:
 	if absf(start.x - end.x) < 1.0 or absf(start.y - end.y) < 1.0:
 		return [start, end]
@@ -287,20 +322,25 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 				visible_products.append(str(product_id))
 		if visible_products.is_empty():
 			continue
-		var source_center := _node_center(positions[substrate], sizes[substrate])
+		var source_rect_world := _screen_rect_to_world(positions[substrate], sizes[substrate])
+		var source_center := source_rect_world.get_center()
 		for product_index in visible_products.size():
 			var product_id := visible_products[product_index]
 			var target_rect := _product_goal_rect(product_id, goal_lookup)
 			var product_is_goal := target_rect.size.x > 0.0
-			var target_center := target_rect.get_center() if product_is_goal else _node_center(positions[product_id], sizes[product_id])
+			var target_rect_world := _screen_rect_to_world(target_rect.position, target_rect.size) if product_is_goal else _screen_rect_to_world(positions[product_id], sizes[product_id])
+			var target_center := target_rect_world.get_center()
 			var source_dir := _primary_axis(target_center - source_center)
-			var source_port := _node_port(positions[substrate], sizes[substrate], source_dir)
+			var source_port := _node_port_world(source_rect_world.position, source_rect_world.size, source_dir)
 			var target_dir := -source_dir
 			if absf((source_center - target_center).dot(target_dir)) < 0.001:
 				target_dir = _primary_axis(source_center - target_center)
-			var target_port := _node_port(target_rect.position, target_rect.size, target_dir) if product_is_goal else _node_port(positions[product_id], sizes[product_id], target_dir)
+			var target_port := _node_port_world(target_rect_world.position, target_rect_world.size, target_dir)
+			var route_key := _reaction_route_key(reaction, product_id)
+			var route_world := _routed_between_nodes_world(source_port, target_port, source_dir, target_dir, route_key)
+			var route_screen := _world_points_to_screen(route_world)
 			var arrow := RoutedArrowLine.new()
-			arrow.points = _routed_between_nodes(source_port, target_port, source_dir, target_dir)
+			arrow.points = route_screen
 			arrow.zoom_scale = zoom
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
@@ -308,8 +348,8 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			arrow.label = _arrow_label(reaction) if product_index == 0 else ""
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
-			_register_route_hover(arrow.points, reaction)
-			_register_flux_route(arrow.points, substrate, product_id, reaction)
+			_register_route_hover(route_screen, reaction, route_key)
+			_register_flux_route(route_screen, substrate, product_id, reaction)
 
 func _goal_rect_lookup() -> Dictionary:
 	var lookup := {}
@@ -340,6 +380,30 @@ func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2, tar
 	route.append(end)
 	return _clean_route(route)
 
+func _routed_between_nodes_world(start: Vector2, end: Vector2, start_dir: Vector2, target_dir: Vector2, route_key: String = "") -> Array[Vector2]:
+	if not route_key.is_empty() and _manual_route_bends.has(route_key):
+		var bend: Vector2 = _manual_route_bends[route_key]
+		var manual_route: Array[Vector2] = [start]
+		if absf(start_dir.y) > 0.0:
+			manual_route.append(Vector2(start.x, bend.y))
+			manual_route.append(Vector2(end.x, bend.y))
+		else:
+			manual_route.append(Vector2(bend.x, start.y))
+			manual_route.append(Vector2(bend.x, end.y))
+		manual_route.append(end)
+		return _clean_route(manual_route)
+	var away := start + start_dir.normalized() * GRID_CELL * 0.32
+	var approach := end + target_dir.normalized() * GRID_CELL * 0.26
+	var route: Array[Vector2] = [start, away]
+	if absf(away.x - approach.x) > 1.0 and absf(away.y - approach.y) > 1.0:
+		if absf(start_dir.y) > 0.0:
+			route.append(Vector2(away.x, approach.y))
+		else:
+			route.append(Vector2(approach.x, away.y))
+	route.append(approach)
+	route.append(end)
+	return _clean_route(route)
+
 func _clean_route(points: Array[Vector2]) -> Array[Vector2]:
 	var cleaned: Array[Vector2] = []
 	for point in points:
@@ -347,11 +411,14 @@ func _clean_route(points: Array[Vector2]) -> Array[Vector2]:
 			cleaned.append(point)
 	return cleaned
 
-func _register_route_hover(points: Array[Vector2], reaction: Dictionary) -> void:
+func _reaction_route_key(reaction: Dictionary, product_id: String) -> String:
+	return "reaction:%s:%s" % [str(reaction.get("blueprint_id", "")), product_id]
+
+func _register_route_hover(points: Array[Vector2], reaction: Dictionary, route_key: String = "") -> void:
 	_visible_routes.append({
 		"points": points.duplicate(),
 		"reaction": reaction.duplicate(true),
-		"key": "reaction:%s" % str(reaction.get("blueprint_id", ""))
+		"key": route_key if not route_key.is_empty() else "reaction:%s" % str(reaction.get("blueprint_id", ""))
 	})
 
 func _register_flux_route(points: Array[Vector2], from_id: String, to_id: String, reaction: Dictionary = {}) -> void:
@@ -414,21 +481,57 @@ func _draw_membrane_transport_arrows(positions: Dictionary, sizes: Dictionary) -
 		var molecule_id: String = transport.get("molecule", "")
 		if not positions.has(molecule_id) or float(transport.get("rate", 0.0)) <= 0.0:
 			continue
-		var center: Vector2 = positions[molecule_id] + sizes[molecule_id] * 0.5
-		var arrow := ArrowLine.new()
-		arrow.zoom_scale = zoom
+		var molecule_rect_world := _screen_rect_to_world(positions[molecule_id], sizes[molecule_id])
+		var molecule_center := molecule_rect_world.get_center()
+		var direction := str(transport.get("direction", "import"))
+		var source_key := "%s:%s" % [direction, molecule_id]
 		if transport.get("direction", "") == "import":
-			arrow.start = center + Vector2(0.0, -190.0 * zoom)
-			arrow.end = center + Vector2(0.0, -72.0 * zoom)
-			arrow.label = "membrane +%.1f/s" % float(transport.get("rate", 0.0))
-			arrow.active = true
+			if not _manual_import_sources.has(source_key):
+				_manual_import_sources[source_key] = _snap_to_grid_cell_center(molecule_center + Vector2(0.0, -GRID_CELL * 2.25))
+			_draw_membrane_source_and_route(source_key, _manual_import_sources[source_key], molecule_rect_world, molecule_id, transport, true)
 		else:
-			arrow.start = center + Vector2(0.0, 72.0 * zoom)
-			arrow.end = center + Vector2(0.0, 190.0 * zoom)
-			arrow.label = "export %.1f/s" % float(transport.get("rate", 0.0))
-			arrow.queued = true
-		arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
-		add_child(arrow)
+			if not _manual_import_sources.has(source_key):
+				_manual_import_sources[source_key] = _snap_to_grid_cell_center(molecule_center + Vector2(0.0, GRID_CELL * 2.25))
+			_draw_membrane_source_and_route(source_key, _manual_import_sources[source_key], molecule_rect_world, molecule_id, transport, false)
+
+func _draw_membrane_source_and_route(source_key: String, source_center: Vector2, molecule_rect_world: Rect2, molecule_id: String, transport: Dictionary, importing: bool) -> void:
+	var marker_size_world := Vector2(GRID_CELL * 0.92, GRID_CELL * 0.56)
+	var marker_rect_world := Rect2(source_center - marker_size_world * 0.5, marker_size_world)
+	var marker := MembraneSourceNode.new()
+	marker.pebble_color = _molecule_pebble_color(molecule_id)
+	marker.importing = importing
+	marker.rate = float(transport.get("rate", 0.0))
+	marker.zoom_scale = zoom
+	marker.position = marker_rect_world.position * zoom + pan_offset
+	marker.size = marker_size_world * zoom
+	marker.custom_minimum_size = marker.size
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(marker)
+	var molecule_center := molecule_rect_world.get_center()
+	var route_dir := _primary_axis((molecule_center - source_center) if importing else (source_center - molecule_center))
+	if route_dir == Vector2.ZERO:
+		route_dir = Vector2.DOWN if importing else Vector2.UP
+	var route_key := "transport:%s" % source_key
+	var source_port: Vector2
+	var target_port: Vector2
+	if importing:
+		source_port = _node_port_world(marker_rect_world.position, marker_rect_world.size, route_dir)
+		target_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, -route_dir)
+	else:
+		source_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, route_dir)
+		target_port = _node_port_world(marker_rect_world.position, marker_rect_world.size, -route_dir)
+	var route_world := _routed_between_nodes_world(source_port, target_port, route_dir, -route_dir, route_key)
+	var route_screen := _world_points_to_screen(route_world)
+	var arrow := RoutedArrowLine.new()
+	arrow.points = route_screen
+	arrow.zoom_scale = zoom
+	arrow.active = importing
+	arrow.queued = not importing
+	arrow.label = ""
+	arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(arrow)
+	_register_route_hover(route_screen, {"name": "Membrane import" if importing else "Membrane export", "rate": transport.get("rate", 0.0), "tool": "transporter"}, route_key)
+	_register_flux_route(route_screen, molecule_id, molecule_id, {"rate": transport.get("rate", 0.0), "active_count": 1})
 
 func _arrow_label(pathway: Dictionary) -> String:
 	var rate := float(pathway.get("rate", 0.0))
@@ -677,10 +780,15 @@ func _molecule_pebble_color(id: String) -> Color:
 	return Color.from_hsv(hue, 0.56, 0.88)
 
 func _goal_layout() -> Array[Dictionary]:
-	var base_world := _snap_to_grid(Vector2(GRID_CELL * 2.0, WORLD_BOUNDS.position.y + WORLD_BOUNDS.size.y - GRID_CELL * 5.0))
+	var base_world := _snap_to_grid(Vector2(GRID_CELL * 2.0, WORLD_BOUNDS.position.y + WORLD_BOUNDS.size.y - GRID_CELL * 8.0))
+	var old_base_world := _snap_to_grid(Vector2(GRID_CELL * 2.0, WORLD_BOUNDS.position.y + WORLD_BOUNDS.size.y - GRID_CELL * 5.0))
 	if not _manual_goal_positions.has("amino_acids"):
 		_manual_goal_positions["amino_acids"] = base_world
+	elif Vector2(_manual_goal_positions["amino_acids"]).distance_to(old_base_world) < 1.0:
+		_manual_goal_positions["amino_acids"] = base_world
 	if not _manual_goal_positions.has("dna"):
+		_manual_goal_positions["dna"] = base_world + Vector2(GRID_CELL * 3.0, 0.0)
+	elif Vector2(_manual_goal_positions["dna"]).distance_to(old_base_world + Vector2(GRID_CELL * 3.0, 0.0)) < 1.0:
 		_manual_goal_positions["dna"] = base_world + Vector2(GRID_CELL * 3.0, 0.0)
 	var size_px := GOAL_CARD_SIZE * zoom
 	return [
@@ -711,6 +819,42 @@ func _goal_node(goal: Dictionary) -> Control:
 	node.custom_minimum_size = rect.size
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return node
+
+class MembraneSourceNode:
+	extends Control
+
+	var pebble_color := Color("62d66f")
+	var importing := true
+	var rate := 0.0
+	var zoom_scale := 1.0
+
+	func _process(_delta: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		var scale := maxf(0.35, zoom_scale)
+		var rect := Rect2(Vector2.ZERO, size)
+		var center := rect.get_center()
+		var dome_radius := minf(size.x * 0.44, size.y * 0.92)
+		var base_y := center.y + size.y * 0.14
+		var color := Color(pebble_color.lightened(0.18).r, pebble_color.lightened(0.18).g, pebble_color.lightened(0.18).b, 0.92)
+		draw_arc(Vector2(center.x, base_y), dome_radius, PI, TAU, 36, Color("02070b"), 7.0 * scale, true)
+		draw_arc(Vector2(center.x, base_y), dome_radius, PI, TAU, 36, color, 3.0 * scale, true)
+		draw_line(Vector2(center.x - dome_radius, base_y), Vector2(center.x + dome_radius, base_y), Color("02070b"), 7.0 * scale, true)
+		draw_line(Vector2(center.x - dome_radius, base_y), Vector2(center.x + dome_radius, base_y), color, 3.0 * scale, true)
+		var gate_rect := Rect2(center - Vector2(size.x * 0.16, size.y * 0.28), Vector2(size.x * 0.32, size.y * 0.50))
+		draw_rect(gate_rect.grow(3.0 * scale), Color("02070b"), true)
+		draw_rect(gate_rect, Color(color.r, color.g, color.b, 0.55), true)
+		var arrow_dir := Vector2.DOWN if importing else Vector2.UP
+		var arrow_start := center + arrow_dir * size.y * 0.03
+		var arrow_end := center + arrow_dir * size.y * 0.25
+		draw_line(arrow_start, arrow_end, color.lightened(0.25), 2.6 * scale, true)
+		var normal := Vector2(-arrow_dir.y, arrow_dir.x)
+		draw_colored_polygon(PackedVector2Array([
+			arrow_end,
+			arrow_end - arrow_dir * 8.0 * scale + normal * 5.0 * scale,
+			arrow_end - arrow_dir * 8.0 * scale - normal * 5.0 * scale
+		]), color.lightened(0.25))
 
 class ArrowLine:
 	extends Control

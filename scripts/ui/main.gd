@@ -51,6 +51,8 @@ var selected_pathway := ""
 var metabolism_layout_positions := {}
 var metabolism_manual_positions := {}
 var metabolism_goal_positions := {}
+var metabolism_route_bends := {}
+var metabolism_import_sources := {}
 var metabolism_molecule_list_signature := ""
 var metabolism_molecule_buttons := {}
 var hovered_metabolism_molecule := ""
@@ -291,7 +293,7 @@ func _build_metabolism_view() -> void:
 	layout.add_child(map_layer)
 	metabolism_workspace = MetabolismWorkspaceScript.new()
 	metabolism_workspace.simulation = sim
-	metabolism_workspace.use_persistent_layout(metabolism_layout_positions, metabolism_manual_positions, metabolism_goal_positions)
+	metabolism_workspace.use_persistent_layout(metabolism_layout_positions, metabolism_manual_positions, metabolism_goal_positions, metabolism_route_bends, metabolism_import_sources)
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
 	metabolism_workspace.clip_contents = true
 	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
