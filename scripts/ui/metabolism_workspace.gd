@@ -124,7 +124,7 @@ func _input(event: InputEvent) -> void:
 		elif _dragging_route and not _drag_route_key.is_empty():
 			var local_route: Vector2 = event.position - global_position
 			if _drag_distance + event.position.distance_to(_last_mouse) > 6.0:
-				_manual_route_bends[_drag_route_key] = _snap_to_grid_cell_center((local_route - pan_offset) / zoom)
+				_manual_route_bends[_drag_route_key] = _clamp_route_bend(_snap_to_grid_cell_center((local_route - pan_offset) / zoom))
 		else:
 			pan_offset += event.position - _last_mouse
 		_drag_distance += event.position.distance_to(_last_mouse)
@@ -148,16 +148,20 @@ func _finish_drag(rebuild_after: bool = true) -> void:
 		var size_px: Vector2 = _visible_sizes.get(_drag_molecule_id, MOLECULE_CARD_SIZE * zoom)
 		_layout_positions[_drag_molecule_id] = _nearest_available_node_position(_snap_node_to_grid_cell(_layout_positions[_drag_molecule_id], size_px / zoom), size_px / zoom, _drag_molecule_id)
 		_manual_positions[_drag_molecule_id] = true
+		_clear_route_bends_for_node(_drag_molecule_id)
 		rebuild_after = true
 	elif _dragging_goal and not _drag_goal_id.is_empty() and _manual_goal_positions.has(_drag_goal_id):
 		var goal_size_px: Vector2 = _visible_goal_sizes.get(_drag_goal_id, GOAL_CARD_SIZE * zoom)
 		_manual_goal_positions[_drag_goal_id] = _nearest_available_node_position(_snap_node_to_grid_cell(_manual_goal_positions[_drag_goal_id], goal_size_px / zoom), goal_size_px / zoom, _drag_goal_id)
+		_clear_route_bends_for_node(_drag_goal_id)
+		_clear_route_bends_for_goal(_drag_goal_id)
 		rebuild_after = true
 	elif _dragging_source and not _drag_source_key.is_empty() and _manual_import_sources.has(_drag_source_key):
 		_manual_import_sources[_drag_source_key] = _nearest_available_source_position(_manual_import_sources[_drag_source_key], _drag_source_key)
+		_manual_route_bends.erase("transport:%s" % _drag_source_key)
 		rebuild_after = true
 	elif _dragging_route and not _drag_route_key.is_empty() and _manual_route_bends.has(_drag_route_key):
-		_manual_route_bends[_drag_route_key] = _snap_to_grid_cell_center(_manual_route_bends[_drag_route_key])
+		_manual_route_bends[_drag_route_key] = _clamp_route_bend(_snap_to_grid_cell_center(_manual_route_bends[_drag_route_key]))
 		rebuild_after = true
 	_dragging_molecule = false
 	_dragging_goal = false
@@ -230,6 +234,7 @@ func _rebuild() -> void:
 	board.pan_offset = pan_offset
 	board.zoom = zoom
 	board.grid_cell = GRID_CELL
+	board.membrane_line_y = MEMBRANE_LINE_Y
 	board.set_anchors_preset(Control.PRESET_FULL_RECT)
 	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(board)
@@ -455,6 +460,60 @@ func _clean_route(points: Array[Vector2]) -> Array[Vector2]:
 func _reaction_route_key(reaction: Dictionary, product_id: String) -> String:
 	return "reaction:%s:%s" % [str(reaction.get("blueprint_id", "")), product_id]
 
+func _clear_route_bends_for_node(node_id: String) -> void:
+	if node_id.is_empty():
+		return
+	var remove_keys: Array[String] = []
+	for key in _manual_route_bends.keys():
+		var route_key := str(key)
+		if route_key.begins_with("transport:"):
+			if route_key.ends_with(":%s" % node_id):
+				remove_keys.append(route_key)
+			continue
+		if route_key.begins_with("reaction:") and _route_key_touches_molecule(route_key, node_id):
+			remove_keys.append(route_key)
+	for key in remove_keys:
+		_manual_route_bends.erase(key)
+
+func _clear_route_bends_for_goal(goal_id: String) -> void:
+	if goal_id != "amino_acids" or simulation == null:
+		return
+	var remove_keys: Array[String] = []
+	for key in _manual_route_bends.keys():
+		var route_key := str(key)
+		if not route_key.begins_with("reaction:"):
+			continue
+		var product_id := _route_key_product_id(route_key)
+		if not product_id.is_empty() and simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(product_id):
+			remove_keys.append(route_key)
+	for key in remove_keys:
+		_manual_route_bends.erase(key)
+
+func _route_key_touches_molecule(route_key: String, molecule_id: String) -> bool:
+	var product_id := _route_key_product_id(route_key)
+	if product_id == molecule_id:
+		return true
+	var parts := route_key.split(":")
+	if parts.size() < 3:
+		return false
+	var blueprint_id := ":".join(parts.slice(1, parts.size() - 1))
+	if simulation != null and simulation.enzyme_blueprints.has(blueprint_id):
+		var blueprint: Dictionary = simulation.enzyme_blueprints[blueprint_id]
+		return str(blueprint.get("substrate", "")) == molecule_id
+	return false
+
+func _route_key_product_id(route_key: String) -> String:
+	var parts := route_key.split(":")
+	if parts.size() < 3:
+		return ""
+	return str(parts[parts.size() - 1])
+
+func _clamp_route_bend(bend: Vector2) -> Vector2:
+	var clamped := bend
+	clamped.x = clampf(clamped.x, WORLD_BOUNDS.position.x + GRID_CELL * 0.5, WORLD_BOUNDS.end.x - GRID_CELL * 0.5)
+	clamped.y = clampf(clamped.y, MEMBRANE_LINE_Y + GRID_CELL, WORLD_BOUNDS.end.y - GRID_CELL * 0.5)
+	return clamped
+
 func _register_route_hover(points: Array[Vector2], reaction: Dictionary, route_key: String = "") -> void:
 	_visible_routes.append({
 		"points": points.duplicate(),
@@ -508,14 +567,7 @@ func _draw_goal_arrows(positions: Dictionary, sizes: Dictionary, goal_layout: Ar
 					add_child(arrow)
 					_register_flux_route(arrow.points, str(molecule_id), str(molecule_id), {"rate": 0.65, "active_count": 1})
 		elif goal_id == "dna":
-			var anchor := _node_port(goal_rect.position, goal_rect.size, Vector2.LEFT)
-			var hint := FutureGoalArrow.new()
-			hint.start = anchor + Vector2(-150.0 * zoom, 0.0)
-			hint.end = anchor
-			hint.label = "future nucleotide route"
-			hint.zoom_scale = zoom
-			hint.set_anchors_preset(Control.PRESET_FULL_RECT)
-			add_child(hint)
+			pass
 
 func _draw_membrane_transport_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 	for transport in simulation.membrane_transport_arrows():
@@ -924,14 +976,14 @@ func _goal_layout() -> Array[Dictionary]:
 		{
 			"id": "amino_acids",
 			"title": "AMINO ACID SINK",
-			"subtitle": "N-C-COOH -> protein points",
+			"subtitle": "",
 			"color": Color("8cff6a"),
 			"rect": Rect2(Vector2(_manual_goal_positions["amino_acids"]) * zoom + pan_offset, size_px)
 		},
 		{
 			"id": "dna",
 			"title": "DNA POINT SINK",
-			"subtitle": "5C ring + N + P route",
+			"subtitle": "",
 			"color": Color("76f4ff"),
 			"rect": Rect2(Vector2(_manual_goal_positions["dna"]) * zoom + pan_offset, size_px)
 		}
@@ -1501,7 +1553,9 @@ class GoalSinkNode:
 			_draw_dna_symbol(symbol_center, radius * 0.56)
 		var label_pos := Vector2(0.0, center.y + radius + 22.0)
 		draw_string(ThemeDB.fallback_font, label_pos + Vector2(0.0, 0.0), str(goal.get("title", "GOAL")), HORIZONTAL_ALIGNMENT_CENTER, size.x, maxf(9.0, 13.0 * size.x / 172.0), color)
-		draw_string(ThemeDB.fallback_font, label_pos + Vector2(0.0, 20.0), str(goal.get("subtitle", "")), HORIZONTAL_ALIGNMENT_CENTER, size.x, maxf(8.0, 10.0 * size.x / 172.0), Color(0.78, 0.91, 0.91, 0.82))
+		var subtitle := str(goal.get("subtitle", ""))
+		if not subtitle.is_empty():
+			draw_string(ThemeDB.fallback_font, label_pos + Vector2(0.0, 20.0), subtitle, HORIZONTAL_ALIGNMENT_CENTER, size.x, maxf(8.0, 10.0 * size.x / 172.0), Color(0.78, 0.91, 0.91, 0.82))
 
 	func _draw_amino_symbol(center: Vector2, radius: float) -> void:
 		var atoms := [
@@ -2017,15 +2071,25 @@ class BoundaryLayer:
 	var pan_offset := Vector2.ZERO
 	var zoom := 1.0
 	var grid_cell := 128.0
+	var membrane_line_y := 0.0
 
 	func _draw() -> void:
 		var rect := Rect2(world_bounds.position * zoom + pan_offset, world_bounds.size * zoom)
+		var membrane_y := membrane_line_y * zoom + pan_offset.y
+		var outside_rect := Rect2(rect.position, Vector2(rect.size.x, maxf(0.0, membrane_y - rect.position.y)))
+		var inside_rect := Rect2(Vector2(rect.position.x, membrane_y), Vector2(rect.size.x, maxf(0.0, rect.end.y - membrane_y)))
 		draw_rect(rect, Color("10292d"), true)
-		_draw_grid(rect)
+		if outside_rect.size.y > 0.0:
+			draw_rect(outside_rect, Color("0b2229"), true)
+			draw_rect(outside_rect, Color(0.33, 0.78, 0.92, 0.10), true)
+			_draw_outside_bands(outside_rect)
+		if inside_rect.size.y > 0.0:
+			draw_rect(inside_rect, Color("10292d"), true)
+			_draw_grid(inside_rect)
 		draw_rect(rect, Color("0d3a42"), false, 5.0)
 		draw_line(rect.position, rect.position + Vector2(rect.size.x, 0.0), Color("76f4ff"), 4.0, true)
 		draw_line(rect.position + Vector2(0.0, 8.0), rect.position + Vector2(rect.size.x, 8.0), Color(0.55, 1.0, 0.9, 0.35), 2.0, true)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(26.0, 32.0), "Drag the board. Click molecules to design enzyme machines.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.78, 0.95, 0.96, 0.70))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(26.0, 32.0), "EXTRACELLULAR SOURCE ZONE", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.95, 1.0, 0.70))
 
 	func _draw_grid(rect: Rect2) -> void:
 		var screen_spacing := grid_cell * zoom
@@ -2044,6 +2108,13 @@ class BoundaryLayer:
 			draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), Color(0.45, 1.0, 1.0, 0.105), 1.2, true)
 			world_y += grid_cell
 
+	func _draw_outside_bands(rect: Rect2) -> void:
+		var spacing := maxf(10.0, grid_cell * zoom * 0.24)
+		var y := rect.position.y + spacing
+		while y < rect.end.y:
+			draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), Color(0.42, 0.90, 1.0, 0.055), 1.0, true)
+			y += spacing
+
 class MetabolismMembraneLine:
 	extends Control
 
@@ -2057,8 +2128,10 @@ class MetabolismMembraneLine:
 		var x0 := world_bounds.position.x * zoom + pan_offset.x
 		var x1 := world_bounds.end.x * zoom + pan_offset.x
 		var y := line_y * zoom + pan_offset.y
-		draw_line(Vector2(x0, y), Vector2(x1, y), Color("02070b"), 7.0, true)
-		draw_line(Vector2(x0, y), Vector2(x1, y), Color(0.50, 1.0, 0.86, 0.36), 2.2, true)
+		draw_line(Vector2(x0, y), Vector2(x1, y), Color("02070b"), 12.0, true)
+		draw_line(Vector2(x0, y - 3.0), Vector2(x1, y - 3.0), Color(0.42, 0.95, 1.0, 0.70), 2.6, true)
+		draw_line(Vector2(x0, y + 3.0), Vector2(x1, y + 3.0), Color(0.55, 1.0, 0.70, 0.45), 2.2, true)
+		draw_line(Vector2(x0, y), Vector2(x1, y), Color(0.50, 1.0, 0.86, 0.52), 1.5, true)
 		var tick_spacing := grid_cell * zoom
 		if tick_spacing < 12.0:
 			return
