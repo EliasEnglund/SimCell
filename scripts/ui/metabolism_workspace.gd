@@ -165,6 +165,11 @@ func _clamp_pan() -> void:
 func rebuild() -> void:
 	_rebuild()
 
+func use_persistent_layout(layout_positions: Dictionary, manual_positions: Dictionary, goal_positions: Dictionary) -> void:
+	_layout_positions = layout_positions
+	_manual_positions = manual_positions
+	_manual_goal_positions = goal_positions
+
 func _rebuild() -> void:
 	var restore_hover := _hover_inside and not _dragging and get_rect().has_point(_last_hover_local)
 	_hide_hover_popup()
@@ -763,13 +768,12 @@ class RoutedArrowLine:
 		else:
 			line_color = Color("8aa1a7")
 		var scale := maxf(0.35, zoom_scale)
-		for i in points.size() - 1:
-			var a: Vector2 = points[i]
-			var b: Vector2 = points[i + 1]
-			if a.distance_to(b) < 4.0:
-				continue
-			draw_line(a, b, Color("02070b"), 7.0 * scale, true)
-			draw_line(a, b, line_color, 3.0 * scale, true)
+		var clean_points := PackedVector2Array()
+		for point in points:
+			clean_points.append(point)
+		if clean_points.size() >= 2:
+			draw_polyline(clean_points, Color("02070b"), 7.0 * scale, true)
+			draw_polyline(clean_points, line_color, 3.0 * scale, true)
 		var end: Vector2 = points[points.size() - 1]
 		var previous: Vector2 = points[points.size() - 2]
 		var dir := (end - previous).normalized()
@@ -807,11 +811,11 @@ class FluxParticleLayer:
 			if points.size() < 2 or length < 8.0:
 				continue
 			var rate := float(route.get("rate", 0.0))
-			var count := clampi(int(ceil(rate * 5.0)), 3, 18)
-			var speed := 34.0 + minf(rate, 8.0) * 11.0
+			var count := clampi(int(ceil(rate * 6.0)), 4, 22)
+			var scale := maxf(0.35, zoom_scale)
+			var speed := (18.0 + minf(rate, 8.0) * 5.5) * scale
 			var from_color: Color = route.get("from_color", Color("8cff6a"))
 			var to_color: Color = route.get("to_color", from_color)
-			var scale := maxf(0.35, zoom_scale)
 			for i in count:
 				if drawn >= 220:
 					return
@@ -821,12 +825,12 @@ class FluxParticleLayer:
 				var sample_info := _sample_route_info(points, distance)
 				var sample: Vector2 = sample_info.get("point", Vector2.ZERO)
 				var normal: Vector2 = sample_info.get("normal", Vector2.RIGHT)
-				var jitter_phase := now * (2.2 + seed) + seed * TAU
-				var jitter := Vector2(cos(jitter_phase * 1.37), sin(jitter_phase * 1.91)) * (1.6 + seed * 2.4)
+				var jitter_phase := now * (0.85 + seed * 0.35) + seed * TAU
+				var jitter := Vector2(cos(jitter_phase * 1.37), sin(jitter_phase * 1.91)) * (1.3 + seed * 2.0) * scale
 				var color := from_color.lerp(to_color, clampf(t, 0.0, 1.0))
-				var alpha := 0.32 + 0.58 * sin(t * PI)
-				var radius := (2.0 + seed * 2.4) * scale
-				var side_offset := normal * (8.0 + seed * 4.0) * scale
+				var alpha := 0.42 + 0.50 * sin(t * PI)
+				var radius := (2.2 + seed * 2.8) * scale
+				var side_offset := normal * (10.0 + seed * 5.0) * scale
 				draw_rect(Rect2(sample + side_offset + jitter - Vector2.ONE * radius * 0.5, Vector2.ONE * radius), Color(color.r, color.g, color.b, alpha), true)
 				drawn += 1
 
@@ -927,13 +931,20 @@ class MoleculePebbleNode:
 		var shadow_radius := radius * (1.24 if lifted else 1.05)
 		draw_circle(size * 0.5 + Vector2(0.0, radius * (0.46 if lifted else 0.20)), shadow_radius, Color(0.0, 0.0, 0.0, (0.42 if lifted else 0.30) * alpha))
 		draw_circle(center, glow_radius, glow)
-		draw_circle(center, radius + 5.0 * scale, Color(0.0, 0.015, 0.018, 0.95 * alpha))
-		draw_circle(center, radius + 1.5 * scale, Color(pebble_color.lightened(0.18).r, pebble_color.lightened(0.18).g, pebble_color.lightened(0.18).b, alpha))
-		draw_circle(center, radius - 5.0 * scale, Color(0.035, 0.065, 0.070, 0.98 * alpha))
-		draw_circle(center + Vector2(-radius * 0.22, radius * 0.24), radius * 0.56, Color(0.010, 0.026, 0.030, 0.72 * alpha))
+		draw_circle(center, radius + 3.7 * scale, Color(0.0, 0.013, 0.015, 0.94 * alpha))
+		draw_circle(center, radius + 0.8 * scale, Color(pebble_color.lightened(0.14).r, pebble_color.lightened(0.14).g, pebble_color.lightened(0.14).b, alpha))
+		var core := Color(
+			lerpf(0.11, pebble_color.r, 0.24),
+			lerpf(0.15, pebble_color.g, 0.24),
+			lerpf(0.16, pebble_color.b, 0.24),
+			0.98 * alpha
+		)
+		draw_circle(center, radius - 4.4 * scale, core)
+		draw_circle(center + Vector2(radius * 0.18, -radius * 0.25), radius * 0.64, Color(pebble_color.lightened(0.18).r, pebble_color.lightened(0.18).g, pebble_color.lightened(0.18).b, 0.13 * alpha))
+		draw_circle(center + Vector2(radius * 0.08, -radius * 0.06), radius * 0.86, Color(1.0, 1.0, 1.0, 0.045 * alpha))
 		_draw_storage_dust(center, radius, amount, alpha)
-		draw_arc(center, radius * 0.83, -1.20, 2.10, 28, Color(pebble_color.lightened(0.45).r, pebble_color.lightened(0.45).g, pebble_color.lightened(0.45).b, 0.28 * alpha), 2.0 * scale, true)
-		draw_circle(center + Vector2(radius * 0.28, -radius * 0.34), radius * 0.18, Color(1, 1, 1, 0.42 * alpha))
+		draw_arc(center, radius * 0.78, -0.82, 2.00, 30, Color(pebble_color.lightened(0.38).r, pebble_color.lightened(0.38).g, pebble_color.lightened(0.38).b, 0.22 * alpha), 1.8 * scale, true)
+		draw_circle(center + Vector2(radius * 0.27, -radius * 0.34), radius * 0.17, Color(1, 1, 1, 0.48 * alpha))
 		if is_target:
 			draw_circle(center, radius * 0.58, Color(0.0, 0.015, 0.018, 0.62 * alpha))
 			draw_arc(center, radius * 0.72, 0.0, TAU, 36, Color("8cff6a"), 2.0, true)
@@ -950,16 +961,17 @@ class MoleculePebbleNode:
 	func _draw_storage_dust(center: Vector2, radius: float, amount: float, alpha: float) -> void:
 		if amount <= 0.001:
 			return
-		var count := clampi(int(sqrt(amount) * 1.15), 4, 42)
+		var count := clampi(int(sqrt(amount) * 1.65), 6, 64)
 		var time := Time.get_ticks_msec() / 1000.0
 		for i in count:
 			var seed := float((abs(molecule_id.hash()) + i * 31) % 97) / 97.0
 			var angle := seed * TAU + time * (0.28 + seed * 0.18)
-			var ring := sqrt(seed) * radius * 0.54
+			var ring := sqrt(seed) * radius * 0.57
 			var drift := Vector2(cos(angle), sin(angle * 1.41)) * ring
 			var pos := center + drift
-			var size_px := maxf(1.0, radius * (0.045 + seed * 0.025))
-			draw_rect(Rect2(pos - Vector2.ONE * size_px * 0.5, Vector2.ONE * size_px), Color(pebble_color.r, pebble_color.g, pebble_color.b, 0.34 * alpha), true)
+			var size_px := maxf(1.3, radius * (0.052 + seed * 0.034))
+			var dust := pebble_color.lightened(0.22)
+			draw_rect(Rect2(pos - Vector2.ONE * size_px * 0.5, Vector2.ONE * size_px), Color(dust.r, dust.g, dust.b, 0.54 * alpha), true)
 
 class MoleculeHoverPopup:
 	extends Control

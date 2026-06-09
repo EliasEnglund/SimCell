@@ -48,6 +48,12 @@ var hovered_membrane_molecule := ""
 var membrane_outside_signature := ""
 var membrane_transporter_signature := ""
 var selected_pathway := ""
+var metabolism_layout_positions := {}
+var metabolism_manual_positions := {}
+var metabolism_goal_positions := {}
+var metabolism_molecule_list_signature := ""
+var metabolism_molecule_buttons := {}
+var hovered_metabolism_molecule := ""
 
 var designer_tool := "lyase"
 var designer_target := -1
@@ -258,6 +264,9 @@ func _build_cell_view() -> void:
 	content.add_child(cell_view)
 
 func _build_metabolism_view() -> void:
+	metabolism_molecule_list_signature = ""
+	metabolism_molecule_buttons = {}
+	hovered_metabolism_molecule = ""
 	var layout := HBoxContainer.new()
 	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layout.add_theme_constant_override("separation", 12)
@@ -273,9 +282,7 @@ func _build_metabolism_view() -> void:
 	side.add_child(_section_label("Selection"))
 	detail_panel = VBoxContainer.new()
 	side.add_child(detail_panel)
-	side.add_child(_section_label("Pathways"))
 	pathway_box = VBoxContainer.new()
-	side.add_child(pathway_box)
 
 	map_layer = Control.new()
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -284,6 +291,7 @@ func _build_metabolism_view() -> void:
 	layout.add_child(map_layer)
 	metabolism_workspace = MetabolismWorkspaceScript.new()
 	metabolism_workspace.simulation = sim
+	metabolism_workspace.use_persistent_layout(metabolism_layout_positions, metabolism_manual_positions, metabolism_goal_positions)
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
 	metabolism_workspace.clip_contents = true
 	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
@@ -883,40 +891,59 @@ func _membrane_cross_section() -> Control:
 	return scene
 
 func _refresh_metabolism() -> void:
-	_clear(molecule_list)
-	for id in sim.present_molecule_ids():
-		molecule_list.add_child(_molecule_list_button(id))
+	var ids := sim.present_molecule_ids()
+	var signature := ",".join(ids)
+	if signature != metabolism_molecule_list_signature:
+		metabolism_molecule_list_signature = signature
+		metabolism_molecule_buttons = {}
+		_clear(molecule_list)
+		for id in ids:
+			var button := _molecule_list_button(id)
+			metabolism_molecule_buttons[id] = button
+			molecule_list.add_child(button)
+	for id in ids:
+		if metabolism_molecule_buttons.has(id):
+			_update_molecule_list_button(metabolism_molecule_buttons[id], id)
 	_refresh_selection_detail()
-	_refresh_pathways()
 	if metabolism_workspace != null:
 		metabolism_workspace.selected_pathway = selected_pathway
 		metabolism_workspace.rebuild()
 
 func _molecule_list_button(id: String) -> Button:
+	var button := Button.new()
+	button.toggle_mode = true
+	button.custom_minimum_size = Vector2(0, 62)
+	_update_molecule_list_button(button, id)
+	button.mouse_entered.connect(func():
+		hovered_metabolism_molecule = id
+		_set_metabolism_hover(id)
+	)
+	button.mouse_exited.connect(func():
+		if hovered_metabolism_molecule == id:
+			hovered_metabolism_molecule = ""
+			_set_metabolism_hover("")
+	)
+	button.pressed.connect(func(): _handle_molecule_click(id))
+	return button
+
+func _update_molecule_list_button(button: Button, id: String) -> void:
+	if not sim.molecule_types.has(id):
+		return
 	var molecule: Dictionary = sim.molecule_types[id]
 	var rates: Dictionary = sim.molecule_rates.get(id, {"production": 0.0, "consumption": 0.0})
-	var button := Button.new()
 	button.text = "%s  %.1f\n+%.1f/s  -%.1f/s" % [
 		molecule.get("formula", "Molecule"),
 		float(sim.molecule_amounts.get(id, 0.0)),
 		float(rates.get("production", 0.0)),
 		float(rates.get("consumption", 0.0))
 	]
-	button.toggle_mode = true
 	button.button_pressed = sim.selected_molecule == id
-	button.custom_minimum_size = Vector2(0, 62)
-	button.mouse_entered.connect(func():
-		if metabolism_workspace != null:
-			metabolism_workspace.highlighted_molecule_id = id
-			metabolism_workspace.rebuild()
-	)
-	button.mouse_exited.connect(func():
-		if metabolism_workspace != null and metabolism_workspace.highlighted_molecule_id == id:
-			metabolism_workspace.highlighted_molecule_id = ""
-			metabolism_workspace.rebuild()
-	)
-	button.pressed.connect(func(): _handle_molecule_click(id))
-	return button
+
+func _set_metabolism_hover(id: String) -> void:
+	if metabolism_workspace == null or metabolism_workspace.highlighted_molecule_id == id:
+		return
+	metabolism_workspace.highlighted_molecule_id = id
+	metabolism_workspace.rebuild()
 
 func _refresh_selection_detail() -> void:
 	_clear(detail_panel)
