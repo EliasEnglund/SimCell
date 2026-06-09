@@ -363,6 +363,7 @@ func _orthogonal_route(start: Vector2, end: Vector2, vertical_first: bool = true
 
 func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 	var goal_lookup := _goal_rect_lookup()
+	var incoming_sides := _incoming_side_lookup(positions, sizes, goal_lookup)
 	for reaction in simulation.pathway_arrows():
 		var substrate: String = reaction.get("substrate", "")
 		var products: Array = reaction.get("products", [])
@@ -377,17 +378,42 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			continue
 		var source_rect_world := _screen_rect_to_world(positions[substrate], sizes[substrate])
 		var source_center := source_rect_world.get_center()
+		var used_source_sides: Array[String] = []
+		var route_specs: Array[Dictionary] = []
 		for product_index in visible_products.size():
 			var product_id := visible_products[product_index]
 			var target_rect := _product_goal_rect(product_id, goal_lookup)
 			var product_is_goal := target_rect.size.x > 0.0
 			var target_rect_world := _screen_rect_to_world(target_rect.position, target_rect.size) if product_is_goal else _screen_rect_to_world(positions[product_id], sizes[product_id])
 			var target_center := target_rect_world.get_center()
-			var source_dir := _primary_axis(target_center - source_center)
-			var source_port := _node_port_world(source_rect_world.position, source_rect_world.size, source_dir)
+			var source_dir := _preferred_output_axis(target_center - source_center, incoming_sides.get(substrate, []), used_source_sides)
+			used_source_sides.append(_axis_key(source_dir))
 			var target_dir := -source_dir
 			if absf((source_center - target_center).dot(target_dir)) < 0.001:
 				target_dir = _primary_axis(source_center - target_center)
+			route_specs.append({
+				"product_id": product_id,
+				"product_index": product_index,
+				"target_rect_world": target_rect_world,
+				"source_dir": source_dir,
+				"target_dir": target_dir
+			})
+		var sibling_side_counts := {}
+		for spec in route_specs:
+			var side_key := _axis_key(spec.get("source_dir", Vector2.ZERO))
+			sibling_side_counts[side_key] = int(sibling_side_counts.get(side_key, 0)) + 1
+		var sibling_side_indices := {}
+		for spec in route_specs:
+			var product_id: String = spec.get("product_id", "")
+			var product_index: int = int(spec.get("product_index", 0))
+			var source_dir: Vector2 = spec.get("source_dir", Vector2.DOWN)
+			var target_dir: Vector2 = spec.get("target_dir", Vector2.UP)
+			var side_key := _axis_key(source_dir)
+			var side_index := int(sibling_side_indices.get(side_key, 0))
+			sibling_side_indices[side_key] = side_index + 1
+			var lane_offset := _route_lane_offset(source_dir, side_index, int(sibling_side_counts.get(side_key, 1)))
+			var target_rect_world: Rect2 = spec.get("target_rect_world", Rect2())
+			var source_port := _node_port_world(source_rect_world.position, source_rect_world.size, source_dir) + lane_offset
 			var target_port := _node_port_world(target_rect_world.position, target_rect_world.size, target_dir)
 			var route_key := _reaction_route_key(reaction, product_id)
 			var route_world := _routed_between_nodes_world(source_port, target_port, source_dir, target_dir, route_key)
@@ -403,6 +429,76 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			add_child(arrow)
 			_register_route_hover(route_screen, reaction, route_key)
 			_register_flux_route(route_screen, substrate, product_id, reaction)
+
+func _incoming_side_lookup(positions: Dictionary, sizes: Dictionary, goal_lookup: Dictionary) -> Dictionary:
+	var lookup := {}
+	for transport in simulation.membrane_transport_arrows():
+		var molecule_id := str(transport.get("molecule", ""))
+		if str(transport.get("direction", "")) == "import" and positions.has(molecule_id):
+			_add_side(lookup, molecule_id, Vector2.UP)
+	for reaction in simulation.pathway_arrows():
+		var substrate := str(reaction.get("substrate", ""))
+		if not positions.has(substrate):
+			continue
+		var source_rect_world := _screen_rect_to_world(positions[substrate], sizes[substrate])
+		var source_center := source_rect_world.get_center()
+		for product in reaction.get("products", []):
+			var product_id := str(product)
+			if not positions.has(product_id) and _product_goal_rect(product_id, goal_lookup).size.x <= 0.0:
+				continue
+			if not positions.has(product_id):
+				continue
+			var target_rect_world := _screen_rect_to_world(positions[product_id], sizes[product_id])
+			var source_dir := _primary_axis(target_rect_world.get_center() - source_center)
+			_add_side(lookup, product_id, -source_dir)
+	return lookup
+
+func _add_side(lookup: Dictionary, node_id: String, direction: Vector2) -> void:
+	var key := _axis_key(direction)
+	if key.is_empty():
+		return
+	if not lookup.has(node_id):
+		lookup[node_id] = []
+	if not lookup[node_id].has(key):
+		lookup[node_id].append(key)
+
+func _preferred_output_axis(delta: Vector2, blocked_sides: Array, used_sides: Array[String]) -> Vector2:
+	var primary := _primary_axis(delta)
+	var candidates: Array[Vector2] = [primary]
+	if absf(primary.x) > 0.0:
+		candidates.append(Vector2.DOWN if delta.y >= 0.0 else Vector2.UP)
+		candidates.append(Vector2.UP if delta.y >= 0.0 else Vector2.DOWN)
+		candidates.append(-primary)
+	else:
+		candidates.append(Vector2.RIGHT if delta.x >= 0.0 else Vector2.LEFT)
+		candidates.append(Vector2.LEFT if delta.x >= 0.0 else Vector2.RIGHT)
+		candidates.append(-primary)
+	for candidate in candidates:
+		var key := _axis_key(candidate)
+		if not blocked_sides.has(key) and not used_sides.has(key):
+			return candidate
+	for candidate in candidates:
+		var key := _axis_key(candidate)
+		if not blocked_sides.has(key):
+			return candidate
+	return primary
+
+func _route_lane_offset(direction: Vector2, index: int, count: int) -> Vector2:
+	if count <= 1:
+		return Vector2.ZERO
+	var lane_gap := 18.0
+	var centered_index := float(index) - (float(count) - 1.0) * 0.5
+	var perpendicular := Vector2(-direction.y, direction.x)
+	if perpendicular.length_squared() <= 0.001:
+		return Vector2.ZERO
+	return perpendicular.normalized() * lane_gap * centered_index
+
+func _axis_key(direction: Vector2) -> String:
+	if absf(direction.x) > absf(direction.y):
+		return "right" if direction.x > 0.0 else "left"
+	if absf(direction.y) > 0.0:
+		return "down" if direction.y > 0.0 else "up"
+	return ""
 
 func _goal_rect_lookup() -> Dictionary:
 	var lookup := {}
