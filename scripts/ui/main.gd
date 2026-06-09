@@ -53,6 +53,8 @@ var metabolism_manual_positions := {}
 var metabolism_goal_positions := {}
 var metabolism_route_bends := {}
 var metabolism_import_sources := {}
+var metabolism_pan_offset := Vector2.ZERO
+var metabolism_zoom := 1.0
 var metabolism_molecule_list_signature := ""
 var metabolism_molecule_buttons := {}
 var hovered_metabolism_molecule := ""
@@ -299,6 +301,11 @@ func _build_metabolism_view() -> void:
 	metabolism_workspace = MetabolismWorkspaceScript.new()
 	metabolism_workspace.simulation = sim
 	metabolism_workspace.use_persistent_layout(metabolism_layout_positions, metabolism_manual_positions, metabolism_goal_positions, metabolism_route_bends, metabolism_import_sources)
+	metabolism_workspace.use_persistent_camera(metabolism_pan_offset, metabolism_zoom)
+	metabolism_workspace.camera_changed.connect(func(new_pan: Vector2, new_zoom: float):
+		metabolism_pan_offset = new_pan
+		metabolism_zoom = new_zoom
+	)
 	metabolism_workspace.set_anchors_preset(Control.PRESET_FULL_RECT)
 	metabolism_workspace.clip_contents = true
 	metabolism_workspace.molecule_requested.connect(_handle_molecule_click)
@@ -1372,7 +1379,7 @@ func _resource_cost_text(cost: Dictionary) -> String:
 func _view_title(view_id: String) -> String:
 	var titles := {
 		"cell": "CELL OVERVIEW",
-		"metabolism": "METABOLIC LANDSCAPE",
+		"metabolism": "THE METABOLISM",
 		"membrane": "MEMBRANE TRANSPORT",
 		"proteins": "PROTEIN BUILDER",
 		"dna": "DNA TECH TREE",

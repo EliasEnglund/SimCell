@@ -4,6 +4,7 @@ class_name MetabolismWorkspace
 signal molecule_requested(molecule_id: String)
 signal empty_requested
 signal pathway_requested(blueprint_id: String)
+signal camera_changed(pan_offset: Vector2, zoom: float)
 
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const WORLD_BOUNDS := Rect2(Vector2(-1500.0, 22.0), Vector2(4200.0, 3200.0))
@@ -130,6 +131,7 @@ func _input(event: InputEvent) -> void:
 		_drag_distance += event.position.distance_to(_last_mouse)
 		_last_mouse = event.position
 		_clamp_pan()
+		emit_signal("camera_changed", pan_offset, zoom)
 		_rebuild()
 	elif event is InputEventMouseMotion and get_global_rect().has_point(event.position):
 		_hover_inside = true
@@ -189,6 +191,7 @@ func _zoom_at(factor: float, local_focus: Vector2) -> void:
 	if was_at_top:
 		pan_offset.y = -WORLD_BOUNDS.position.y * zoom
 	_clamp_pan()
+	emit_signal("camera_changed", pan_offset, zoom)
 	_rebuild()
 
 func _clamp_pan() -> void:
@@ -217,6 +220,10 @@ func use_persistent_layout(layout_positions: Dictionary, manual_positions: Dicti
 	_manual_route_bends = route_bends
 	_manual_import_sources = import_sources
 
+func use_persistent_camera(saved_pan_offset: Vector2, saved_zoom: float) -> void:
+	pan_offset = saved_pan_offset
+	zoom = clampf(saved_zoom, 0.5, 2.0)
+
 func _rebuild() -> void:
 	var restore_hover := _hover_inside and not _dragging and get_rect().has_point(_last_hover_local)
 	_hide_hover_popup()
@@ -224,6 +231,7 @@ func _rebuild() -> void:
 		child.queue_free()
 	if simulation == null:
 		return
+	_clamp_pan()
 	var background := ColorRect.new()
 	background.color = Color("07181c")
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -247,19 +255,18 @@ func _rebuild() -> void:
 	membrane_line.set_anchors_preset(Control.PRESET_FULL_RECT)
 	membrane_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(membrane_line)
-	var title := Label.new()
-	title.text = "METABOLIC LANDSCAPE"
-	title.add_theme_font_size_override("font_size", 24)
-	title.modulate = Color("76f4ff")
-	title.position = Vector2(28, 18)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(title)
 	var ids: Array[String] = []
 	for id in simulation.metabolism_molecule_ids():
 		if simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(str(id)):
 			continue
 		ids.append(str(id))
 	var layout := _metabolism_layout(ids, maxf(760.0, size.x))
+	_migrate_molecules_below_membrane(ids)
+	for id in ids:
+		if layout.has(id) and _layout_positions.has(id):
+			var item: Dictionary = layout[id]
+			item["position"] = _layout_positions[id]
+			layout[id] = item
 	var positions := {}
 	var sizes := {}
 	for id in ids:
@@ -610,12 +617,12 @@ func _draw_membrane_source_and_route(source_key: String, source_anchor: Vector2,
 	var source_port: Vector2
 	var target_port: Vector2
 	if importing:
-		source_port = _node_port_world(marker_rect_world.position, marker_rect_world.size, route_dir)
+		source_port = Vector2(source_anchor.x, MEMBRANE_LINE_Y + GRID_CELL * 0.08)
 		target_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, -route_dir)
 	else:
 		source_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, route_dir)
 		target_port = _node_port_world(marker_rect_world.position, marker_rect_world.size, -route_dir)
-	var route_world := _routed_between_nodes_world(source_port, target_port, route_dir, -route_dir, route_key)
+	var route_world := _transport_route_world(source_port, target_port, route_key, importing)
 	var route_screen := _world_points_to_screen(route_world)
 	var arrow := RoutedArrowLine.new()
 	arrow.points = route_screen
@@ -627,6 +634,20 @@ func _draw_membrane_source_and_route(source_key: String, source_anchor: Vector2,
 	add_child(arrow)
 	_register_route_hover(route_screen, {"name": "Membrane import" if importing else "Membrane export", "rate": transport.get("rate", 0.0), "tool": "transporter"}, route_key)
 	_register_flux_route(route_screen, molecule_id, molecule_id, {"rate": transport.get("rate", 0.0), "active_count": 1})
+
+func _transport_route_world(source_port: Vector2, target_port: Vector2, route_key: String, importing: bool) -> Array[Vector2]:
+	if not importing:
+		return _routed_between_nodes_world(source_port, target_port, _primary_axis(target_port - source_port), _primary_axis(source_port - target_port), route_key)
+	var first_inside := Vector2(source_port.x, MEMBRANE_LINE_Y + GRID_CELL)
+	var route: Array[Vector2] = [source_port, first_inside]
+	if _manual_route_bends.has(route_key):
+		var bend: Vector2 = _clamp_route_bend(_manual_route_bends[route_key])
+		route.append(Vector2(bend.x, first_inside.y))
+		route.append(Vector2(bend.x, target_port.y))
+	else:
+		route.append(Vector2(target_port.x, first_inside.y))
+	route.append(target_port)
+	return _clean_route(route)
 
 func _arrow_label(pathway: Dictionary) -> String:
 	var rate := float(pathway.get("rate", 0.0))
@@ -643,10 +664,24 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		sizes[id] = _molecule_canvas_size(simulation.molecule_types[id], _fixed_zoom)
 	if ids.is_empty():
 		return result
+	for transport in simulation.membrane_transport_arrows():
+		var molecule_id := str(transport.get("molecule", ""))
+		if not sizes.has(molecule_id) or _layout_positions.has(molecule_id):
+			continue
+		var molecule_size: Vector2 = sizes[molecule_id]
+		var source_key := "%s:%s" % [str(transport.get("direction", "import")), molecule_id]
+		var source_anchor := Vector2(map_width * 0.5, MEMBRANE_LINE_Y)
+		if _manual_import_sources.has(source_key):
+			source_anchor = Vector2(_manual_import_sources[source_key])
+		else:
+			source_anchor = _nearest_available_source_position(source_anchor, source_key)
+			_manual_import_sources[source_key] = source_anchor
+		var preferred_import := _snap_node_to_grid_cell(Vector2(source_anchor.x - molecule_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.20), molecule_size)
+		_layout_positions[molecule_id] = _nearest_available_node_position(preferred_import, molecule_size, molecule_id)
 	var first_id := ids[0]
 	if not _layout_positions.has(first_id):
 		var first_size: Vector2 = sizes[first_id]
-		_layout_positions[first_id] = _snap_node_to_grid_cell(Vector2(map_width * 0.5 - first_size.x * 0.5, GRID_CELL * 0.75), first_size)
+		_layout_positions[first_id] = _snap_node_to_grid_cell(Vector2(map_width * 0.5 - first_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.10), first_size)
 	for pathway in simulation.pathway_arrows():
 		var substrate_id: String = pathway.get("substrate", "")
 		if not _layout_positions.has(substrate_id):
@@ -680,7 +715,7 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 			_layout_positions[product_id] = _snap_node_to_grid_cell(opened, product_size)
 			cursor_x += product_size.x + group_gap
 	var gap := Vector2(GRID_CELL, GRID_CELL)
-	var row_y := GRID_CELL * 3.0
+	var row_y := MEMBRANE_LINE_Y + GRID_CELL * 2.0
 	var row_x := GRID_CELL
 	var row_height := 0.0
 	for i in ids.size():
@@ -696,6 +731,14 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 			row_height = maxf(row_height, node_size.y)
 		result[id] = {"position": _layout_positions[id], "size": node_size}
 	return result
+
+func _migrate_molecules_below_membrane(ids: Array[String]) -> void:
+	for id in ids:
+		if not _layout_positions.has(id):
+			continue
+		var pos := Vector2(_layout_positions[id])
+		if pos.y < MEMBRANE_LINE_Y + GRID_CELL * 0.72:
+			_layout_positions[id] = _nearest_available_node_position(_snap_node_to_grid_cell(Vector2(pos.x, MEMBRANE_LINE_Y + GRID_CELL * 1.20), MOLECULE_CARD_SIZE), MOLECULE_CARD_SIZE, id)
 
 func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true, ignore_id: String = "") -> Vector2:
 	var gap := Vector2(GRID_CELL, GRID_CELL)
@@ -1026,16 +1069,10 @@ class MembraneSourceNode:
 		var gate_rect := Rect2(center - Vector2(size.x * 0.16, size.y * 0.28), Vector2(size.x * 0.32, size.y * 0.50))
 		draw_rect(gate_rect.grow(3.0 * scale), Color("02070b"), true)
 		draw_rect(gate_rect, Color(color.r, color.g, color.b, 0.55), true)
-		var arrow_dir := Vector2.DOWN if importing else Vector2.UP
-		var arrow_start := center + arrow_dir * size.y * 0.03
-		var arrow_end := center + arrow_dir * size.y * 0.25
-		draw_line(arrow_start, arrow_end, color.lightened(0.25), 2.6 * scale, true)
-		var normal := Vector2(-arrow_dir.y, arrow_dir.x)
-		draw_colored_polygon(PackedVector2Array([
-			arrow_end,
-			arrow_end - arrow_dir * 8.0 * scale + normal * 5.0 * scale,
-			arrow_end - arrow_dir * 8.0 * scale - normal * 5.0 * scale
-		]), color.lightened(0.25))
+		var channel_start := Vector2(center.x, base_y - size.y * 0.16)
+		var channel_end := Vector2(center.x, base_y + size.y * 0.12)
+		draw_line(channel_start, channel_end, Color("02070b"), 5.0 * scale, true)
+		draw_line(channel_start, channel_end, color.lightened(0.25), 2.2 * scale, true)
 
 class ArrowLine:
 	extends Control
@@ -2128,11 +2165,16 @@ class MetabolismMembraneLine:
 		var x0 := world_bounds.position.x * zoom + pan_offset.x
 		var x1 := world_bounds.end.x * zoom + pan_offset.x
 		var y := line_y * zoom + pan_offset.y
+		if y < -36.0 or y > size.y + 36.0:
+			return
 		draw_line(Vector2(x0, y), Vector2(x1, y), Color("02070b"), 12.0, true)
 		draw_line(Vector2(x0, y - 3.0), Vector2(x1, y - 3.0), Color(0.42, 0.95, 1.0, 0.70), 2.6, true)
 		draw_line(Vector2(x0, y + 3.0), Vector2(x1, y + 3.0), Color(0.55, 1.0, 0.70, 0.45), 2.2, true)
 		draw_line(Vector2(x0, y), Vector2(x1, y), Color(0.50, 1.0, 0.86, 0.52), 1.5, true)
 		var tick_spacing := grid_cell * zoom
+		var label_x := minf(x1 - 168.0, size.x - 188.0)
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, y - 12.0), "Outside", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.95, 1.0, 0.78))
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, y + 26.0), "Inside", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.72, 1.0, 0.78, 0.78))
 		if tick_spacing < 12.0:
 			return
 		var world_x: float = floor(world_bounds.position.x / grid_cell) * grid_cell
