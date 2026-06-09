@@ -15,6 +15,7 @@ const GOAL_CARD_SIZE := Vector2(GRID_CELL * 1.12, GRID_CELL * 1.12)
 
 var simulation
 var selected_pathway := ""
+var highlighted_molecule_id := ""
 var pan_offset := Vector2.ZERO
 var zoom := 1.0
 var _dragging := false
@@ -191,7 +192,11 @@ func _rebuild() -> void:
 	title.position = Vector2(28, 18)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(title)
-	var ids: Array[String] = simulation.metabolism_molecule_ids()
+	var ids: Array[String] = []
+	for id in simulation.metabolism_molecule_ids():
+		if simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(str(id)):
+			continue
+		ids.append(str(id))
 	var layout := _metabolism_layout(ids, maxf(760.0, size.x))
 	var positions := {}
 	var sizes := {}
@@ -199,7 +204,6 @@ func _rebuild() -> void:
 		var item: Dictionary = layout[id]
 		positions[id] = item["position"] * zoom + pan_offset
 		sizes[id] = item["size"] * zoom
-	var step_layout := _reaction_step_layout(positions, sizes)
 	var goal_layout := _goal_layout()
 	_visible_positions = positions
 	_visible_sizes = sizes
@@ -210,24 +214,17 @@ func _rebuild() -> void:
 		var goal_rect: Rect2 = goal.get("rect", Rect2())
 		_visible_goal_positions[goal_id] = goal_rect.position
 		_visible_goal_sizes[goal_id] = goal_rect.size
-	_visible_reaction_steps = step_layout
+	_visible_reaction_steps = {}
 	_visible_routes = []
 	_flux_routes = []
 	_draw_membrane_transport_arrows(positions, sizes)
-	_draw_reaction_arrows(positions, sizes, step_layout)
+	_draw_reaction_arrows(positions, sizes)
 	_draw_goal_arrows(positions, sizes, goal_layout)
 	_draw_flux_layer()
 	for id in ids:
 		add_child(_map_molecule_node(id, positions[id], sizes[id]))
 	for goal in goal_layout:
 		add_child(_goal_node(goal))
-	var goal_panel := MetabolicGoalPanel.new()
-	goal_panel.simulation = simulation
-	goal_panel.position = Vector2(maxf(18.0, size.x - 336.0), 52.0)
-	goal_panel.size = Vector2(318.0, 184.0)
-	goal_panel.custom_minimum_size = goal_panel.size
-	goal_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(goal_panel)
 	if restore_hover:
 		_update_hover(_last_hover_local)
 
@@ -262,7 +259,7 @@ func _node_port(pos: Vector2, node_size: Vector2, direction: Vector2) -> Vector2
 	var center := _node_center(pos, node_size)
 	if direction.length_squared() <= 0.001:
 		return center
-	return center + direction.normalized() * (_node_radius(node_size) + 3.0 * zoom)
+	return center + direction.normalized() * (_node_radius(node_size) + 10.0 * zoom)
 
 func _orthogonal_route(start: Vector2, end: Vector2, vertical_first: bool = true) -> Array[Vector2]:
 	if absf(start.x - end.x) < 1.0 or absf(start.y - end.y) < 1.0:
@@ -271,7 +268,8 @@ func _orthogonal_route(start: Vector2, end: Vector2, vertical_first: bool = true
 		return [start, Vector2(start.x, end.y), end]
 	return [start, Vector2(end.x, start.y), end]
 
-func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout: Dictionary) -> void:
+func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
+	var goal_lookup := _goal_rect_lookup()
 	for reaction in simulation.pathway_arrows():
 		var substrate: String = reaction.get("substrate", "")
 		var products: Array = reaction.get("products", [])
@@ -279,22 +277,26 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout
 			continue
 		var visible_products: Array[String] = []
 		for product_id in products:
-			if positions.has(product_id):
+			var product_id_string := str(product_id)
+			if positions.has(product_id_string) or _product_goal_rect(product_id_string, goal_lookup).size.x > 0.0:
 				visible_products.append(str(product_id))
 		if visible_products.is_empty():
 			continue
 		var source_center := _node_center(positions[substrate], sizes[substrate])
 		for product_index in visible_products.size():
 			var product_id := visible_products[product_index]
-			var target_center := _node_center(positions[product_id], sizes[product_id])
+			var target_rect := _product_goal_rect(product_id, goal_lookup)
+			var product_is_goal := target_rect.size.x > 0.0
+			var target_center := target_rect.get_center() if product_is_goal else _node_center(positions[product_id], sizes[product_id])
 			var source_dir := _primary_axis(target_center - source_center)
 			var source_port := _node_port(positions[substrate], sizes[substrate], source_dir)
 			var target_dir := -source_dir
 			if absf((source_center - target_center).dot(target_dir)) < 0.001:
 				target_dir = _primary_axis(source_center - target_center)
-			var target_port := _node_port(positions[product_id], sizes[product_id], target_dir)
+			var target_port := _node_port(target_rect.position, target_rect.size, target_dir) if product_is_goal else _node_port(positions[product_id], sizes[product_id], target_dir)
 			var arrow := RoutedArrowLine.new()
-			arrow.points = _routed_between_nodes(source_port, target_port, source_dir)
+			arrow.points = _routed_between_nodes(source_port, target_port, source_dir, target_dir)
+			arrow.zoom_scale = zoom
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
 			arrow.queued = int(reaction.get("queued_count", 0)) > 0
@@ -304,19 +306,32 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout
 			_register_route_hover(arrow.points, reaction)
 			_register_flux_route(arrow.points, substrate, product_id, reaction)
 
+func _goal_rect_lookup() -> Dictionary:
+	var lookup := {}
+	for id in _visible_goal_positions.keys():
+		lookup[id] = Rect2(_visible_goal_positions[id], _visible_goal_sizes[id])
+	return lookup
+
+func _product_goal_rect(product_id: String, goal_lookup: Dictionary) -> Rect2:
+	if goal_lookup.has("amino_acids") and simulation != null and simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(product_id):
+		return goal_lookup["amino_acids"]
+	return Rect2()
+
 func _primary_axis(delta: Vector2) -> Vector2:
 	if absf(delta.x) > absf(delta.y):
 		return Vector2.RIGHT if delta.x >= 0.0 else Vector2.LEFT
 	return Vector2.DOWN if delta.y >= 0.0 else Vector2.UP
 
-func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2) -> Array[Vector2]:
+func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2, target_dir: Vector2) -> Array[Vector2]:
 	var away := start + start_dir.normalized() * GRID_CELL * zoom * 0.32
+	var approach := end + target_dir.normalized() * GRID_CELL * zoom * 0.26
 	var route: Array[Vector2] = [start, away]
-	if absf(away.x - end.x) > 1.0 and absf(away.y - end.y) > 1.0:
+	if absf(away.x - approach.x) > 1.0 and absf(away.y - approach.y) > 1.0:
 		if absf(start_dir.y) > 0.0:
-			route.append(Vector2(away.x, end.y))
+			route.append(Vector2(away.x, approach.y))
 		else:
-			route.append(Vector2(end.x, away.y))
+			route.append(Vector2(approach.x, away.y))
+	route.append(approach)
 	route.append(end)
 	return _clean_route(route)
 
@@ -354,6 +369,7 @@ func _draw_flux_layer() -> void:
 		return
 	var layer := FluxParticleLayer.new()
 	layer.routes = _flux_routes.duplicate(true)
+	layer.zoom_scale = zoom
 	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(layer)
@@ -372,6 +388,7 @@ func _draw_goal_arrows(positions: Dictionary, sizes: Dictionary, goal_layout: Ar
 					var arrow := RoutedArrowLine.new()
 					var mid_x: float = source.x + maxf(76.0 * zoom, (target.x - source.x) * 0.46)
 					arrow.points = [source, Vector2(mid_x, source.y), Vector2(mid_x, target.y), target]
+					arrow.zoom_scale = zoom
 					arrow.active = float(simulation.resources.get("Amino Acids", 0.0)) > 0.0
 					arrow.label = "convert to protein points"
 					arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -383,6 +400,7 @@ func _draw_goal_arrows(positions: Dictionary, sizes: Dictionary, goal_layout: Ar
 			hint.start = anchor + Vector2(-150.0 * zoom, 0.0)
 			hint.end = anchor
 			hint.label = "future nucleotide route"
+			hint.zoom_scale = zoom
 			hint.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(hint)
 
@@ -393,6 +411,7 @@ func _draw_membrane_transport_arrows(positions: Dictionary, sizes: Dictionary) -
 			continue
 		var center: Vector2 = positions[molecule_id] + sizes[molecule_id] * 0.5
 		var arrow := ArrowLine.new()
+		arrow.zoom_scale = zoom
 		if transport.get("direction", "") == "import":
 			arrow.start = center + Vector2(0.0, -190.0 * zoom)
 			arrow.end = center + Vector2(0.0, -72.0 * zoom)
@@ -413,53 +432,6 @@ func _arrow_label(pathway: Dictionary) -> String:
 	if int(pathway.get("queued_count", 0)) > 0:
 		return "building"
 	return "designed"
-
-func _reaction_step_layout(positions: Dictionary, sizes: Dictionary) -> Dictionary:
-	var layout := {}
-	for reaction in simulation.pathway_arrows():
-		var blueprint_id: String = reaction.get("blueprint_id", "")
-		var substrate: String = reaction.get("substrate", "")
-		var products: Array = reaction.get("products", [])
-		if blueprint_id.is_empty() or not positions.has(substrate) or products.is_empty():
-			continue
-		var valid_products: Array[Vector2] = []
-		for product_id in products:
-			if positions.has(product_id):
-				valid_products.append(positions[product_id] + sizes[product_id] * 0.5)
-		if valid_products.is_empty():
-			continue
-		var source_rect := Rect2(positions[substrate], sizes[substrate])
-		var target_top := INF
-		for center in valid_products:
-			target_top = minf(target_top, center.y)
-		var step_size := ENZYME_CARD_SIZE * zoom
-		var center_x := source_rect.get_center().x
-		var upper_y := source_rect.end.y + 56.0 * zoom
-		var lower_y := target_top - 70.0 * zoom
-		var center_y := (upper_y + lower_y) * 0.5
-		if lower_y < upper_y:
-			center_y = source_rect.end.y + 96.0 * zoom
-		var center := Vector2(center_x, center_y)
-		var top_left := _snap_screen_to_grid(center - step_size * 0.5)
-		layout[blueprint_id] = {
-			"rect": Rect2(top_left, step_size),
-			"reaction": reaction
-		}
-	return layout
-
-func _reaction_step_node(item: Dictionary) -> Control:
-	var reaction: Dictionary = item.get("reaction", {})
-	var rect: Rect2 = item.get("rect", Rect2())
-	var box := EnzymeStepBox.new()
-	box.simulation = simulation
-	box.reaction = reaction
-	box.fixed_zoom = _fixed_zoom * zoom * 0.86
-	box.selected = selected_pathway == str(reaction.get("blueprint_id", ""))
-	box.position = rect.position
-	box.size = rect.size
-	box.custom_minimum_size = rect.size
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return box
 
 func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 	var result := {}
@@ -535,10 +507,6 @@ func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, a
 func _snap_to_grid(pos: Vector2) -> Vector2:
 	return Vector2(round(pos.x / GRID_CELL) * GRID_CELL, round(pos.y / GRID_CELL) * GRID_CELL)
 
-func _snap_node_to_grid(pos: Vector2, node_size: Vector2) -> Vector2:
-	var center := pos + node_size * 0.5
-	return _snap_to_grid(center) - node_size * 0.5
-
 func _snap_to_grid_cell_center(center: Vector2) -> Vector2:
 	return Vector2((floor(center.x / GRID_CELL) + 0.5) * GRID_CELL, (floor(center.y / GRID_CELL) + 0.5) * GRID_CELL)
 
@@ -570,9 +538,11 @@ func _map_molecule_node(id: String, pos: Vector2, node_size: Vector2) -> Control
 	box.simulation = simulation
 	box.molecule_id = id
 	box.selected = simulation.selected_molecule == id
+	box.highlighted = highlighted_molecule_id == id
 	box.depleted = float(simulation.molecule_amounts.get(id, 0.0)) <= 0.001
 	box.is_target = simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(id)
 	box.pebble_color = _molecule_pebble_color(id)
+	box.zoom_scale = zoom
 	box.lifted = _dragging_molecule and _drag_molecule_id == id
 	box.position = pos
 	box.custom_minimum_size = node_size
@@ -728,6 +698,7 @@ func _goal_layout() -> Array[Dictionary]:
 func _goal_node(goal: Dictionary) -> Control:
 	var node := GoalSinkNode.new()
 	node.goal = goal
+	node.zoom_scale = zoom
 	node.lifted = _dragging_goal and _drag_goal_id == str(goal.get("id", ""))
 	var rect: Rect2 = goal.get("rect", Rect2())
 	node.position = rect.position
@@ -735,86 +706,6 @@ func _goal_node(goal: Dictionary) -> Control:
 	node.custom_minimum_size = rect.size
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return node
-
-class MetabolicGoalPanel:
-	extends Control
-
-	var simulation
-
-	func _ready() -> void:
-		set_process(true)
-
-	func _process(_delta: float) -> void:
-		queue_redraw()
-
-	func _draw() -> void:
-		var rect := Rect2(Vector2.ZERO, size)
-		var border := Color("76f4ff")
-		draw_rect(rect.grow(4.0), Color(border.r, border.g, border.b, 0.07), true)
-		draw_rect(rect, Color(0.04, 0.10, 0.13, 0.88), true)
-		draw_rect(rect, Color(border.r, border.g, border.b, 0.24), false, 8.0)
-		draw_rect(rect, border, false, 1.6)
-		draw_string(ThemeDB.fallback_font, Vector2(14.0, 28.0), "METABOLIC GOAL", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, border)
-		draw_string(ThemeDB.fallback_font, Vector2(14.0, 52.0), "Make N-C-COOH, then convert it to amino acids.", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
-		_draw_target_molecule(Vector2(58.0, 94.0))
-		draw_string(ThemeDB.fallback_font, Vector2(134.0, 88.0), "TARGET", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("8cff6a"))
-		draw_string(ThemeDB.fallback_font, Vector2(134.0, 108.0), "N-C-COOH", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("f4fbff"))
-		if simulation == null:
-			return
-		var redox: Dictionary = simulation.redox_balance() if simulation.has_method("redox_balance") else {"net": 0.0, "production": 0.0, "consumption": 0.0}
-		var y := 136.0
-		_draw_resource_line(Vector2(14.0, y), "ATP", float(simulation.resources.get("ATP", 0.0)), Color("ffe064"))
-		_draw_resource_line(Vector2(110.0, y), "AA", float(simulation.resources.get("Amino Acids", 0.0)), Color("8cff6a"))
-		_draw_resource_line(Vector2(206.0, y), "N", float(simulation.resources.get("N", 0.0)), Color("4a90df"))
-		var net := float(redox.get("net", 0.0))
-		var redox_color := Color("8cff6a") if absf(net) < 0.05 else Color("ffe064")
-		var redox_text := "NADH %.1f  net %+.2f/s" % [float(simulation.resources.get("NADH", 0.0)), net]
-		draw_string(ThemeDB.fallback_font, Vector2(14.0, 170.0), redox_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, redox_color)
-
-	func _draw_resource_line(pos: Vector2, label: String, value: float, color: Color) -> void:
-		draw_circle(pos + Vector2(8.0, -4.0), 7.5, Color("02070b"))
-		draw_circle(pos + Vector2(8.0, -4.0), 5.6, color)
-		draw_string(ThemeDB.fallback_font, pos + Vector2(18.0, 0.0), "%s %.0f" % [label, value], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f4fbff"))
-
-	func _draw_target_molecule(origin: Vector2) -> void:
-		var atoms := [
-			{"element": "N", "pos": origin + Vector2(-40.0, 0.0)},
-			{"element": "C", "pos": origin + Vector2(0.0, 0.0)},
-			{"element": "C", "pos": origin + Vector2(42.0, 0.0)},
-			{"element": "O", "pos": origin + Vector2(76.0, -24.0)},
-			{"element": "O", "pos": origin + Vector2(78.0, 24.0)}
-		]
-		_draw_panel_bond(atoms[0]["pos"], atoms[1]["pos"], 1)
-		_draw_panel_bond(atoms[1]["pos"], atoms[2]["pos"], 1)
-		_draw_panel_bond(atoms[2]["pos"], atoms[3]["pos"], 2)
-		_draw_panel_bond(atoms[2]["pos"], atoms[4]["pos"], 1)
-		for atom in atoms:
-			_draw_panel_atom(atom["pos"], str(atom["element"]))
-
-	func _draw_panel_bond(a: Vector2, b: Vector2, order: int) -> void:
-		var dir := (b - a).normalized()
-		var normal := Vector2(-dir.y, dir.x)
-		var offsets := [0.0] if order == 1 else [-2.5, 2.5]
-		for offset in offsets:
-			var start := a + dir * 12.0 + normal * float(offset)
-			var end := b - dir * 12.0 + normal * float(offset)
-			draw_line(start, end, Color("02070b"), 6.0, true)
-			draw_line(start, end, Color("dbeff2"), 2.4, true)
-
-	func _draw_panel_atom(pos: Vector2, element: String) -> void:
-		var radius := 13.0 if element == "C" else 12.0
-		var base := _atom_color(element)
-		draw_circle(pos, radius + 4.0, Color("02070b"))
-		draw_circle(pos, radius + 1.0, base.lightened(0.30))
-		draw_circle(pos, radius - 1.0, base.darkened(0.14))
-		draw_circle(pos + Vector2(radius * 0.25, -radius * 0.36), radius * 0.20, Color(1, 1, 1, 0.42))
-
-	func _atom_color(element: String) -> Color:
-		if element == "O":
-			return Color("e95058")
-		if element == "N":
-			return Color("4a90df")
-		return Color("68777a")
 
 class ArrowLine:
 	extends Control
@@ -825,6 +716,7 @@ class ArrowLine:
 	var rate := 0.0
 	var active := false
 	var queued := false
+	var zoom_scale := 1.0
 
 	func _draw() -> void:
 		var delta := end - start
@@ -841,10 +733,11 @@ class ArrowLine:
 			line_color = Color("76f4ff")
 		else:
 			line_color = Color("8aa1a7")
-		draw_line(from, to, Color("02070b"), 7.0, true)
-		draw_line(from, to, line_color, 3.0, true)
-		var left := to - dir * 14.0 + normal * 7.0
-		var right := to - dir * 14.0 - normal * 7.0
+		var scale := maxf(0.35, zoom_scale)
+		draw_line(from, to, Color("02070b"), 7.0 * scale, true)
+		draw_line(from, to, line_color, 3.0 * scale, true)
+		var left := to - dir * 14.0 * scale + normal * 7.0 * scale
+		var right := to - dir * 14.0 * scale - normal * 7.0 * scale
 		draw_colored_polygon(PackedVector2Array([to, left, right]), line_color)
 		if not label.is_empty():
 			draw_string(ThemeDB.fallback_font, from.lerp(to, 0.5) + Vector2(7, -7), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, line_color)
@@ -857,6 +750,7 @@ class RoutedArrowLine:
 	var rate := 0.0
 	var active := false
 	var queued := false
+	var zoom_scale := 1.0
 
 	func _draw() -> void:
 		if points.size() < 2:
@@ -868,25 +762,22 @@ class RoutedArrowLine:
 			line_color = Color("76f4ff")
 		else:
 			line_color = Color("8aa1a7")
+		var scale := maxf(0.35, zoom_scale)
 		for i in points.size() - 1:
 			var a: Vector2 = points[i]
 			var b: Vector2 = points[i + 1]
 			if a.distance_to(b) < 4.0:
 				continue
-			draw_line(a, b, Color("02070b"), 7.0, true)
-			draw_line(a, b, line_color, 3.0, true)
-		for i in range(1, points.size() - 1):
-			var p: Vector2 = points[i]
-			draw_circle(p, 3.8, Color("02070b"))
-			draw_circle(p, 2.2, line_color)
+			draw_line(a, b, Color("02070b"), 7.0 * scale, true)
+			draw_line(a, b, line_color, 3.0 * scale, true)
 		var end: Vector2 = points[points.size() - 1]
 		var previous: Vector2 = points[points.size() - 2]
 		var dir := (end - previous).normalized()
 		if dir.length() <= 0.0:
 			return
 		var normal := Vector2(-dir.y, dir.x)
-		var left := end - dir * 14.0 + normal * 7.0
-		var right := end - dir * 14.0 - normal * 7.0
+		var left := end - dir * 14.0 * scale + normal * 7.0 * scale
+		var right := end - dir * 14.0 * scale - normal * 7.0 * scale
 		draw_colored_polygon(PackedVector2Array([end, left, right]), line_color)
 		if not label.is_empty():
 			var label_pos: Vector2 = points[0].lerp(points[1], 0.55) + Vector2(7, -7)
@@ -896,6 +787,7 @@ class FluxParticleLayer:
 	extends Control
 
 	var routes: Array[Dictionary] = []
+	var zoom_scale := 1.0
 
 	func _ready() -> void:
 		set_process(true)
@@ -919,6 +811,7 @@ class FluxParticleLayer:
 			var speed := 34.0 + minf(rate, 8.0) * 11.0
 			var from_color: Color = route.get("from_color", Color("8cff6a"))
 			var to_color: Color = route.get("to_color", from_color)
+			var scale := maxf(0.35, zoom_scale)
 			for i in count:
 				if drawn >= 220:
 					return
@@ -932,8 +825,8 @@ class FluxParticleLayer:
 				var jitter := Vector2(cos(jitter_phase * 1.37), sin(jitter_phase * 1.91)) * (1.6 + seed * 2.4)
 				var color := from_color.lerp(to_color, clampf(t, 0.0, 1.0))
 				var alpha := 0.32 + 0.58 * sin(t * PI)
-				var radius := 2.0 + seed * 2.4
-				var side_offset := normal * (8.0 + seed * 4.0)
+				var radius := (2.0 + seed * 2.4) * scale
+				var side_offset := normal * (8.0 + seed * 4.0) * scale
 				draw_rect(Rect2(sample + side_offset + jitter - Vector2.ONE * radius * 0.5, Vector2.ONE * radius), Color(color.r, color.g, color.b, alpha), true)
 				drawn += 1
 
@@ -974,6 +867,7 @@ class FutureGoalArrow:
 	var start := Vector2.ZERO
 	var end := Vector2.ZERO
 	var label := ""
+	var zoom_scale := 1.0
 
 	func _draw() -> void:
 		var delta := end - start
@@ -982,16 +876,17 @@ class FutureGoalArrow:
 		var dir := delta.normalized()
 		var normal := Vector2(-dir.y, dir.x)
 		var color := Color(0.50, 0.84, 0.92, 0.34)
+		var scale := maxf(0.35, zoom_scale)
 		var segments := 8
 		for i in segments:
 			if i % 2 == 1:
 				continue
 			var a := start.lerp(end, float(i) / float(segments))
 			var b := start.lerp(end, float(i + 1) / float(segments))
-			draw_line(a, b, Color("02070b"), 7.0, true)
-			draw_line(a, b, color, 3.0, true)
-		var left := end - dir * 14.0 + normal * 7.0
-		var right := end - dir * 14.0 - normal * 7.0
+			draw_line(a, b, Color("02070b"), 7.0 * scale, true)
+			draw_line(a, b, color, 3.0 * scale, true)
+		var left := end - dir * 14.0 * scale + normal * 7.0 * scale
+		var right := end - dir * 14.0 * scale - normal * 7.0 * scale
 		draw_colored_polygon(PackedVector2Array([end, left, right]), color)
 		if not label.is_empty():
 			draw_string(ThemeDB.fallback_font, start.lerp(end, 0.46) + Vector2(8.0, -8.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.74, 0.90, 0.92, 0.72))
@@ -1003,9 +898,11 @@ class MoleculePebbleNode:
 	var molecule_id := ""
 	var pebble_color := Color("62d66f")
 	var selected := false
+	var highlighted := false
 	var depleted := false
 	var is_target := false
 	var lifted := false
+	var zoom_scale := 1.0
 
 	func _ready() -> void:
 		set_process(true)
@@ -1023,41 +920,46 @@ class MoleculePebbleNode:
 			amount = float(simulation.molecule_amounts.get(molecule_id, 0.0))
 			formula = str(simulation.molecule_types[molecule_id].get("formula", "M"))
 		var alpha := 0.46 if depleted else 1.0
-		var glow_radius := radius * (1.34 if selected else 1.12)
-		var glow := Color(pebble_color.r, pebble_color.g, pebble_color.b, (0.34 if selected else 0.13) * alpha)
+		var scale := clampf(size.x / MOLECULE_CARD_SIZE.x, 0.35, 2.5)
+		var glow_radius := radius * (1.42 if selected or highlighted else 1.12)
+		var glow_alpha := 0.42 if selected else (0.30 if highlighted else 0.13)
+		var glow := Color(pebble_color.r, pebble_color.g, pebble_color.b, glow_alpha * alpha)
 		var shadow_radius := radius * (1.24 if lifted else 1.05)
 		draw_circle(size * 0.5 + Vector2(0.0, radius * (0.46 if lifted else 0.20)), shadow_radius, Color(0.0, 0.0, 0.0, (0.42 if lifted else 0.30) * alpha))
 		draw_circle(center, glow_radius, glow)
-		draw_circle(center, radius + 6.0, Color(0.0, 0.015, 0.018, 0.95 * alpha))
-		draw_circle(center, radius + 2.0, Color(pebble_color.lightened(0.18).r, pebble_color.lightened(0.18).g, pebble_color.lightened(0.18).b, alpha))
-		draw_circle(center, radius - 2.0, Color(pebble_color.darkened(0.12).r, pebble_color.darkened(0.12).g, pebble_color.darkened(0.12).b, alpha))
-		draw_arc(center, radius * 0.78, -1.15, 2.15, 24, Color(1, 1, 1, 0.16 * alpha), 2.0, true)
+		draw_circle(center, radius + 5.0 * scale, Color(0.0, 0.015, 0.018, 0.95 * alpha))
+		draw_circle(center, radius + 1.5 * scale, Color(pebble_color.lightened(0.18).r, pebble_color.lightened(0.18).g, pebble_color.lightened(0.18).b, alpha))
+		draw_circle(center, radius - 5.0 * scale, Color(0.035, 0.065, 0.070, 0.98 * alpha))
+		draw_circle(center + Vector2(-radius * 0.22, radius * 0.24), radius * 0.56, Color(0.010, 0.026, 0.030, 0.72 * alpha))
+		_draw_storage_dust(center, radius, amount, alpha)
+		draw_arc(center, radius * 0.83, -1.20, 2.10, 28, Color(pebble_color.lightened(0.45).r, pebble_color.lightened(0.45).g, pebble_color.lightened(0.45).b, 0.28 * alpha), 2.0 * scale, true)
 		draw_circle(center + Vector2(radius * 0.28, -radius * 0.34), radius * 0.18, Color(1, 1, 1, 0.42 * alpha))
 		if is_target:
 			draw_circle(center, radius * 0.58, Color(0.0, 0.015, 0.018, 0.62 * alpha))
 			draw_arc(center, radius * 0.72, 0.0, TAU, 36, Color("8cff6a"), 2.0, true)
 		if selected:
-			draw_arc(center, radius + 12.0, 0.0, TAU, 48, Color("8cff6a"), 2.2, true)
+			draw_arc(center, radius + 12.0 * scale, 0.0, TAU, 48, Color("8cff6a"), 2.2 * scale, true)
+		elif highlighted:
+			draw_arc(center, radius + 10.0 * scale, 0.0, TAU, 48, Color("76f4ff"), 2.0 * scale, true)
 		var label_color := Color("dff8f8", 0.88 * alpha)
 		var text_x := center.x + radius + 10.0
 		draw_string(ThemeDB.fallback_font, Vector2(text_x, center.y - 3.0), "%s" % formula, HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(9.0, 12.0 * size.x / 128.0), label_color)
 		var detail := "sink" if is_target and depleted else "%.0f" % amount
 		draw_string(ThemeDB.fallback_font, Vector2(text_x, center.y + 15.0), detail, HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(8.0, 10.0 * size.x / 128.0), Color(0.70, 0.86, 0.84, 0.72 * alpha))
-		_draw_storage_dust(center, radius, amount, alpha)
 
 	func _draw_storage_dust(center: Vector2, radius: float, amount: float, alpha: float) -> void:
 		if amount <= 0.001:
 			return
-		var count := clampi(int(sqrt(amount) * 0.9), 3, 24)
-		var base := center + Vector2(radius + 34.0, -radius * 0.12)
+		var count := clampi(int(sqrt(amount) * 1.15), 4, 42)
 		var time := Time.get_ticks_msec() / 1000.0
 		for i in count:
 			var seed := float((abs(molecule_id.hash()) + i * 31) % 97) / 97.0
-			var angle := seed * TAU + time * (0.35 + seed * 0.25)
-			var drift := Vector2(cos(angle), sin(angle * 1.7)) * (4.0 + seed * 10.0)
-			var pos := base + Vector2(float(i % 6) * 4.0, float(i / 6) * 4.0) + drift
-			var size_px := 1.6 + seed * 1.8
-			draw_rect(Rect2(pos, Vector2.ONE * size_px), Color(pebble_color.r, pebble_color.g, pebble_color.b, 0.22 * alpha), true)
+			var angle := seed * TAU + time * (0.28 + seed * 0.18)
+			var ring := sqrt(seed) * radius * 0.54
+			var drift := Vector2(cos(angle), sin(angle * 1.41)) * ring
+			var pos := center + drift
+			var size_px := maxf(1.0, radius * (0.045 + seed * 0.025))
+			draw_rect(Rect2(pos - Vector2.ONE * size_px * 0.5, Vector2.ONE * size_px), Color(pebble_color.r, pebble_color.g, pebble_color.b, 0.34 * alpha), true)
 
 class MoleculeHoverPopup:
 	extends Control
@@ -1226,6 +1128,7 @@ class GoalSinkNode:
 
 	var goal: Dictionary = {}
 	var lifted := false
+	var zoom_scale := 1.0
 
 	func _ready() -> void:
 		set_process(true)

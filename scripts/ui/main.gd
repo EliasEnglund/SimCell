@@ -905,6 +905,16 @@ func _molecule_list_button(id: String) -> Button:
 	button.toggle_mode = true
 	button.button_pressed = sim.selected_molecule == id
 	button.custom_minimum_size = Vector2(0, 62)
+	button.mouse_entered.connect(func():
+		if metabolism_workspace != null:
+			metabolism_workspace.highlighted_molecule_id = id
+			metabolism_workspace.rebuild()
+	)
+	button.mouse_exited.connect(func():
+		if metabolism_workspace != null and metabolism_workspace.highlighted_molecule_id == id:
+			metabolism_workspace.highlighted_molecule_id = ""
+			metabolism_workspace.rebuild()
+	)
 	button.pressed.connect(func(): _handle_molecule_click(id))
 	return button
 
