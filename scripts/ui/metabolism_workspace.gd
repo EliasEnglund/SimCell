@@ -43,7 +43,12 @@ var _hover_inside := false
 var _last_hover_local := Vector2.ZERO
 
 func _ready() -> void:
+	set_process(true)
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
+
+func _process(_delta: float) -> void:
+	if _dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_drag(false)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMagnifyGesture and get_global_rect().has_point(event.position):
@@ -81,21 +86,7 @@ func _input(event: InputEvent) -> void:
 					emit_signal("empty_requested")
 				else:
 					emit_signal("molecule_requested", molecule_id)
-			_dragging = false
-			if _dragging_molecule and not _drag_molecule_id.is_empty() and _layout_positions.has(_drag_molecule_id):
-				_layout_positions[_drag_molecule_id] = _snap_to_grid(_layout_positions[_drag_molecule_id])
-				_manual_positions[_drag_molecule_id] = true
-				_rebuild()
-			elif _dragging_goal and not _drag_goal_id.is_empty() and _manual_goal_positions.has(_drag_goal_id):
-				_manual_goal_positions[_drag_goal_id] = _snap_to_grid(_manual_goal_positions[_drag_goal_id])
-				_rebuild()
-			_dragging_molecule = false
-			_dragging_goal = false
-			_drag_molecule_id = ""
-			_drag_goal_id = ""
-			_drag_grab_offset_world = Vector2.ZERO
-			_press_started_in_workspace = false
-			mouse_default_cursor_shape = Control.CURSOR_DRAG
+			_finish_drag(true)
 	elif event is InputEventMouseMotion and _dragging:
 		if _dragging_molecule and not _drag_molecule_id.is_empty() and _visible_sizes.has(_drag_molecule_id):
 			var local: Vector2 = event.position - global_position
@@ -120,6 +111,29 @@ func _input(event: InputEvent) -> void:
 		if _hover_inside:
 			_hover_inside = false
 			_hide_hover_popup()
+
+func _finish_drag(rebuild_after: bool = true) -> void:
+	if not _dragging:
+		return
+	_dragging = false
+	if _dragging_molecule and not _drag_molecule_id.is_empty() and _layout_positions.has(_drag_molecule_id):
+		var size_px: Vector2 = _visible_sizes.get(_drag_molecule_id, MOLECULE_CARD_SIZE * zoom)
+		_layout_positions[_drag_molecule_id] = _snap_node_to_grid(_layout_positions[_drag_molecule_id], size_px / zoom)
+		_manual_positions[_drag_molecule_id] = true
+		rebuild_after = true
+	elif _dragging_goal and not _drag_goal_id.is_empty() and _manual_goal_positions.has(_drag_goal_id):
+		var goal_size_px: Vector2 = _visible_goal_sizes.get(_drag_goal_id, GOAL_CARD_SIZE * zoom)
+		_manual_goal_positions[_drag_goal_id] = _snap_node_to_grid(_manual_goal_positions[_drag_goal_id], goal_size_px / zoom)
+		rebuild_after = true
+	_dragging_molecule = false
+	_dragging_goal = false
+	_drag_molecule_id = ""
+	_drag_goal_id = ""
+	_drag_grab_offset_world = Vector2.ZERO
+	_press_started_in_workspace = false
+	mouse_default_cursor_shape = Control.CURSOR_DRAG
+	if rebuild_after:
+		_rebuild()
 
 func _zoom_at(factor: float, local_focus: Vector2) -> void:
 	var previous_zoom := zoom
@@ -259,57 +273,78 @@ func _orthogonal_route(start: Vector2, end: Vector2, vertical_first: bool = true
 
 func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary, step_layout: Dictionary) -> void:
 	for reaction in simulation.pathway_arrows():
-		var step_key: String = reaction.get("blueprint_id", "")
 		var substrate: String = reaction.get("substrate", "")
 		var products: Array = reaction.get("products", [])
 		if not positions.has(substrate):
 			continue
-		var source_bottom: Vector2 = _node_port(positions[substrate], sizes[substrate], Vector2.DOWN)
-		var step_rect: Rect2 = step_layout.get(step_key, {}).get("rect", Rect2())
-		var step_center := step_rect.get_center()
-		if step_rect.size.x > 0.0:
-			var enzyme_arrow := RoutedArrowLine.new()
-			var step_top := Vector2(step_center.x, step_rect.position.y)
-			enzyme_arrow.points = _orthogonal_route(source_bottom, step_top, true)
-			enzyme_arrow.rate = float(reaction.get("rate", 0.0))
-			enzyme_arrow.active = int(reaction.get("active_count", 0)) > 0
-			enzyme_arrow.queued = int(reaction.get("queued_count", 0)) > 0
-			enzyme_arrow.label = _arrow_label(reaction)
-			enzyme_arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
-			add_child(enzyme_arrow)
-			_register_route_hover(enzyme_arrow.points, reaction)
-			_register_flux_route(enzyme_arrow.points, substrate, substrate, reaction)
-		var product_index := 0
-		var visible_product_count := 0
+		var visible_products: Array[String] = []
 		for product_id in products:
 			if positions.has(product_id):
-				visible_product_count += 1
-		for product_id in products:
-			if not positions.has(product_id):
-				continue
-			var target_top: Vector2 = _node_port(positions[product_id], sizes[product_id], Vector2.UP)
+				visible_products.append(str(product_id))
+		if visible_products.is_empty():
+			continue
+		var source_center := _node_center(positions[substrate], sizes[substrate])
+		var product_centers: Array[Vector2] = []
+		for product_id in visible_products:
+			product_centers.append(_node_center(positions[product_id], sizes[product_id]))
+		var average_target := Vector2.ZERO
+		for center in product_centers:
+			average_target += center
+		average_target /= float(product_centers.size())
+		var source_dir := _primary_axis(average_target - source_center)
+		var source_port := _node_port(positions[substrate], sizes[substrate], source_dir)
+		for product_index in visible_products.size():
+			var product_id := visible_products[product_index]
+			var target_center := _node_center(positions[product_id], sizes[product_id])
+			var target_dir := _primary_axis(source_center - target_center)
+			var target_port := _node_port(positions[product_id], sizes[product_id], target_dir)
 			var arrow := RoutedArrowLine.new()
-			if step_rect.size.x > 0.0:
-				var lane_offset := (float(product_index) - float(visible_product_count - 1) * 0.5) * minf(44.0 * zoom, step_rect.size.x * 0.26)
-				var start := Vector2(step_center.x + lane_offset, step_rect.end.y)
-				var split_y := start.y + maxf(36.0 * zoom, minf(92.0 * zoom, (target_top.y - start.y) * 0.42))
-				arrow.points = [
-					start,
-					Vector2(start.x, split_y),
-					Vector2(target_top.x, split_y),
-					target_top
-				]
-			else:
-				arrow.points = [source_bottom, target_top]
+			arrow.points = _routed_between_nodes(source_port, target_port, source_dir, target_dir, visible_products.size(), product_index)
 			arrow.rate = float(reaction.get("rate", 0.0))
 			arrow.active = int(reaction.get("active_count", 0)) > 0
 			arrow.queued = int(reaction.get("queued_count", 0)) > 0
-			arrow.label = ""
+			arrow.label = _arrow_label(reaction) if product_index == 0 else ""
 			arrow.set_anchors_preset(Control.PRESET_FULL_RECT)
 			add_child(arrow)
 			_register_route_hover(arrow.points, reaction)
 			_register_flux_route(arrow.points, substrate, product_id, reaction)
-			product_index += 1
+
+func _primary_axis(delta: Vector2) -> Vector2:
+	if absf(delta.x) > absf(delta.y):
+		return Vector2.RIGHT if delta.x >= 0.0 else Vector2.LEFT
+	return Vector2.DOWN if delta.y >= 0.0 else Vector2.UP
+
+func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2, end_dir: Vector2, branch_count: int = 1, branch_index: int = 0) -> Array[Vector2]:
+	var away_base := start + start_dir.normalized() * GRID_CELL * zoom * 0.34
+	var approach_base := end + end_dir.normalized() * GRID_CELL * zoom * 0.34
+	var lane_offset := (float(branch_index) - float(branch_count - 1) * 0.5) * GRID_CELL * zoom * 0.16
+	var away := away_base
+	var approach := approach_base
+	if start_dir.y != 0.0:
+		away.x += lane_offset
+	else:
+		away.y += lane_offset
+	if end_dir.y != 0.0:
+		approach.x += lane_offset
+	else:
+		approach.y += lane_offset
+	var route: Array[Vector2] = [start, away_base, away]
+	if absf(away.x - approach.x) > 1.0 and absf(away.y - approach.y) > 1.0:
+		if absf(start_dir.y) > 0.0:
+			route.append(Vector2(away.x, approach.y))
+		else:
+			route.append(Vector2(approach.x, away.y))
+	route.append(approach)
+	route.append(approach_base)
+	route.append(end)
+	return _clean_route(route)
+
+func _clean_route(points: Array[Vector2]) -> Array[Vector2]:
+	var cleaned: Array[Vector2] = []
+	for point in points:
+		if cleaned.is_empty() or cleaned[cleaned.size() - 1].distance_to(point) > 1.0:
+			cleaned.append(point)
+	return cleaned
 
 func _register_route_hover(points: Array[Vector2], reaction: Dictionary) -> void:
 	_visible_routes.append({
@@ -518,6 +553,10 @@ func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, a
 
 func _snap_to_grid(pos: Vector2) -> Vector2:
 	return Vector2(round(pos.x / GRID_CELL) * GRID_CELL, round(pos.y / GRID_CELL) * GRID_CELL)
+
+func _snap_node_to_grid(pos: Vector2, node_size: Vector2) -> Vector2:
+	var center := pos + node_size * 0.5
+	return _snap_to_grid(center) - node_size * 0.5
 
 func _snap_screen_to_grid(pos: Vector2) -> Vector2:
 	var world := (pos - pan_offset) / zoom
