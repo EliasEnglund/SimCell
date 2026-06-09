@@ -618,7 +618,7 @@ func _draw_membrane_source_and_route(source_key: String, source_anchor: Vector2,
 	var target_port: Vector2
 	if importing:
 		source_port = Vector2(source_anchor.x, MEMBRANE_LINE_Y + GRID_CELL * 0.08)
-		target_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, -route_dir)
+		target_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, Vector2.UP)
 	else:
 		source_port = _node_port_world(molecule_rect_world.position, molecule_rect_world.size, route_dir)
 		target_port = _node_port_world(marker_rect_world.position, marker_rect_world.size, -route_dir)
@@ -676,12 +676,12 @@ func _metabolism_layout(ids: Array[String], map_width: float) -> Dictionary:
 		else:
 			source_anchor = _nearest_available_source_position(source_anchor, source_key)
 			_manual_import_sources[source_key] = source_anchor
-		var preferred_import := _snap_node_to_grid_cell(Vector2(source_anchor.x - molecule_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.20), molecule_size)
+		var preferred_import := _snap_node_to_grid_cell(Vector2(source_anchor.x - molecule_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.55), molecule_size)
 		_layout_positions[molecule_id] = _nearest_available_node_position(preferred_import, molecule_size, molecule_id)
 	var first_id := ids[0]
 	if not _layout_positions.has(first_id):
 		var first_size: Vector2 = sizes[first_id]
-		_layout_positions[first_id] = _snap_node_to_grid_cell(Vector2(map_width * 0.5 - first_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.10), first_size)
+		_layout_positions[first_id] = _snap_node_to_grid_cell(Vector2(map_width * 0.5 - first_size.x * 0.5, MEMBRANE_LINE_Y + GRID_CELL * 1.55), first_size)
 	for pathway in simulation.pathway_arrows():
 		var substrate_id: String = pathway.get("substrate", "")
 		if not _layout_positions.has(substrate_id):
@@ -737,8 +737,8 @@ func _migrate_molecules_below_membrane(ids: Array[String]) -> void:
 		if not _layout_positions.has(id):
 			continue
 		var pos := Vector2(_layout_positions[id])
-		if pos.y < MEMBRANE_LINE_Y + GRID_CELL * 0.72:
-			_layout_positions[id] = _nearest_available_node_position(_snap_node_to_grid_cell(Vector2(pos.x, MEMBRANE_LINE_Y + GRID_CELL * 1.20), MOLECULE_CARD_SIZE), MOLECULE_CARD_SIZE, id)
+		if pos.y < MEMBRANE_LINE_Y + GRID_CELL * 1.05:
+			_layout_positions[id] = _nearest_available_node_position(_snap_node_to_grid_cell(Vector2(pos.x, MEMBRANE_LINE_Y + GRID_CELL * 1.55), MOLECULE_CARD_SIZE), MOLECULE_CARD_SIZE, id)
 
 func _open_position(preferred: Vector2, node_size: Vector2, sizes: Dictionary, allow_side_shift: bool = true, ignore_id: String = "") -> Vector2:
 	var gap := Vector2(GRID_CELL, GRID_CELL)
@@ -2172,9 +2172,9 @@ class MetabolismMembraneLine:
 		draw_line(Vector2(x0, y + 3.0), Vector2(x1, y + 3.0), Color(0.55, 1.0, 0.70, 0.45), 2.2, true)
 		draw_line(Vector2(x0, y), Vector2(x1, y), Color(0.50, 1.0, 0.86, 0.52), 1.5, true)
 		var tick_spacing := grid_cell * zoom
-		var label_x := minf(x1 - 168.0, size.x - 188.0)
-		draw_string(ThemeDB.fallback_font, Vector2(label_x, y - 12.0), "Outside", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.95, 1.0, 0.78))
-		draw_string(ThemeDB.fallback_font, Vector2(label_x, y + 26.0), "Inside", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.72, 1.0, 0.78, 0.78))
+		var label_x := clampf(minf(x1 - 126.0, size.x - 142.0), 18.0, size.x - 142.0)
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, y - 17.0), "Outside", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.62, 0.95, 1.0, 0.84))
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, y + 36.0), "Inside", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.72, 1.0, 0.78, 0.84))
 		if tick_spacing < 12.0:
 			return
 		var world_x: float = floor(world_bounds.position.x / grid_cell) * grid_cell
