@@ -64,6 +64,7 @@ var designer_canvas: Control
 var designer_info_panel: VBoxContainer
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = true
 	sim.changed.connect(_refresh)
 	sim.event_logged.connect(_log_event)
 	_setup_music()
@@ -76,6 +77,10 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		get_tree().quit()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
 
 func _build_title_screen() -> void:
