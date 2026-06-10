@@ -503,6 +503,7 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_exploration_cell_concepts_section())
 	stack.add_child(_art_molecule_variant_section())
 	stack.add_child(_art_selected_molecule_examples_section())
+	stack.add_child(_art_enzyme_card_variants_section())
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
 		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
@@ -630,6 +631,105 @@ func _art_selected_molecule_examples_section() -> Control:
 		examples.append([str(demo.get("name", demo.get("formula", "Molecule"))), demo])
 	for item in examples:
 		row.add_child(_art_molecule_example_card(str(item[0]), item[1], _selected_molecule_style()))
+	return panel
+
+func _art_enzyme_card_variants_section() -> Control:
+	var panel := _glow_panel("Enzyme Hover Card Variants")
+	var note := Label.new()
+	note.text = "These are hover-card directions for arrows in The Metabolism. Each card shows function, Kcat, Km, stability, amino-acid price, and heat effect. Pick the number that is easiest to read while still feeling like SimCell."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 16)
+	panel.add_child(grid)
+	var variants := [
+		{
+			"n": 1,
+			"name": "Compact Tooltip",
+			"subtitle": "LYASE | C-C bond cleavage",
+			"function": "Splits one carbon-carbon bond and creates two downstream products.",
+			"kcat": 1.2,
+			"km": 18.0,
+			"stability": 72.0,
+			"price": 36.0,
+			"heat": 0.8,
+			"mode": 0,
+			"accent": Color("8cff6a")
+		},
+		{
+			"n": 2,
+			"name": "Blueprint Card",
+			"subtitle": "DEHYDROGENASE | redox step",
+			"function": "Converts C-O into C=O and produces NADH. Strong output but adds redox pressure.",
+			"kcat": 0.85,
+			"km": 11.0,
+			"stability": 54.0,
+			"price": 52.0,
+			"heat": 1.4,
+			"mode": 1,
+			"accent": Color("76f4ff")
+		},
+		{
+			"n": 3,
+			"name": "Kinetic Dashboard",
+			"subtitle": "AMINASE | adds nitrogen",
+			"function": "Consumes N and installs it on a two-carbon backbone to approach amino acid production.",
+			"kcat": 0.42,
+			"km": 7.5,
+			"stability": 86.0,
+			"price": 74.0,
+			"heat": 0.35,
+			"mode": 2,
+			"accent": Color("7fa8ff")
+		},
+		{
+			"n": 4,
+			"name": "Cost And Risk",
+			"subtitle": "DECARBOXYLASE | CO2 release",
+			"function": "Removes a one-carbon gas product. Useful cleanup, but wastes carbon if overused.",
+			"kcat": 1.75,
+			"km": 24.0,
+			"stability": 38.0,
+			"price": 28.0,
+			"heat": 2.0,
+			"mode": 3,
+			"accent": Color("ffb35f")
+		},
+		{
+			"n": 5,
+			"name": "Scientific Tooltip",
+			"subtitle": "OXYGENASE | adds oxygen",
+			"function": "Adds oxygen to a carbon site. Opens routes toward acids and energy extraction.",
+			"kcat": 0.64,
+			"km": 9.0,
+			"stability": 62.0,
+			"price": 48.0,
+			"heat": 0.95,
+			"mode": 4,
+			"accent": Color("e95058")
+		},
+		{
+			"n": 6,
+			"name": "Game Readout",
+			"subtitle": "PHOSPHORYLASE | ATP gate",
+			"function": "Consumes ATP to prime the molecule for a higher-value downstream reaction.",
+			"kcat": 0.58,
+			"km": 13.0,
+			"stability": 68.0,
+			"price": 61.0,
+			"heat": 1.1,
+			"mode": 5,
+			"accent": Color("b956de")
+		}
+	]
+	for variant in variants:
+		var card := EnzymeHoverCardMockup.new()
+		card.custom_minimum_size = Vector2(440, 286)
+		card.data = variant
+		grid.add_child(card)
 	return panel
 
 func _art_molecule_example_card(label_text: String, molecule: Dictionary, style: Dictionary) -> Control:
@@ -2025,6 +2125,211 @@ class ProteinGlyph:
 				draw_line(prev, p, Color(0.8, 0.95, 0.95, 0.24), 3.0, true)
 		draw_circle(center, radius * 0.28, Color("02070b"))
 		draw_circle(center, radius * 0.21, Color("728186").lightened(0.2))
+
+class EnzymeHoverCardMockup:
+	extends Control
+
+	var data := {}
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size).grow(-4.0)
+		var accent: Color = data.get("accent", Color("76f4ff"))
+		var mode := int(data.get("mode", 0))
+		_draw_frame(rect, accent, mode)
+		_draw_number(rect, accent)
+		_draw_title(rect, accent)
+		_draw_function(rect.position + Vector2(18.0, 78.0), rect.size.x - 36.0)
+		match mode:
+			0:
+				_draw_bar_stack(rect, accent)
+				_draw_tags(rect, accent)
+			1:
+				_draw_glyph(rect.position + Vector2(68.0, 170.0), 44.0, accent)
+				_draw_metric_tiles(rect, accent)
+				_draw_cost_strip(rect, accent)
+			2:
+				_draw_dials(rect, accent)
+				_draw_heat_tag(rect.position + Vector2(rect.size.x - 112.0, rect.end.y - 36.0), 92.0)
+			3:
+				_draw_resource_boxes(rect)
+				_draw_bar(rect.position + Vector2(20.0, rect.end.y - 36.0), rect.size.x - 40.0, "Catalytic value", "%.2f/s   %.0fs" % [float(data.get("kcat", 0.0)), float(data.get("stability", 0.0))], (_norm_kcat() + _norm_stability()) * 0.5, Color("8cff6a"))
+			4:
+				_draw_science_table(rect, accent)
+			_:
+				_draw_glyph(rect.position + Vector2(66.0, 180.0), 48.0, accent)
+				_draw_game_rows(rect, accent)
+				_draw_tags(rect, accent)
+
+	func _draw_frame(rect: Rect2, accent: Color, mode: int) -> void:
+		var fills := [
+			Color(0.035, 0.10, 0.12, 0.96),
+			Color(0.02, 0.07, 0.11, 0.96),
+			Color(0.04, 0.09, 0.10, 0.98),
+			Color(0.09, 0.065, 0.045, 0.97),
+			Color(0.025, 0.095, 0.115, 0.96),
+			Color(0.045, 0.10, 0.145, 0.97)
+		]
+		draw_rect(rect, fills[mode % fills.size()], true)
+		draw_rect(rect.grow(2.0), Color(accent.r, accent.g, accent.b, 0.14), false, 8.0)
+		draw_rect(rect, Color(accent.r, accent.g, accent.b, 0.82), false, 1.5)
+		draw_line(rect.position + Vector2(16.0, 50.0), rect.position + Vector2(rect.size.x - 16.0, 50.0), Color(accent.r, accent.g, accent.b, 0.22), 1.0)
+		if mode == 1:
+			for i in 7:
+				var x := rect.position.x + 18.0 + float(i) * 58.0
+				draw_line(Vector2(x, rect.position.y + 8.0), Vector2(x + 42.0, rect.end.y - 8.0), Color(accent.r, accent.g, accent.b, 0.035), 1.0)
+
+	func _draw_number(rect: Rect2, accent: Color) -> void:
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x - 38.0, 33.0), "%d" % int(data.get("n", 0)), HORIZONTAL_ALIGNMENT_CENTER, 24.0, 26, Color(accent.r, accent.g, accent.b, 0.92))
+
+	func _draw_title(rect: Rect2, accent: Color) -> void:
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 28.0), str(data.get("name", "Enzyme Card")), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 66.0, 18, Color("f4fbff"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 49.0), str(data.get("subtitle", "ENZYME")), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 66.0, 11, accent)
+
+	func _draw_function(pos: Vector2, width: float) -> void:
+		var words := str(data.get("function", "")).split(" ")
+		var line := ""
+		var y := pos.y
+		for word in words:
+			var test := str(word) if line.is_empty() else "%s %s" % [line, str(word)]
+			if test.length() > 60:
+				draw_string(ThemeDB.fallback_font, Vector2(pos.x, y), line, HORIZONTAL_ALIGNMENT_LEFT, width, 12, Color(0.80, 0.92, 0.92, 0.90))
+				line = str(word)
+				y += 17.0
+			else:
+				line = test
+		if not line.is_empty():
+			draw_string(ThemeDB.fallback_font, Vector2(pos.x, y), line, HORIZONTAL_ALIGNMENT_LEFT, width, 12, Color(0.80, 0.92, 0.92, 0.90))
+
+	func _draw_bar_stack(rect: Rect2, accent: Color) -> void:
+		var y := rect.position.y + 134.0
+		_draw_bar(Vector2(rect.position.x + 20.0, y), rect.size.x - 40.0, "Kcat", "%.2f/s" % float(data.get("kcat", 0.0)), _norm_kcat(), accent)
+		_draw_bar(Vector2(rect.position.x + 20.0, y + 32.0), rect.size.x - 40.0, "Affinity", "Km %.1f" % float(data.get("km", 0.0)), _norm_inverse_km(), Color("76f4ff"))
+		_draw_bar(Vector2(rect.position.x + 20.0, y + 64.0), rect.size.x - 40.0, "Stability", "%.0fs" % float(data.get("stability", 0.0)), _norm_stability(), Color("8cff6a"))
+
+	func _draw_bar(pos: Vector2, width: float, label: String, value: String, progress: float, color: Color) -> void:
+		draw_string(ThemeDB.fallback_font, pos + Vector2(0.0, 13.0), label, HORIZONTAL_ALIGNMENT_LEFT, 76.0, 12, Color(0.72, 0.86, 0.86, 0.78))
+		var bar := Rect2(pos + Vector2(86.0, 2.0), Vector2(width - 166.0, 12.0))
+		draw_rect(bar, Color(0.0, 0.0, 0.0, 0.24), true)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(progress, 0.0, 1.0), bar.size.y)), Color(color.r, color.g, color.b, 0.84), true)
+		draw_rect(bar, Color(color.r, color.g, color.b, 0.42), false, 1.0)
+		draw_string(ThemeDB.fallback_font, pos + Vector2(width - 70.0, 13.0), value, HORIZONTAL_ALIGNMENT_RIGHT, 70.0, 12, Color("f4fbff"))
+
+	func _draw_tags(rect: Rect2, accent: Color) -> void:
+		var y := rect.end.y - 34.0
+		_draw_tag(Rect2(Vector2(rect.position.x + 20.0, y), Vector2(114.0, 22.0)), "Cost %.0f aa" % float(data.get("price", 0.0)), Color("ffe064"))
+		_draw_tag(Rect2(Vector2(rect.position.x + 144.0, y), Vector2(102.0, 22.0)), "Heat +%.1f" % float(data.get("heat", 0.0)), _heat_color())
+		_draw_tag(Rect2(Vector2(rect.position.x + 256.0, y), Vector2(124.0, 22.0)), "Unique trait", accent)
+
+	func _draw_tag(rect: Rect2, text: String, color: Color) -> void:
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.13), true)
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.58), false, 1.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, 15.0), text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 12.0, 11, color.lightened(0.20))
+
+	func _draw_metric_tiles(rect: Rect2, accent: Color) -> void:
+		var top := rect.position + Vector2(120.0, 140.0)
+		_draw_tile(Rect2(top, Vector2(74.0, 58.0)), "Kcat", "%.2f" % float(data.get("kcat", 0.0)), accent)
+		_draw_tile(Rect2(top + Vector2(84.0, 0.0), Vector2(74.0, 58.0)), "Km", "%.1f" % float(data.get("km", 0.0)), Color("dbeff2"))
+		_draw_tile(Rect2(top + Vector2(168.0, 0.0), Vector2(82.0, 58.0)), "Stable", "%.0fs" % float(data.get("stability", 0.0)), Color("8cff6a"))
+		_draw_tile(Rect2(top + Vector2(260.0, 0.0), Vector2(74.0, 58.0)), "Heat", "+%.1f" % float(data.get("heat", 0.0)), _heat_color())
+
+	func _draw_tile(rect: Rect2, label: String, value: String, color: Color) -> void:
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.10), true)
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.44), false, 1.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, 18.0), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 16.0, 11, Color(0.72, 0.88, 0.88, 0.78))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, 44.0), value, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 16.0, 16, color.lightened(0.16))
+
+	func _draw_cost_strip(rect: Rect2, accent: Color) -> void:
+		var strip := Rect2(rect.position + Vector2(20.0, rect.end.y - 34.0), Vector2(rect.size.x - 40.0, 18.0))
+		draw_rect(strip, Color(0.0, 0.0, 0.0, 0.22), true)
+		draw_rect(Rect2(strip.position, Vector2(strip.size.x * _norm_price(), strip.size.y)), Color("ffe064"), true)
+		draw_rect(strip, Color(accent.r, accent.g, accent.b, 0.34), false, 1.0)
+		draw_string(ThemeDB.fallback_font, strip.position + Vector2(8.0, 14.0), "Protein synthesis price: %.0f amino acids" % float(data.get("price", 0.0)), HORIZONTAL_ALIGNMENT_LEFT, strip.size.x - 16.0, 10, Color("07181c"))
+
+	func _draw_dials(rect: Rect2, accent: Color) -> void:
+		var y := rect.position.y + 176.0
+		_draw_dial(Vector2(rect.position.x + 86.0, y), 42.0, _norm_kcat(), "Kcat", accent)
+		_draw_dial(Vector2(rect.position.x + 196.0, y), 42.0, _norm_inverse_km(), "Affinity", Color("76f4ff"))
+		_draw_dial(Vector2(rect.position.x + 306.0, y), 42.0, _norm_stability(), "Stable", Color("8cff6a"))
+
+	func _draw_dial(center: Vector2, radius: float, progress: float, label: String, color: Color) -> void:
+		draw_circle(center, radius, Color(0.0, 0.0, 0.0, 0.20))
+		draw_arc(center, radius - 5.0, -PI * 0.70, PI * 1.30, 44, Color(color.r, color.g, color.b, 0.20), 6.0, true)
+		draw_arc(center, radius - 5.0, -PI * 0.70, -PI * 0.70 + PI * 2.0 * clampf(progress, 0.0, 1.0), 44, color, 6.0, true)
+		draw_string(ThemeDB.fallback_font, center + Vector2(-radius, 4.0), "%d%%" % int(progress * 100.0), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 14, Color("f4fbff"))
+		draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 18.0), label, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11, Color(0.78, 0.90, 0.90, 0.82))
+
+	func _draw_resource_boxes(rect: Rect2) -> void:
+		_draw_resource_box(Rect2(rect.position + Vector2(22.0, 138.0), Vector2(184.0, 92.0)), "Build Price", "%.0f amino acids" % float(data.get("price", 0.0)), Color("ffe064"), _norm_price())
+		_draw_resource_box(Rect2(rect.position + Vector2(218.0, 138.0), Vector2(190.0, 92.0)), "Heat Effect", "+%.1f heat / reaction" % float(data.get("heat", 0.0)), _heat_color(), _norm_heat())
+
+	func _draw_resource_box(rect: Rect2, title: String, value: String, color: Color, progress: float) -> void:
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.10), true)
+		draw_rect(rect, Color(color.r, color.g, color.b, 0.48), false, 1.2)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(12.0, 23.0), title, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 24.0, 13, Color("f4fbff"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(12.0, 48.0), value, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 24.0, 13, color.lightened(0.18))
+		var bar := Rect2(rect.position + Vector2(12.0, 66.0), Vector2(rect.size.x - 24.0, 9.0))
+		draw_rect(bar, Color(0.0, 0.0, 0.0, 0.24), true)
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)), color, true)
+
+	func _draw_science_table(rect: Rect2, accent: Color) -> void:
+		var table := Rect2(rect.position + Vector2(20.0, 135.0), Vector2(rect.size.x - 40.0, 96.0))
+		draw_rect(table, Color(0.0, 0.0, 0.0, 0.18), true)
+		draw_rect(table, Color(accent.r, accent.g, accent.b, 0.28), false, 1.0)
+		var rows := [
+			["Turnover", "Kcat", "%.2f reactions/s" % float(data.get("kcat", 0.0)), accent],
+			["Affinity", "Km", "%.1f substrate units" % float(data.get("km", 0.0)), Color("dbeff2")],
+			["Lifetime", "Stability", "%.0f seconds" % float(data.get("stability", 0.0)), Color("8cff6a")],
+			["Burden", "Cost / Heat", "%.0f aa  |  +%.1f" % [float(data.get("price", 0.0)), float(data.get("heat", 0.0))], _heat_color()]
+		]
+		for i in rows.size():
+			var row_y := table.position.y + 22.0 + float(i) * 20.0
+			draw_string(ThemeDB.fallback_font, Vector2(table.position.x + 10.0, row_y), rows[i][0], HORIZONTAL_ALIGNMENT_LEFT, 82.0, 12, Color(0.72, 0.88, 0.88, 0.82))
+			draw_string(ThemeDB.fallback_font, Vector2(table.position.x + 94.0, row_y), rows[i][1], HORIZONTAL_ALIGNMENT_LEFT, 76.0, 12, rows[i][3])
+			draw_string(ThemeDB.fallback_font, Vector2(table.position.x + 178.0, row_y), rows[i][2], HORIZONTAL_ALIGNMENT_LEFT, table.size.x - 188.0, 12, Color("f4fbff"))
+		_draw_heat_tag(rect.position + Vector2(22.0, rect.end.y - 36.0), 110.0)
+
+	func _draw_game_rows(rect: Rect2, accent: Color) -> void:
+		var start := rect.position + Vector2(130.0, 137.0)
+		_draw_bar(start, 270.0, "Speed", "%.2f/s" % float(data.get("kcat", 0.0)), _norm_kcat(), accent)
+		_draw_bar(start + Vector2(0.0, 32.0), 270.0, "Affinity", "Km %.1f" % float(data.get("km", 0.0)), _norm_inverse_km(), Color("76f4ff"))
+		_draw_bar(start + Vector2(0.0, 64.0), 270.0, "Lifetime", "%.0fs" % float(data.get("stability", 0.0)), _norm_stability(), Color("8cff6a"))
+
+	func _draw_heat_tag(pos: Vector2, width: float) -> void:
+		_draw_tag(Rect2(pos, Vector2(width, 22.0)), "heat +%.1f" % float(data.get("heat", 0.0)), _heat_color())
+
+	func _draw_glyph(center: Vector2, radius: float, accent: Color) -> void:
+		for i in 7:
+			var angle := float(i) / 7.0 * TAU + float(data.get("n", 0)) * 0.31
+			var p := center + Vector2(cos(angle), sin(angle)) * radius * (0.54 + float(i % 3) * 0.13)
+			draw_line(center, p, Color(accent.r, accent.g, accent.b, 0.18), 3.0, true)
+			draw_circle(p, radius * 0.18, Color(accent.r, accent.g, accent.b, 0.28))
+		draw_circle(center, radius * 0.54, Color("02070b"))
+		draw_circle(center, radius * 0.46, Color(accent.r, accent.g, accent.b, 0.20))
+		draw_arc(center, radius * 0.32, 0.0, TAU * 0.78, 32, accent, 3.0, true)
+		draw_circle(center + Vector2(radius * 0.14, -radius * 0.18), radius * 0.08, Color(1.0, 1.0, 1.0, 0.55))
+
+	func _norm_kcat() -> float:
+		return clampf(float(data.get("kcat", 0.0)) / 2.0, 0.0, 1.0)
+
+	func _norm_inverse_km() -> float:
+		return clampf(1.0 - float(data.get("km", 0.0)) / 30.0, 0.0, 1.0)
+
+	func _norm_stability() -> float:
+		return clampf(float(data.get("stability", 0.0)) / 100.0, 0.0, 1.0)
+
+	func _norm_price() -> float:
+		return clampf(float(data.get("price", 0.0)) / 90.0, 0.0, 1.0)
+
+	func _norm_heat() -> float:
+		return clampf(float(data.get("heat", 0.0)) / 2.2, 0.0, 1.0)
+
+	func _heat_color() -> Color:
+		var heat := float(data.get("heat", 0.0))
+		if heat >= 1.5:
+			return Color("ff7a5c")
+		if heat >= 0.9:
+			return Color("ffb35f")
+		return Color("8cff6a")
 
 class ProteinContextDish:
 	extends Control
