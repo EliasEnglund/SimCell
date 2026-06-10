@@ -487,6 +487,7 @@ func _build_art_lab_view() -> void:
 	stack.add_theme_constant_override("separation", 18)
 	margin.add_child(stack)
 	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
+	stack.add_child(_art_exploration_cell_concepts_section())
 	stack.add_child(_art_molecule_variant_section())
 	stack.add_child(_art_selected_molecule_examples_section())
 	stack.add_child(_art_icon_section("Basic Resources", [
@@ -527,6 +528,33 @@ func _build_art_lab_view() -> void:
 		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
 	], 520.0))
 	stack.add_child(_art_phospholipid_animation_section())
+
+func _art_exploration_cell_concepts_section() -> Control:
+	var panel := _glow_panel("Exploration Cell Concepts")
+	var note := Label.new()
+	note.text = "Generated bitmap tests for replacing the code-drawn exploration cell. The animation preview cycles frames to test a living membrane / flagellum feel without redrawing the cell in code."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	panel.add_child(_art_sheet_section("Rendered Exploration Styles", [
+		["Four rendered directions: painterly, microscope illustration, clean sprite, watercolor", "res://assets/art_lab/exploration/cell-rendered-concepts.png"]
+	], 360.0))
+	panel.add_child(_art_sheet_section("Pixel Exploration Styles", [
+		["Four pixel-art directions: crisp 16-bit, detailed 32-bit, chunky arcade, glowing hybrid", "res://assets/art_lab/exploration/cell-pixel-concepts.png"]
+	], 360.0))
+	var cycle_panel := _glow_panel("Sprite Cycle Test")
+	var cycle_note := Label.new()
+	cycle_note.text = "This preview reads a six-frame generated sheet and cycles it. It is a quick test of using pre-rendered frames for membrane breathing and flagellum movement."
+	cycle_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cycle_note.modulate = Color("dbeff2")
+	cycle_panel.add_child(cycle_note)
+	var preview := CellSpriteCyclePreview.new()
+	preview.sheet_path = "res://assets/art_lab/exploration/cell-animation-cycle.png"
+	preview.frame_count = 6
+	preview.custom_minimum_size = Vector2(760, 230)
+	cycle_panel.add_child(preview)
+	panel.add_child(cycle_panel)
+	return panel
 
 func _art_molecule_variant_section() -> Control:
 	var panel := _glow_panel("Molecule Style Variants")
@@ -2510,6 +2538,51 @@ class MembraneCrossSection:
 			if formula.contains("S"):
 				return "diamond"
 		return "circle"
+
+class CellSpriteCyclePreview:
+	extends Control
+
+	var sheet_path := ""
+	var frame_count := 1
+	var frame_rate := 6.0
+	var _elapsed := 0.0
+	var _texture: Texture2D
+
+	func _ready() -> void:
+		_texture = _load_texture(sheet_path)
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("0b242b"), true)
+		for i in 18:
+			var t := float(i) / 17.0
+			draw_line(Vector2(0, size.y * t), Vector2(size.x, size.y * t), Color(0.45, 0.95, 1.0, 0.018), 1.0)
+		if _texture == null or frame_count <= 0:
+			draw_string(ThemeDB.fallback_font, size * 0.5, "Missing sprite sheet", HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color("dbeff2"))
+			return
+		var frame := int(floor(_elapsed * frame_rate)) % frame_count
+		var frame_width := float(_texture.get_width()) / float(frame_count)
+		var source := Rect2(Vector2(frame_width * frame, 0), Vector2(frame_width, _texture.get_height()))
+		var target := _fit_rect(Vector2(frame_width, _texture.get_height()), Rect2(Vector2(14, 16), size - Vector2(28, 48)))
+		draw_texture_rect_region(_texture, target, source)
+		draw_rect(target, Color(0.46, 0.96, 1.0, 0.28), false, 1.0)
+		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 16), "Cycling frame %d/%d at %.1f fps" % [frame + 1, frame_count, frame_rate], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
+
+	func _fit_rect(source_size: Vector2, bounds: Rect2) -> Rect2:
+		var scale_value := minf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)
+		var fitted := source_size * scale_value
+		return Rect2(bounds.position + (bounds.size - fitted) * 0.5, fitted)
+
+	func _load_texture(path: String) -> Texture2D:
+		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+		var image := Image.load_from_file(actual_path)
+		if image == null:
+			return null
+		return ImageTexture.create_from_image(image)
 
 class PhospholipidAnimationPreview:
 	extends Control
