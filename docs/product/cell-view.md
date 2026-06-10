@@ -1,36 +1,26 @@
 # Cell View
 
-The cell view is the world/exploration layer.
+The cell view is the overall status and progression layer for the player's cell.
 
 ## Current Direction
 
-The player should start in this view after pressing Play on the title screen. The cell swims in a cloudy microscopic environment with deposits, other bacteria, and small threats.
+The player should start in this view after pressing Play on the title screen. It should show the health and composition of the cell, not direct movement.
 
-## Movement
+The screen should communicate:
 
-- W moves forward quickly.
-- S backs up slowly.
-- A and D rotate the cell.
-- The flagellum should animate during movement and rotation.
+- overall health/integrity,
+- ATP and redox state,
+- molecule pools inside the cell,
+- molecules outside the cell,
+- membrane transporter density,
+- active enzyme count,
+- built cell structures such as flagellum,
+- nearby large context from exploration, such as a sugar deposit or neighboring bacterium.
 
-## Zoom States
+## Visual Progression
 
-The cell view should morph between two states:
+The cell should visibly progress over the game. Early game should look sparse: few membrane proteins, little internal activity, mostly empty membrane. Late game should look busy: many membrane proteins, molecule traffic, dense enzyme activity, and visible additions like a flagellum.
 
-- close-up state: the cell fills the screen and internal activity is visible,
-- travel state: the cell is small enough to navigate the environment.
+## Nearby Context
 
-The transition should be seamless based on zoom level.
-
-## Environment
-
-Add sparse but readable objects:
-
-- sugar deposits,
-- sulfur deposits,
-- nitrogen sources,
-- other bacteria,
-- small virus-like particles,
-- cloudy water particles behind the cell.
-
-Particles and environment effects should not obscure the cell.
+Objects encountered in exploration should appear larger and more detailed in cell view. For example, if the cell is next to a sugar deposit or another bacterium, that object should appear around the cell as contextual art.

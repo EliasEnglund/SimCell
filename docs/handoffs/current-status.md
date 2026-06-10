@@ -11,7 +11,8 @@ SimCell is a Godot 4.6.x desktop prototype. The strongest current system is the 
 - Title screen.
 - Top resource bar with hover popups.
 - Bottom view navigation.
-- Cell view prototype with movement/zoom direction.
+- Cell status view prototype.
+- Exploration view prototype with flagellum propulsion direction and drift.
 - The Metabolism grid workspace.
 - Molecule marbles with storage particles.
 - Orthogonal reaction/import arrows.
@@ -28,7 +29,7 @@ SimCell is a Godot 4.6.x desktop prototype. The strongest current system is the 
 - Metabolism route layout is still being refined.
 - Molecule visual style is close but not final.
 - Membrane art has gone through several failed/prototype approaches and needs a clean direction.
-- Cell view needs more polish and stronger gameplay purpose.
+- Cell status and exploration views need more polish and a shared state model for nearby objects.
 - Many UI systems are still concentrated in `scripts/ui/main.gd`.
 
 ## Recent Direction
@@ -36,6 +37,8 @@ SimCell is a Godot 4.6.x desktop prototype. The strongest current system is the 
 The metabolic landscape is moving from full molecule structures on the board to grid-based marbles with hover details. This is intended to make large metabolic networks easier to read.
 
 The membrane view should become a clean management screen: center membrane visualization, right outside molecule list, left import/export inventory.
+
+The old combined cell/exploration view has been split. Cell view should become a status/progression scene; Exploration view should handle travel and nearby environmental context.
 
 ## Next Useful Work
 

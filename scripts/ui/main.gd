@@ -8,6 +8,7 @@ const MoleculeGraphScript := preload("res://scripts/core/molecule_graph.gd")
 
 const VIEW_ICON_PATHS := {
 	"cell": "res://assets/art_lab/icons/views/cell.png",
+	"exploration": "res://assets/art_lab/icons/views/cell.png",
 	"metabolism": "res://assets/art_lab/icons/views/metabolism.png",
 	"membrane": "res://assets/art_lab/icons/views/membrane.png",
 	"proteins": "res://assets/art_lab/icons/views/proteins.png",
@@ -211,6 +212,7 @@ func _build_shell() -> void:
 	root.add_child(bottom_nav)
 	for item in [
 		["Cell", "cell"],
+		["Explore", "exploration"],
 		["Metabolism", "metabolism"],
 		["Membrane", "membrane"],
 		["Proteins", "proteins"],
@@ -254,6 +256,8 @@ func _show_view(view_id: String) -> void:
 	_clear(content)
 	if view_id == "cell":
 		_build_cell_view()
+	elif view_id == "exploration":
+		_build_exploration_view()
 	elif view_id == "metabolism":
 		_build_metabolism_view()
 	elif view_id == "membrane":
@@ -269,6 +273,14 @@ func _show_view(view_id: String) -> void:
 func _build_cell_view() -> void:
 	var cell_view = CellViewScript.new()
 	cell_view.simulation = sim
+	cell_view.view_mode = "overview"
+	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.add_child(cell_view)
+
+func _build_exploration_view() -> void:
+	var cell_view = CellViewScript.new()
+	cell_view.simulation = sim
+	cell_view.view_mode = "exploration"
 	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	content.add_child(cell_view)
 
@@ -1378,7 +1390,8 @@ func _resource_cost_text(cost: Dictionary) -> String:
 
 func _view_title(view_id: String) -> String:
 	var titles := {
-		"cell": "CELL OVERVIEW",
+		"cell": "CELL STATUS",
+		"exploration": "EXPLORATION",
 		"metabolism": "THE METABOLISM",
 		"membrane": "MEMBRANE TRANSPORT",
 		"proteins": "PROTEIN BUILDER",

@@ -34,9 +34,10 @@ The player should make decisions such as:
 
 ## View List
 
-The six current views are:
+The seven current views are:
 
-- Cell view: navigation, environment, outside resources, threats, cell identity.
+- Cell view: overall cell status, visual progression, membrane/cytoplasm contents, nearby context.
+- Exploration view: microscopic travel, deposits, other cells, and flagellum-driven movement.
 - The Metabolism: grid-based metabolism board with marbles, arrows, flux, target sinks, and enzyme hover previews.
 - Membrane view: cross-section membrane, transporters, outside molecules, import/export inventory.
 - Protein Builder: ribosome/protein synthesis queue and completed proteins.
