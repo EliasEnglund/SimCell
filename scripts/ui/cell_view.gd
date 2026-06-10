@@ -37,6 +37,8 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
+	if view_mode == "overview":
+		return
 	if event is InputEventMagnifyGesture:
 		_zoom_at(event.factor)
 	elif event is InputEventMouseButton and event.pressed:
@@ -92,34 +94,37 @@ func _draw() -> void:
 
 func _draw_cell_overview() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
-	_draw_medium(0.72)
-	var center := size * 0.5 + Vector2(0, 18)
-	var radius := minf(size.x, size.y) * 0.31
-	_draw_nearby_context(center, radius)
+	_draw_status_background()
+	var center := size * 0.5 + Vector2(22, 0)
+	var radius := minf(size.x, size.y) * 0.36
 	_draw_overview_cell(center, radius)
-	_draw_status_panel(Rect2(Vector2(24, 24), Vector2(304, 238)))
-	_draw_cell_inventory_panel(Rect2(Vector2(size.x - 344, 24), Vector2(320, 288)))
-	_draw_cell_progression_panel(Rect2(Vector2(24, size.y - 178), Vector2(size.x - 48, 136)))
+	_draw_status_overlay(center, radius)
 
-func _draw_nearby_context(center: Vector2, radius: float) -> void:
-	var sugar_pos := center + Vector2(radius * 1.34, -radius * 0.58)
-	var bacteria_pos := center + Vector2(-radius * 1.18, radius * 0.12)
-	draw_circle(sugar_pos, radius * 0.46, Color(0.92, 0.76, 0.22, 0.08))
-	_draw_deposit(sugar_pos, 1.05, Color("ffe064"), 9, 0.88)
-	draw_string(ThemeDB.fallback_font, sugar_pos + Vector2(-58, radius * 0.42), "Sugar deposit nearby", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.95, 0.92, 0.70, 0.82))
-	_draw_bacterium(bacteria_pos, -0.18, 0.90, Color("8aa59d"), false, 0.86)
-	draw_string(ThemeDB.fallback_font, bacteria_pos + Vector2(-54, radius * 0.34), "Neighbor cell", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.78, 0.90, 0.88, 0.82))
+func _draw_status_background() -> void:
+	var top := Color("0a252d")
+	var bottom := Color("13313a")
+	for i in 28:
+		var t := float(i) / 27.0
+		var band := Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 27.0 + 1.0))
+		draw_rect(band, top.lerp(bottom, t), true)
+	for i in 140:
+		var seed := float(abs(("cell-status-speck:%d" % i).hash() % 10000)) / 10000.0
+		var seed_b := float(abs(("cell-status-speck-b:%d" % i).hash() % 10000)) / 10000.0
+		var pos := Vector2(lerpf(22.0, size.x - 22.0, seed), lerpf(22.0, size.y - 22.0, seed_b))
+		var drift := Vector2(sin(_elapsed * 0.09 + seed * 18.0), cos(_elapsed * 0.07 + seed_b * 16.0)) * 5.0
+		draw_circle(pos + drift, 1.0 + seed * 2.2, Color(0.72, 1.0, 0.92, 0.035 + seed_b * 0.045))
 
 func _draw_overview_cell(center: Vector2, radius: float) -> void:
-	draw_circle(center, radius * 1.20, Color(0.24, 0.72, 0.78, 0.055))
-	draw_circle(center, radius * 1.02, Color(0.02, 0.05, 0.06, 0.94))
-	draw_circle(center, radius * 0.96, Color(0.95, 0.58, 0.36, 0.38))
-	draw_circle(center, radius * 0.82, Color(0.17, 0.34, 0.31, 0.82))
-	draw_arc(center, radius * 0.99, 0, TAU, 128, Color("76f4ff"), 3.0, true)
-	draw_arc(center, radius * 0.88, 0, TAU, 128, Color(0.55, 1.0, 0.74, 0.38), 2.0, true)
+	draw_circle(center, radius * 1.07, Color(0.0, 0.02, 0.025, 0.84))
+	draw_circle(center, radius * 0.99, Color(0.60, 0.39, 0.24, 0.62))
+	draw_circle(center, radius * 0.92, Color(0.12, 0.28, 0.29, 0.94))
+	draw_circle(center + Vector2(-radius * 0.08, -radius * 0.10), radius * 0.78, Color(0.19, 0.42, 0.40, 0.54))
+	draw_arc(center, radius * 1.00, 0, TAU, 160, Color(0.62, 0.94, 1.0, 0.52), 2.0, true)
+	draw_arc(center, radius * 0.88, 0, TAU, 160, Color(0.48, 1.0, 0.76, 0.28), 1.5, true)
 	_draw_overview_transporters(center, radius)
 	_draw_overview_internal_molecules(center, radius)
 	_draw_overview_flagellum(center, radius)
+	_draw_overview_dna(center + Vector2(radius * 0.28, radius * 0.18), radius * 0.24)
 
 func _draw_overview_transporters(center: Vector2, radius: float) -> void:
 	var transporters: Array = simulation.transporter_list() if simulation != null else []
@@ -166,15 +171,7 @@ func _draw_overview_flagellum(center: Vector2, radius: float) -> void:
 	draw_polyline(points, Color(0, 0, 0, 0.72), 8.0, true)
 	draw_polyline(points, Color("76f4ff"), 3.0, true)
 
-func _draw_status_panel(rect: Rect2) -> void:
-	_draw_glass_panel(rect, "CELL HEALTH")
-	_draw_meter(rect.position + Vector2(18, 56), rect.size.x - 36, "Integrity", 0.98, Color("72e58e"))
-	_draw_meter(rect.position + Vector2(18, 100), rect.size.x - 36, "Energy", _resource_fraction("ATP", 120.0), Color("ffe064"))
-	_draw_meter(rect.position + Vector2(18, 144), rect.size.x - 36, "Redox NADH", _resource_fraction("NADH", 18.0), Color("5ca8ff"))
-	_draw_meter(rect.position + Vector2(18, 188), rect.size.x - 36, "Protein stock", _resource_fraction("Amino Acids", 60.0), Color("8cff6a"))
-
-func _draw_cell_inventory_panel(rect: Rect2) -> void:
-	_draw_glass_panel(rect, "CELL CONTENTS")
+func _draw_status_overlay(center: Vector2, radius: float) -> void:
 	var transporter_count := 0
 	var enzyme_count := 0
 	var molecules := 0
@@ -184,37 +181,34 @@ func _draw_cell_inventory_panel(rect: Rect2) -> void:
 		for count in simulation.active_enzymes.values():
 			enzyme_count += int(count)
 		molecules = simulation.present_molecule_ids().size()
-	var rows := [
-		["Molecule pools", molecules, Color("64d878")],
-		["Transporters", transporter_count, Color("76f4ff")],
-		["Active enzymes", enzyme_count, Color("d47cff")],
-		["Flagellum", 1, Color("ffe064")]
-	]
-	for i in rows.size():
-		var y := rect.position.y + 58.0 + i * 48.0
-		var color: Color = rows[i][2]
-		draw_circle(Vector2(rect.position.x + 26, y - 5), 7.0, color)
-		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 44, y), str(rows[i][0]), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("dbeff2"))
-		draw_string(ThemeDB.fallback_font, Vector2(rect.end.x - 72, y), str(rows[i][1]), HORIZONTAL_ALIGNMENT_RIGHT, 54, 15, color.lightened(0.15))
+	var left := Vector2(28, 46)
+	_draw_inline_metric(left, "Integrity", "98%", Color("72e58e"))
+	_draw_inline_metric(left + Vector2(0, 34), "ATP", "%.0f" % (simulation.resources.get("ATP", 0.0) if simulation != null else 0.0), Color("ffe064"))
+	_draw_inline_metric(left + Vector2(0, 68), "NADH", "%.0f" % (simulation.resources.get("NADH", 0.0) if simulation != null else 0.0), Color("5ca8ff"))
+	var right := Vector2(size.x - 226, 46)
+	_draw_inline_metric(right, "Pools", str(molecules), Color("64d878"))
+	_draw_inline_metric(right + Vector2(0, 34), "Transporters", str(transporter_count), Color("76f4ff"))
+	_draw_inline_metric(right + Vector2(0, 68), "Enzymes", str(enzyme_count), Color("d47cff"))
+	draw_string(ThemeDB.fallback_font, center + Vector2(-radius * 0.46, radius * 1.14), "Sparse early cell: visible transporters and internal molecule activity grow as systems are built.", HORIZONTAL_ALIGNMENT_CENTER, radius * 0.92, 15, Color(0.74, 0.92, 0.90, 0.78))
 
-func _draw_cell_progression_panel(rect: Rect2) -> void:
-	_draw_glass_panel(rect, "VISUAL PROGRESSION")
-	var text := "Early cells have sparse membranes and few molecule pools. As transporters, enzymes, and movement structures are built, the cell becomes visibly busier."
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 58), text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36, 15, Color(0.82, 0.94, 0.93, 0.88))
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 92), "Nearby deposits and cells appear enlarged around the cell when exploration places you close to them.", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36, 14, Color(0.62, 0.95, 1.0, 0.78))
+func _draw_inline_metric(pos: Vector2, label: String, value: String, color: Color) -> void:
+	draw_circle(pos + Vector2(8, -5), 5.0, color)
+	draw_string(ThemeDB.fallback_font, pos + Vector2(22, 0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("dbeff2"))
+	draw_string(ThemeDB.fallback_font, pos + Vector2(136, 0), value, HORIZONTAL_ALIGNMENT_RIGHT, 70, 14, color.lightened(0.12))
 
-func _draw_glass_panel(rect: Rect2, title: String) -> void:
-	draw_rect(rect, Color(0.03, 0.09, 0.12, 0.74), true)
-	draw_rect(rect, Color(0.44, 0.95, 1.0, 0.52), false, 1.4)
-	draw_line(rect.position + Vector2(12, 38), rect.position + Vector2(rect.size.x - 12, 38), Color(0.44, 0.95, 1.0, 0.22), 1.0, true)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(16, 27), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("76f4ff"))
-
-func _draw_meter(pos: Vector2, width: float, label: String, value: float, color: Color) -> void:
-	draw_string(ThemeDB.fallback_font, pos, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
-	var bar := Rect2(pos + Vector2(0, 10), Vector2(width, 12))
-	draw_rect(bar, Color(0.02, 0.06, 0.08, 0.88), true)
-	draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(value, 0.0, 1.0), bar.size.y)), color, true)
-	draw_rect(bar, Color(0.70, 0.95, 1.0, 0.35), false, 1.0)
+func _draw_overview_dna(center: Vector2, radius: float) -> void:
+	var points_a := PackedVector2Array()
+	var points_b := PackedVector2Array()
+	for i in 42:
+		var t := float(i) / 41.0
+		var x := (t - 0.5) * radius * 2.4
+		var y := sin(t * TAU * 2.2 + _elapsed * 0.28) * radius * 0.40
+		points_a.append(center + Vector2(x, y))
+		points_b.append(center + Vector2(x, -y))
+	draw_polyline(points_a, Color(0.96, 0.82, 0.62, 0.42), 1.7, true)
+	draw_polyline(points_b, Color(0.86, 0.72, 0.55, 0.36), 1.7, true)
+	for i in range(0, 42, 4):
+		draw_line(points_a[i], points_b[i], Color(0.90, 0.82, 0.70, 0.28), 1.0, true)
 
 func _resource_fraction(resource_id: String, target: float) -> float:
 	if simulation == null:
@@ -287,7 +281,7 @@ func _draw_cell(closeup: float) -> void:
 	_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0 - closeup * 0.25)
 	draw_circle(pos, radius * (0.82 + closeup * 0.35), Color(0.12, 0.95, 1.0, 0.06 + closeup * 0.08))
 	draw_circle(pos, radius * 0.58, Color(0.15, 1.0, 1.0, 0.10))
-	_draw_bacterium(pos, cell_angle, zoom * 1.08, Color("48d9f0"), true, 1.0)
+	_draw_player_cell(pos, cell_angle, radius, 1.0)
 	var triangle := PackedVector2Array([
 		pos + forward * radius * 0.88,
 		pos + back * radius * 0.18 + normal * radius * 0.24,
@@ -408,6 +402,37 @@ func _draw_bacterium(pos: Vector2, angle: float, scale_value: float, color: Colo
 	if player:
 		draw_string(ThemeDB.fallback_font, pos + Vector2(-30.0, ry + 24.0), "CELL-1", HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(10.0, 14.0 * zoom), Color(0.96, 0.98, 1.0, alpha))
 
+func _draw_player_cell(pos: Vector2, angle: float, radius: float, alpha := 1.0) -> void:
+	var rx := radius * 0.78
+	var ry := radius * 0.34
+	var shell := PackedVector2Array()
+	var inner := PackedVector2Array()
+	for i in 88:
+		var a := float(i) / 88.0 * TAU
+		var wobble := 1.0 + sin(a * 5.0 + _elapsed * 0.7) * 0.018
+		shell.append(pos + Vector2(cos(a) * rx * wobble, sin(a) * ry * wobble).rotated(angle))
+		inner.append(pos + Vector2(cos(a) * rx * 0.88, sin(a) * ry * 0.78).rotated(angle))
+	draw_colored_polygon(shell, Color(0.0, 0.025, 0.035, 0.95 * alpha))
+	draw_colored_polygon(inner, Color(0.18, 0.72, 0.88, 0.78 * alpha))
+	for i in 88:
+		if i % 7 != 0:
+			continue
+		var a := float(i) / 88.0 * TAU
+		var p := pos + Vector2(cos(a) * rx * 0.93, sin(a) * ry * 0.84).rotated(angle)
+		draw_circle(p, maxf(1.0, radius * 0.018), Color(0.78, 1.0, 0.92, 0.38 * alpha))
+	draw_arc(pos, rx * 0.64, angle - 0.78, angle + 0.78, 24, Color(1, 1, 1, 0.24 * alpha), maxf(1.0, radius * 0.020), true)
+	var forward := Vector2.RIGHT.rotated(angle)
+	var normal := Vector2(-forward.y, forward.x)
+	for i in 18:
+		var seed := float(abs(("player-cell-dot:%d" % i).hash() % 10000)) / 10000.0
+		var seed_b := float(abs(("player-cell-dot-b:%d" % i).hash() % 10000)) / 10000.0
+		var local := Vector2(lerpf(-0.58, 0.58, seed), lerpf(-0.44, 0.44, seed_b))
+		var dot := pos + forward * local.x * rx + normal * local.y * ry
+		var color := Color("a8fff0") if i % 3 != 0 else Color("ffe064")
+		draw_circle(dot, maxf(1.0, radius * (0.014 + seed_b * 0.012)), Color(0, 0, 0, 0.26 * alpha))
+		draw_circle(dot, maxf(1.0, radius * (0.010 + seed_b * 0.010)), Color(color.r, color.g, color.b, 0.30 * alpha))
+	draw_string(ThemeDB.fallback_font, pos + Vector2(-28.0, ry + 24.0), "CELL-1", HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(10.0, 13.0 * zoom), Color(0.96, 0.98, 1.0, alpha))
+
 func _draw_deposit(pos: Vector2, scale_value: float, color: Color, count: int, alpha := 1.0) -> void:
 	for i in count:
 		var angle := float(i) / float(count) * TAU + _elapsed * 0.04
@@ -443,8 +468,8 @@ func _draw_controls_hint() -> void:
 	var panel := Rect2(Vector2(18, size.y - 112), Vector2(238, 88))
 	draw_rect(panel, Color(0.04, 0.10, 0.13, 0.72), true)
 	draw_rect(panel, Color("76f4ff"), false, 1.2)
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 24), "W/S swim forward/back", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 46), "A/D rotate", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 24), "W/S propulsion energy", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 46), "A/D choose direction", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
 	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 68), "Mouse wheel / pinch zoom", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
 
 func _world_to_screen(world: Vector2) -> Vector2:

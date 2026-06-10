@@ -6,7 +6,7 @@ The cell view is the overall status and progression layer for the player's cell.
 
 The player should start in this view after pressing Play on the title screen. It should show the health and composition of the cell, not direct movement.
 
-The screen should communicate:
+The screen should communicate directly through the scene, not through large explanatory side boxes:
 
 - overall health/integrity,
 - ATP and redox state,
@@ -24,3 +24,5 @@ The cell should visibly progress over the game. Early game should look sparse: f
 ## Nearby Context
 
 Objects encountered in exploration should appear larger and more detailed in cell view. For example, if the cell is next to a sugar deposit or another bacterium, that object should appear around the cell as contextual art.
+
+Until exploration proximity is modeled in shared state, do not show fake neighboring objects in the cell status view.

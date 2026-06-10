@@ -35,6 +35,7 @@ Glucose should have the highest starting amount. Other molecules should have low
 - Selecting a molecule reveals a build importer button.
 - Building an importer queues a membrane transporter.
 - Transporters of the same type should visually group along the membrane.
+- Dragging the membrane should feel like rotating a curved cell surface. Transporters and molecules should move along the same arc, not pan in flat screen-space rows.
 
 ## Visual Direction
 

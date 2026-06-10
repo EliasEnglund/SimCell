@@ -19,7 +19,7 @@ const VIEW_ICON_PATHS := {
 var sim = SimulationStateScript.new()
 var root: VBoxContainer
 var content: Control
-var bottom_nav: HBoxContainer
+var bottom_nav: BoxContainer
 var status_label: Label
 var view_title_label: Label
 var resource_summary_box: HBoxContainer
@@ -201,15 +201,23 @@ func _build_shell() -> void:
 		button.custom_minimum_size = Vector2(42, 34)
 		button.pressed.connect(def[1])
 		header.add_child(button)
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 0)
+	root.add_child(body)
+	var nav_panel := PanelContainer.new()
+	nav_panel.custom_minimum_size = Vector2(86, 0)
+	nav_panel.add_theme_stylebox_override("panel", _side_nav_panel_style())
+	body.add_child(nav_panel)
+	bottom_nav = VBoxContainer.new()
+	bottom_nav.alignment = BoxContainer.ALIGNMENT_CENTER
+	bottom_nav.add_theme_constant_override("separation", 10)
+	nav_panel.add_child(bottom_nav)
 	content = Control.new()
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root.add_child(content)
-	bottom_nav = HBoxContainer.new()
-	bottom_nav.custom_minimum_size = Vector2(0, 72)
-	bottom_nav.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_nav.add_theme_constant_override("separation", 14)
-	root.add_child(bottom_nav)
+	body.add_child(content)
 	for item in [
 		["Cell", "cell"],
 		["Explore", "exploration"],
@@ -223,7 +231,7 @@ func _build_shell() -> void:
 		button.text = ""
 		button.icon = _texture_from_png(str(VIEW_ICON_PATHS.get(item[1], "")))
 		button.expand_icon = true
-		button.custom_minimum_size = Vector2(96, 62)
+		button.custom_minimum_size = Vector2(62, 62)
 		button.add_theme_stylebox_override("normal", _transparent_nav_style())
 		button.add_theme_stylebox_override("hover", _transparent_nav_style(Color(0.45, 1.0, 1.0, 0.12)))
 		button.add_theme_stylebox_override("pressed", _transparent_nav_style(Color(0.55, 1.0, 0.78, 0.16)))
@@ -1508,6 +1516,19 @@ func _top_bar_style() -> StyleBoxFlat:
 	style.content_margin_bottom = 8
 	return style
 
+func _side_nav_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("07181c")
+	style.border_color = Color("4bc7d8")
+	style.set_border_width(SIDE_RIGHT, 2)
+	style.shadow_color = Color(0.2, 0.95, 1.0, 0.16)
+	style.shadow_size = 10
+	style.content_margin_left = 10
+	style.content_margin_top = 12
+	style.content_margin_right = 10
+	style.content_margin_bottom = 12
+	return style
+
 func _transparent_nav_style(fill: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = fill
@@ -2329,7 +2350,17 @@ class MembraneCrossSection:
 		var target_width := target_height * (source.size.x / source.size.y)
 		var center := top.lerp(bottom, 0.52) - normal * (target_height * 0.02)
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
-		draw_set_transform(center, 0.0, Vector2.ONE)
+		var backing_color := Color(base_color.r, base_color.g, base_color.b, alpha)
+		var backing_a := Vector2(-target_width * 0.19, -target_height * 0.42)
+		var backing_b := Vector2(-target_width * 0.19, target_height * 0.42)
+		var backing_c := Vector2(target_width * 0.19, -target_height * 0.42)
+		var backing_d := Vector2(target_width * 0.19, target_height * 0.42)
+		var rotation := normal.angle() - PI * 0.5
+		draw_set_transform(center, rotation, Vector2.ONE)
+		draw_line(backing_a, backing_b, Color(0.0, 0.03, 0.05, alpha), target_width * 0.30, true)
+		draw_line(backing_c, backing_d, Color(0.0, 0.03, 0.05, alpha), target_width * 0.30, true)
+		draw_line(backing_a, backing_b, backing_color.darkened(0.10), target_width * 0.22, true)
+		draw_line(backing_c, backing_d, backing_color.lightened(0.10), target_width * 0.22, true)
 		draw_texture_rect_region(transporter_texture, rect, source, Color(1, 1, 1, alpha))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -2387,22 +2418,25 @@ class MembraneCrossSection:
 			var row := spread_slot / columns
 			var x_seed := (float(col) + 0.5 + x_jitter * 0.45) / float(columns)
 			var y_seed := (float(row) + 0.5 + y_jitter * 0.45) / float(rows)
-			var y_min: float = 54.0 if side == "outside" else size.y * 0.63
-			var y_max: float = size.y * 0.38 if side == "outside" else size.y - 72.0
 			var screen_x_seed := _world_to_visible_t(x_seed)
 			if screen_x_seed < 0.0:
 				node.visible = false
 				continue
 			node.visible = true
-			var x: float = lerpf(72.0, maxf(84.0, size.x - 96.0), screen_x_seed)
-			var y: float = lerpf(y_min, y_max, y_seed)
+			var sample := _anchor_sample(screen_x_seed, false)
+			var anchor: Vector2 = sample["point"]
+			var normal: Vector2 = sample["inside_normal"]
+			var tangent: Vector2 = sample["tangent"]
+			var distance_from_membrane := lerpf(66.0, 260.0, y_seed)
+			var side_sign := -1.0 if side == "outside" else 1.0
+			var lane_spread := (x_jitter * 0.55 + sin(seed * TAU) * 0.18) * 54.0
 			var drift := Vector2(
 				sin(_elapsed * (0.12 + motion_seed * 0.06) + seed * 19.0),
 				cos(_elapsed * (0.10 + motion_seed * 0.05) + seed * 13.0)
 			) * (12.0 + 12.0 * depth)
 			var perspective: float = 0.72 + depth * 0.28 + sin(_elapsed * 0.35 + seed * 23.0) * 0.018
-			node.position = Vector2(x, y) + drift - node_size * 0.5
-			node.rotation = sin(_elapsed * (0.16 + motion_seed * 0.08) + seed * TAU) * 0.18
+			node.position = anchor + normal * side_sign * distance_from_membrane + tangent * lane_spread + drift - node_size * 0.5
+			node.rotation = tangent.angle() + sin(_elapsed * (0.16 + motion_seed * 0.08) + seed * TAU) * 0.18
 			node.scale = Vector2(perspective, perspective)
 
 	func _source_color(id: String) -> Color:
