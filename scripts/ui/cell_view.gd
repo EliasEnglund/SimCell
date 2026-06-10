@@ -7,6 +7,7 @@ var view_mode := "exploration"
 const BASE_CELL_RADIUS := 170.0
 const EXPLORATION_ZOOM := 0.62
 const WORLD_BOUNDS := Rect2(Vector2(-2600.0, -2100.0), Vector2(5200.0, 4200.0))
+const MAP_PATH := "res://data/exploration_map.json"
 
 var cell_position := Vector2.ZERO
 var cell_angle := -0.18
@@ -24,14 +25,14 @@ var _wake_points: Array[Dictionary] = []
 var _background_texture: Texture2D
 var _particle_overlay_texture: Texture2D
 var _object_texture: Texture2D
-var _object_animation_texture: Texture2D
+var _player_cell_texture: Texture2D
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_background_texture = _load_texture("res://assets/art_lab/exploration/exploration-background.png")
 	_particle_overlay_texture = _load_texture("res://assets/art_lab/exploration/parallax-particles-alpha.png")
 	_object_texture = _load_texture("res://assets/art_lab/exploration/exploration-objects-alpha.png")
-	_object_animation_texture = _load_texture("res://assets/art_lab/exploration/exploration-object-animation-alpha.png")
+	_player_cell_texture = _load_texture("res://assets/art_lab/exploration/player-cell-idle-alpha.png")
 	_build_environment()
 	_build_clouds()
 	_build_particles()
@@ -308,19 +309,13 @@ func _draw_environment(alpha: float) -> void:
 func _draw_environment_sprite(item: Dictionary, pos: Vector2, alpha: float) -> void:
 	var kind := str(item.get("type", ""))
 	var scale_value := float(item.get("scale", 1.0)) * zoom
-	var animation_region := _object_animation_region(kind)
-	if _object_animation_texture != null and animation_region.size != Vector2.ZERO:
-		var animation_size := _object_animation_sprite_size(kind) * scale_value
-		var frame := int(floor(_elapsed * 5.0 + float(abs(str(item.get("pos", Vector2.ZERO)).hash() % 4)))) % 4
-		var row_region := animation_region
-		row_region.position.x += row_region.size.x * float(frame)
-		_draw_texture_region_centered(_object_animation_texture, row_region, pos, animation_size, float(item.get("angle", 0.0)), Color(1, 1, 1, alpha))
-		return
 	var region := _object_sprite_region(kind, int(item.get("variant", 0)))
-	var pulse := 1.0 + sin(_elapsed * 1.7 + pos.x * 0.013 + pos.y * 0.007) * 0.025
+	var phase := pos.x * 0.013 + pos.y * 0.007
+	var pulse := 1.0 + sin(_elapsed * 1.7 + phase) * 0.025
 	var target_size := _object_sprite_size(kind) * scale_value * pulse
-	var angle := float(item.get("angle", 0.0)) + sin(_elapsed * 0.18 + pos.x * 0.01) * 0.035
-	_draw_texture_region_centered(_object_texture, region, pos, target_size, angle, Color(1, 1, 1, alpha))
+	var angle := float(item.get("angle", 0.0)) + sin(_elapsed * 0.42 + phase) * 0.018
+	var bob := Vector2(0, sin(_elapsed * 1.1 + phase) * 3.0)
+	_draw_texture_region_centered(_object_texture, region, pos + bob, target_size, angle, Color(1, 1, 1, alpha))
 
 func _object_sprite_region(kind: String, variant: int) -> Rect2:
 	var tex_size := Vector2(_object_texture.get_width(), _object_texture.get_height())
@@ -343,23 +338,6 @@ func _object_sprite_region(kind: String, variant: int) -> Rect2:
 			return Rect2(Vector2(cell_w * float(2 + variant % 2), cell_h * 2.0), Vector2(cell_w, cell_h))
 	return Rect2(Vector2.ZERO, Vector2(cell_w, cell_h))
 
-func _object_animation_region(kind: String) -> Rect2:
-	if _object_animation_texture == null:
-		return Rect2()
-	var tex_size := Vector2(_object_animation_texture.get_width(), _object_animation_texture.get_height())
-	var frame_w := tex_size.x / 4.0
-	var row_h := tex_size.y / 4.0
-	match kind:
-		"bacteria", "hostile":
-			return Rect2(Vector2(0.0, 0.0), Vector2(frame_w, row_h))
-		"sugar":
-			return Rect2(Vector2(0.0, row_h), Vector2(frame_w, row_h))
-		"sulfur":
-			return Rect2(Vector2(0.0, row_h * 2.0), Vector2(frame_w, row_h))
-		"dead_cell":
-			return Rect2(Vector2(0.0, row_h * 3.0), Vector2(frame_w, row_h))
-	return Rect2()
-
 func _object_sprite_size(kind: String) -> Vector2:
 	match kind:
 		"bacteria", "hostile":
@@ -373,18 +351,6 @@ func _object_sprite_size(kind: String) -> Vector2:
 		"virus":
 			return Vector2(120, 110)
 	return Vector2(120, 100)
-
-func _object_animation_sprite_size(kind: String) -> Vector2:
-	match kind:
-		"bacteria", "hostile":
-			return Vector2(250, 165)
-		"sugar":
-			return Vector2(150, 120)
-		"sulfur":
-			return Vector2(165, 150)
-		"dead_cell":
-			return Vector2(260, 190)
-	return _object_sprite_size(kind)
 
 func _draw_texture_region_centered(texture: Texture2D, region: Rect2, center: Vector2, target_size: Vector2, angle: float, modulate: Color) -> void:
 	var x_axis := Vector2.RIGHT.rotated(angle) * target_size.x
@@ -400,12 +366,14 @@ func _draw_cell() -> void:
 	var forward := Vector2.RIGHT.rotated(cell_angle)
 	var back := -forward
 	var normal := Vector2(-forward.y, forward.x)
-	if _object_animation_texture != null:
-		var frame := int(floor(_elapsed * (5.0 + _swim_power * 2.0))) % 4
-		var region := _object_animation_region("bacteria")
+	if _player_cell_texture != null:
+		var frame_count := 6
+		var frame := int(floor(_elapsed * (5.0 + _swim_power * 1.5))) % frame_count
+		var frame_w := float(_player_cell_texture.get_width()) / float(frame_count)
+		var region := Rect2(Vector2(0, 0), Vector2(frame_w, _player_cell_texture.get_height()))
 		region.position.x += region.size.x * float(frame)
 		draw_circle(pos, radius * 0.84, Color(0.12, 0.95, 1.0, 0.035))
-		_draw_texture_region_centered(_object_animation_texture, region, pos, Vector2(285, 175) * zoom, cell_angle, Color(1, 1, 1, 1))
+		_draw_texture_region_centered(_player_cell_texture, region, pos, Vector2(215, 215) * zoom, cell_angle + PI * 0.5, Color(1, 1, 1, 1))
 	else:
 		_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
 		draw_circle(pos, radius * 0.62, Color(0.12, 0.95, 1.0, 0.025))
@@ -617,6 +585,10 @@ func _update_wake(delta: float, forward: Vector2) -> void:
 			_wake_points.remove_at(0)
 
 func _build_environment() -> void:
+	var saved := _load_saved_map_objects()
+	if not saved.is_empty():
+		_environment = saved
+		return
 	_environment = [
 		{"type": "sugar", "pos": Vector2(520, -220), "scale": 1.3},
 		{"type": "sugar", "pos": Vector2(-1560, -360), "scale": 0.82},
@@ -637,6 +609,30 @@ func _build_environment() -> void:
 		{"type": "virus", "pos": Vector2(-1480, -820), "scale": 0.75},
 		{"type": "virus", "pos": Vector2(1540, 760), "scale": 0.85}
 	]
+
+func _load_saved_map_objects() -> Array[Dictionary]:
+	var path := ProjectSettings.globalize_path(MAP_PATH)
+	if not FileAccess.file_exists(path):
+		return []
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return []
+	var parsed = JSON.parse_string(file.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return []
+	var loaded: Array = parsed.get("objects", [])
+	var objects: Array[Dictionary] = []
+	for item in loaded:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		objects.append({
+			"type": str(item.get("type", "sugar")),
+			"variant": int(item.get("variant", 0)),
+			"pos": Vector2(float(item.get("x", 0.0)), float(item.get("y", 0.0))),
+			"scale": float(item.get("scale", 1.0)),
+			"angle": float(item.get("angle", 0.0))
+		})
+	return objects
 
 func _build_clouds() -> void:
 	_clouds = []

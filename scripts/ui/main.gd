@@ -3,6 +3,7 @@ extends Control
 const CellViewScript := preload("res://scripts/ui/cell_view.gd")
 const MoleculeCanvasScript := preload("res://scripts/ui/molecule_canvas.gd")
 const MetabolismWorkspaceScript := preload("res://scripts/ui/metabolism_workspace.gd")
+const MapDesignerViewScript := preload("res://scripts/ui/map_designer_view.gd")
 const SimulationStateScript := preload("res://scripts/core/simulation_state.gd")
 const MoleculeGraphScript := preload("res://scripts/core/molecule_graph.gd")
 
@@ -13,7 +14,8 @@ const VIEW_ICON_PATHS := {
 	"membrane": "res://assets/art_lab/icons/views/membrane.png",
 	"proteins": "res://assets/art_lab/icons/views/proteins.png",
 	"dna": "res://assets/art_lab/icons/views/dna.png",
-	"art_lab": "res://assets/art_lab/icons/views/art_lab.png"
+	"art_lab": "res://assets/art_lab/icons/views/art_lab.png",
+	"map_designer": "res://assets/art_lab/icons/views/map_designer.png"
 }
 
 var sim = SimulationStateScript.new()
@@ -226,7 +228,8 @@ func _build_shell() -> void:
 		["Membrane", "membrane"],
 		["Proteins", "proteins"],
 		["DNA", "dna"],
-		["Art Lab", "art_lab"]
+		["Art Lab", "art_lab"],
+		["Map Designer", "map_designer"]
 	]:
 		var button := Button.new()
 		button.text = ""
@@ -281,6 +284,8 @@ func _show_view(view_id: String) -> void:
 		_build_dna_view()
 	elif view_id == "art_lab":
 		_build_art_lab_view()
+	elif view_id == "map_designer":
+		_build_map_designer_view()
 	_refresh()
 	_update_nav_buttons()
 
@@ -308,6 +313,12 @@ func _build_exploration_view() -> void:
 	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cell_view.clip_contents = true
 	content.add_child(cell_view)
+
+func _build_map_designer_view() -> void:
+	var designer = MapDesignerViewScript.new()
+	designer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	designer.clip_contents = true
+	content.add_child(designer)
 
 func _build_metabolism_view() -> void:
 	metabolism_molecule_list_signature = ""
@@ -511,7 +522,8 @@ func _build_art_lab_view() -> void:
 		["Membrane", VIEW_ICON_PATHS["membrane"]],
 		["Proteins", VIEW_ICON_PATHS["proteins"]],
 		["DNA", VIEW_ICON_PATHS["dna"]],
-		["Art Lab", VIEW_ICON_PATHS["art_lab"]]
+		["Art Lab", VIEW_ICON_PATHS["art_lab"]],
+		["Map Designer", VIEW_ICON_PATHS["map_designer"]]
 	], 132.0))
 	stack.add_child(_art_sheet_section("Generated Sheets", [
 		["Simple Resources", "res://assets/art_lab/sheets/resource_icons_simple_sheet.png"],
@@ -1458,6 +1470,7 @@ func _view_title(view_id: String) -> String:
 		"proteins": "PROTEIN BUILDER",
 		"dna": "DNA TECH TREE",
 		"art_lab": "ART LAB",
+		"map_designer": "MAP DESIGNER",
 		"enzyme_designer": "ENZYME DESIGNER"
 	}
 	return titles.get(view_id, view_id.to_upper())
