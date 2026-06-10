@@ -298,6 +298,7 @@ func _build_cell_view() -> void:
 	cell_view.simulation = sim
 	cell_view.view_mode = "overview"
 	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cell_view.clip_contents = true
 	content.add_child(cell_view)
 
 func _build_exploration_view() -> void:
@@ -305,6 +306,7 @@ func _build_exploration_view() -> void:
 	cell_view.simulation = sim
 	cell_view.view_mode = "exploration"
 	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cell_view.clip_contents = true
 	content.add_child(cell_view)
 
 func _build_metabolism_view() -> void:

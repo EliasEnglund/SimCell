@@ -5,6 +5,7 @@ var simulation
 var view_mode := "exploration"
 
 const BASE_CELL_RADIUS := 170.0
+const EXPLORATION_ZOOM := 0.62
 const WORLD_BOUNDS := Rect2(Vector2(-2600.0, -2100.0), Vector2(5200.0, 4200.0))
 
 var cell_position := Vector2.ZERO
@@ -13,7 +14,7 @@ var desired_angle := -0.18
 var propulsion_energy := 0.0
 var cell_velocity := Vector2.ZERO
 var camera_position := Vector2.ZERO
-var zoom := 1.0
+var zoom := EXPLORATION_ZOOM
 var _elapsed := 0.0
 var _swim_power := 0.0
 var _environment: Array[Dictionary] = []
@@ -23,12 +24,14 @@ var _wake_points: Array[Dictionary] = []
 var _background_texture: Texture2D
 var _particle_overlay_texture: Texture2D
 var _object_texture: Texture2D
+var _object_animation_texture: Texture2D
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_background_texture = _load_texture("res://assets/art_lab/exploration/exploration-background.png")
 	_particle_overlay_texture = _load_texture("res://assets/art_lab/exploration/parallax-particles-alpha.png")
 	_object_texture = _load_texture("res://assets/art_lab/exploration/exploration-objects-alpha.png")
+	_object_animation_texture = _load_texture("res://assets/art_lab/exploration/exploration-object-animation-alpha.png")
 	_build_environment()
 	_build_clouds()
 	_build_particles()
@@ -69,10 +72,11 @@ func _draw() -> void:
 		return
 	_draw_exploration_background()
 	_draw_exploration_medium(0.42)
+	_draw_parallax_particle_overlay(0.20)
 	_draw_environment(1.0)
 	_draw_cell_wake(1.0)
 	_draw_cell()
-	_draw_parallax_particle_overlay()
+	_draw_parallax_particle_overlay(0.12, true)
 	_draw_propulsion_widget()
 
 func _draw_cell_overview() -> void:
@@ -219,20 +223,21 @@ func _draw_exploration_medium(alpha: float) -> void:
 	_draw_current_streaks(alpha)
 	_draw_suspended_particles(alpha)
 
-func _draw_parallax_particle_overlay() -> void:
+func _draw_parallax_particle_overlay(alpha: float, foreground := false) -> void:
 	if _particle_overlay_texture == null:
 		return
 	var texture_size := Vector2(_particle_overlay_texture.get_width(), _particle_overlay_texture.get_height())
 	var scale_value := maxf(size.x / texture_size.x, size.y / texture_size.y) * 1.12
 	var draw_size := texture_size * scale_value
+	var speed := 0.060 if foreground else 0.026
 	var offset := Vector2(
-		fposmod(-camera_position.x * 0.060, draw_size.x),
-		fposmod(-camera_position.y * 0.060, draw_size.y)
+		fposmod(-camera_position.x * speed, draw_size.x),
+		fposmod(-camera_position.y * speed, draw_size.y)
 	)
 	for x in range(-1, 2):
 		for y in range(-1, 2):
 			var pos := Vector2(x * draw_size.x, y * draw_size.y) + offset - draw_size * 0.5
-			draw_texture_rect(_particle_overlay_texture, Rect2(pos, draw_size), false, Color(1, 1, 1, 0.42))
+			draw_texture_rect(_particle_overlay_texture, Rect2(pos, draw_size), false, Color(1, 1, 1, alpha))
 
 func _draw_current_streaks(alpha: float) -> void:
 	for i in 18:
@@ -303,52 +308,83 @@ func _draw_environment(alpha: float) -> void:
 func _draw_environment_sprite(item: Dictionary, pos: Vector2, alpha: float) -> void:
 	var kind := str(item.get("type", ""))
 	var scale_value := float(item.get("scale", 1.0)) * zoom
+	var animation_region := _object_animation_region(kind)
+	if _object_animation_texture != null and animation_region.size != Vector2.ZERO:
+		var animation_size := _object_animation_sprite_size(kind) * scale_value
+		var frame := int(floor(_elapsed * 5.0 + float(abs(str(item.get("pos", Vector2.ZERO)).hash() % 4)))) % 4
+		var row_region := animation_region
+		row_region.position.x += row_region.size.x * float(frame)
+		_draw_texture_region_centered(_object_animation_texture, row_region, pos, animation_size, float(item.get("angle", 0.0)), Color(1, 1, 1, alpha))
+		return
 	var region := _object_sprite_region(kind, int(item.get("variant", 0)))
-	var target_size := _object_sprite_size(kind) * scale_value
+	var pulse := 1.0 + sin(_elapsed * 1.7 + pos.x * 0.013 + pos.y * 0.007) * 0.025
+	var target_size := _object_sprite_size(kind) * scale_value * pulse
 	var angle := float(item.get("angle", 0.0)) + sin(_elapsed * 0.18 + pos.x * 0.01) * 0.035
 	_draw_texture_region_centered(_object_texture, region, pos, target_size, angle, Color(1, 1, 1, alpha))
 
 func _object_sprite_region(kind: String, variant: int) -> Rect2:
 	var tex_size := Vector2(_object_texture.get_width(), _object_texture.get_height())
-	var bacteria_regions := [
-		Rect2(Vector2(0.03, 0.02), Vector2(0.20, 0.28)),
-		Rect2(Vector2(0.27, 0.03), Vector2(0.20, 0.27)),
-		Rect2(Vector2(0.51, 0.03), Vector2(0.20, 0.26)),
-		Rect2(Vector2(0.75, 0.03), Vector2(0.20, 0.27))
-	]
+	var cell_w := tex_size.x / 4.0
+	var cell_h := tex_size.y / 3.0
 	match kind:
 		"bacteria":
-			return _scaled_region(bacteria_regions[variant % bacteria_regions.size()], tex_size)
+			return Rect2(Vector2(cell_w * float(variant % 4), 0.0), Vector2(cell_w, cell_h))
 		"hostile":
-			return _scaled_region(bacteria_regions[1], tex_size)
+			return Rect2(Vector2(cell_w, 0.0), Vector2(cell_w, cell_h))
 		"sugar":
-			return _scaled_region(Rect2(Vector2(0.02 if variant % 2 == 0 else 0.19, 0.34), Vector2(0.15, 0.23)), tex_size)
+			return Rect2(Vector2(cell_w * float(variant % 2), cell_h), Vector2(cell_w, cell_h))
 		"sulfur":
-			return _scaled_region(Rect2(Vector2(0.39 if variant % 2 == 0 else 0.55, 0.31), Vector2(0.17, 0.28)), tex_size)
+			return Rect2(Vector2(cell_w * float(2 + variant % 2), cell_h), Vector2(cell_w, cell_h))
 		"nitrogen":
-			return _scaled_region(Rect2(Vector2(0.71, 0.34), Vector2(0.25, 0.20)), tex_size)
+			return Rect2(Vector2(cell_w * 3.0, cell_h), Vector2(cell_w, cell_h))
 		"dead_cell":
-			return _scaled_region(Rect2(Vector2(0.02 if variant % 2 == 0 else 0.32, 0.64), Vector2(0.28, 0.31)), tex_size)
+			return Rect2(Vector2(cell_w * float(variant % 2), cell_h * 2.0), Vector2(cell_w, cell_h))
 		"virus":
-			return _scaled_region(Rect2(Vector2(0.66 if variant % 2 == 0 else 0.84, 0.67), Vector2(0.15, 0.24)), tex_size)
-	return _scaled_region(Rect2(Vector2(0.02, 0.34), Vector2(0.15, 0.23)), tex_size)
+			return Rect2(Vector2(cell_w * float(2 + variant % 2), cell_h * 2.0), Vector2(cell_w, cell_h))
+	return Rect2(Vector2.ZERO, Vector2(cell_w, cell_h))
+
+func _object_animation_region(kind: String) -> Rect2:
+	if _object_animation_texture == null:
+		return Rect2()
+	var tex_size := Vector2(_object_animation_texture.get_width(), _object_animation_texture.get_height())
+	var frame_w := tex_size.x / 4.0
+	var row_h := tex_size.y / 4.0
+	match kind:
+		"bacteria", "hostile":
+			return Rect2(Vector2(0.0, 0.0), Vector2(frame_w, row_h))
+		"sugar":
+			return Rect2(Vector2(0.0, row_h), Vector2(frame_w, row_h))
+		"sulfur":
+			return Rect2(Vector2(0.0, row_h * 2.0), Vector2(frame_w, row_h))
+		"dead_cell":
+			return Rect2(Vector2(0.0, row_h * 3.0), Vector2(frame_w, row_h))
+	return Rect2()
 
 func _object_sprite_size(kind: String) -> Vector2:
 	match kind:
 		"bacteria", "hostile":
-			return Vector2(220, 130)
+			return Vector2(250, 170)
 		"sugar", "nitrogen":
-			return Vector2(120, 95)
+			return Vector2(145, 120)
 		"sulfur":
-			return Vector2(130, 120)
+			return Vector2(160, 145)
 		"dead_cell":
-			return Vector2(220, 150)
+			return Vector2(260, 190)
 		"virus":
-			return Vector2(95, 95)
+			return Vector2(120, 110)
 	return Vector2(120, 100)
 
-func _scaled_region(normalized: Rect2, texture_size: Vector2) -> Rect2:
-	return Rect2(normalized.position * texture_size, normalized.size * texture_size)
+func _object_animation_sprite_size(kind: String) -> Vector2:
+	match kind:
+		"bacteria", "hostile":
+			return Vector2(250, 165)
+		"sugar":
+			return Vector2(150, 120)
+		"sulfur":
+			return Vector2(165, 150)
+		"dead_cell":
+			return Vector2(260, 190)
+	return _object_sprite_size(kind)
 
 func _draw_texture_region_centered(texture: Texture2D, region: Rect2, center: Vector2, target_size: Vector2, angle: float, modulate: Color) -> void:
 	var x_axis := Vector2.RIGHT.rotated(angle) * target_size.x
@@ -364,9 +400,16 @@ func _draw_cell() -> void:
 	var forward := Vector2.RIGHT.rotated(cell_angle)
 	var back := -forward
 	var normal := Vector2(-forward.y, forward.x)
-	_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
-	draw_circle(pos, radius * 0.62, Color(0.12, 0.95, 1.0, 0.025))
-	_draw_player_cell(pos, cell_angle, radius, 1.0)
+	if _object_animation_texture != null:
+		var frame := int(floor(_elapsed * (5.0 + _swim_power * 2.0))) % 4
+		var region := _object_animation_region("bacteria")
+		region.position.x += region.size.x * float(frame)
+		draw_circle(pos, radius * 0.84, Color(0.12, 0.95, 1.0, 0.035))
+		_draw_texture_region_centered(_object_animation_texture, region, pos, Vector2(285, 175) * zoom, cell_angle, Color(1, 1, 1, 1))
+	else:
+		_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
+		draw_circle(pos, radius * 0.62, Color(0.12, 0.95, 1.0, 0.025))
+		_draw_player_cell(pos, cell_angle, radius, 1.0)
 	_draw_heading_indicator(pos, forward, normal, radius, 1.0)
 
 func _draw_cell_wake(alpha: float) -> void:
