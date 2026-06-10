@@ -318,25 +318,43 @@ func _draw_environment_sprite(item: Dictionary, pos: Vector2, alpha: float) -> v
 	_draw_texture_region_centered(_object_texture, region, pos + bob, target_size, angle, Color(1, 1, 1, alpha))
 
 func _object_sprite_region(kind: String, variant: int) -> Rect2:
-	var tex_size := Vector2(_object_texture.get_width(), _object_texture.get_height())
-	var cell_w := tex_size.x / 4.0
-	var cell_h := tex_size.y / 3.0
 	match kind:
 		"bacteria":
-			return Rect2(Vector2(cell_w * float(variant % 4), 0.0), Vector2(cell_w, cell_h))
+			var regions := [
+				Rect2(Vector2(57, 50), Vector2(297, 268)),
+				Rect2(Vector2(786, 57), Vector2(301, 257)),
+				Rect2(Vector2(1127, 79), Vector2(311, 235)),
+			]
+			return regions[variant % regions.size()]
 		"hostile":
-			return Rect2(Vector2(cell_w, 0.0), Vector2(cell_w, cell_h))
+			return Rect2(Vector2(396, 59), Vector2(324, 263))
 		"sugar":
-			return Rect2(Vector2(cell_w * float(variant % 2), cell_h), Vector2(cell_w, cell_h))
+			var regions := [
+				Rect2(Vector2(109, 439), Vector2(141, 148)),
+				Rect2(Vector2(406, 459), Vector2(133, 128)),
+			]
+			return regions[variant % regions.size()]
 		"sulfur":
-			return Rect2(Vector2(cell_w * float(2 + variant % 2), cell_h), Vector2(cell_w, cell_h))
+			var regions := [
+				Rect2(Vector2(663, 417), Vector2(175, 187)),
+				Rect2(Vector2(919, 476), Vector2(120, 123)),
+			]
+			return regions[variant % regions.size()]
 		"nitrogen":
-			return Rect2(Vector2(cell_w * 3.0, cell_h), Vector2(cell_w, cell_h))
+			return Rect2(Vector2(1126, 448), Vector2(302, 153))
 		"dead_cell":
-			return Rect2(Vector2(cell_w * float(variant % 2), cell_h * 2.0), Vector2(cell_w, cell_h))
+			var regions := [
+				Rect2(Vector2(100, 733), Vector2(313, 186)),
+				Rect2(Vector2(534, 710), Vector2(231, 214)),
+			]
+			return regions[variant % regions.size()]
 		"virus":
-			return Rect2(Vector2(cell_w * float(2 + variant % 2), cell_h * 2.0), Vector2(cell_w, cell_h))
-	return Rect2(Vector2.ZERO, Vector2(cell_w, cell_h))
+			var regions := [
+				Rect2(Vector2(932, 752), Vector2(189, 177)),
+				Rect2(Vector2(1245, 759), Vector2(158, 165)),
+			]
+			return regions[variant % regions.size()]
+	return Rect2(Vector2(57, 50), Vector2(297, 268))
 
 func _object_sprite_size(kind: String) -> Vector2:
 	match kind:
@@ -378,7 +396,7 @@ func _draw_cell() -> void:
 		_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
 		draw_circle(pos, radius * 0.62, Color(0.12, 0.95, 1.0, 0.025))
 		_draw_player_cell(pos, cell_angle, radius, 1.0)
-	_draw_heading_indicator(pos, forward, normal, radius, 1.0)
+		_draw_heading_indicator(pos, forward, normal, radius, 1.0)
 
 func _draw_cell_wake(alpha: float) -> void:
 	if alpha <= 0.02:
