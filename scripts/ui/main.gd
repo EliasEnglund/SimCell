@@ -20,6 +20,7 @@ var sim = SimulationStateScript.new()
 var root: VBoxContainer
 var content: Control
 var bottom_nav: BoxContainer
+var nav_buttons := {}
 var status_label: Label
 var view_title_label: Label
 var resource_summary_box: HBoxContainer
@@ -207,12 +208,12 @@ func _build_shell() -> void:
 	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
 	var nav_panel := PanelContainer.new()
-	nav_panel.custom_minimum_size = Vector2(86, 0)
+	nav_panel.custom_minimum_size = Vector2(74, 0)
 	nav_panel.add_theme_stylebox_override("panel", _side_nav_panel_style())
 	body.add_child(nav_panel)
 	bottom_nav = VBoxContainer.new()
 	bottom_nav.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_nav.add_theme_constant_override("separation", 10)
+	bottom_nav.add_theme_constant_override("separation", 8)
 	nav_panel.add_child(bottom_nav)
 	content = Control.new()
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -231,13 +232,17 @@ func _build_shell() -> void:
 		button.text = ""
 		button.icon = _texture_from_png(str(VIEW_ICON_PATHS.get(item[1], "")))
 		button.expand_icon = true
-		button.custom_minimum_size = Vector2(62, 62)
+		button.custom_minimum_size = Vector2(52, 52)
+		button.tooltip_text = item[0]
+		button.set_meta("view_id", item[1])
+		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		button.add_theme_stylebox_override("normal", _transparent_nav_style())
 		button.add_theme_stylebox_override("hover", _transparent_nav_style(Color(0.45, 1.0, 1.0, 0.12)))
 		button.add_theme_stylebox_override("pressed", _transparent_nav_style(Color(0.55, 1.0, 0.78, 0.16)))
 		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		button.pressed.connect(func(view_id = item[1]): _show_view(view_id))
 		bottom_nav.add_child(button)
+		nav_buttons[item[1]] = button
 
 func _setup_music() -> void:
 	music_player = AudioStreamPlayer.new()
@@ -277,6 +282,16 @@ func _show_view(view_id: String) -> void:
 	elif view_id == "art_lab":
 		_build_art_lab_view()
 	_refresh()
+	_update_nav_buttons()
+
+func _update_nav_buttons() -> void:
+	for view_id in nav_buttons.keys():
+		var button: Button = nav_buttons[view_id]
+		var active: bool = str(view_id) == sim.active_view
+		button.self_modulate = Color(1, 1, 1, 1) if active else Color(0.72, 0.86, 0.88, 0.78)
+		button.add_theme_stylebox_override("normal", _transparent_nav_style(Color(0.50, 1.0, 0.90, 0.14) if active else Color.TRANSPARENT, active))
+		button.add_theme_stylebox_override("hover", _transparent_nav_style(Color(0.45, 1.0, 1.0, 0.16), active))
+		button.add_theme_stylebox_override("pressed", _transparent_nav_style(Color(0.55, 1.0, 0.78, 0.20), true))
 
 func _build_cell_view() -> void:
 	var cell_view = CellViewScript.new()
@@ -1518,23 +1533,25 @@ func _top_bar_style() -> StyleBoxFlat:
 
 func _side_nav_panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("07181c")
-	style.border_color = Color("4bc7d8")
+	style.bg_color = Color(0.025, 0.080, 0.095, 0.92)
+	style.border_color = Color(0.30, 0.78, 0.86, 0.72)
 	style.set_border_width(SIDE_RIGHT, 2)
-	style.shadow_color = Color(0.2, 0.95, 1.0, 0.16)
-	style.shadow_size = 10
-	style.content_margin_left = 10
+	style.shadow_color = Color(0.2, 0.95, 1.0, 0.10)
+	style.shadow_size = 7
+	style.content_margin_left = 8
 	style.content_margin_top = 12
-	style.content_margin_right = 10
+	style.content_margin_right = 8
 	style.content_margin_bottom = 12
 	return style
 
-func _transparent_nav_style(fill: Color = Color.TRANSPARENT) -> StyleBoxFlat:
+func _transparent_nav_style(fill: Color = Color.TRANSPARENT, active := false) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = fill
-	style.border_color = Color.TRANSPARENT
-	style.set_border_width_all(0)
+	style.border_color = Color(0.64, 1.0, 0.92, 0.72) if active else Color(0.42, 0.95, 1.0, 0.20 if fill.a > 0.0 else 0.08)
+	style.set_border_width_all(2 if active else 1)
 	style.set_corner_radius_all(4)
+	style.shadow_color = Color(0.35, 1.0, 0.85, 0.18 if active else 0.0)
+	style.shadow_size = 6 if active else 0
 	style.content_margin_left = 2
 	style.content_margin_top = 2
 	style.content_margin_right = 2

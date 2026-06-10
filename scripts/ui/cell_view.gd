@@ -85,12 +85,12 @@ func _draw() -> void:
 	var closeup := _closeup_amount()
 	var travel_alpha := 1.0 - closeup
 	draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
-	_draw_medium(1.0 - closeup * 0.34)
+	_draw_exploration_medium(1.0 - closeup * 0.34)
 	_draw_environment(travel_alpha)
 	_draw_cell_wake(1.0 - closeup * 0.55)
 	_draw_cell(closeup)
 	_draw_cell_interior(closeup)
-	_draw_controls_hint()
+	_draw_propulsion_widget()
 
 func _draw_cell_overview() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
@@ -210,32 +210,45 @@ func _draw_overview_dna(center: Vector2, radius: float) -> void:
 	for i in range(0, 42, 4):
 		draw_line(points_a[i], points_b[i], Color(0.90, 0.82, 0.70, 0.28), 1.0, true)
 
-func _resource_fraction(resource_id: String, target: float) -> float:
-	if simulation == null:
-		return 0.0
-	return clampf(float(simulation.resources.get(resource_id, 0.0)) / target, 0.0, 1.0)
-
-func _draw_medium(alpha: float) -> void:
+func _draw_exploration_medium(alpha: float) -> void:
+	for i in 34:
+		var t := float(i) / 33.0
+		var color := Color("0b2730").lerp(Color("1c4249"), t)
+		draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 33.0 + 1.0)), Color(color.r, color.g, color.b, 0.92 * alpha), true)
 	var center := size * 0.5
-	draw_circle(center + Vector2(80, -40), maxf(size.x, size.y) * 0.58, Color(0.11, 0.32, 0.36, 0.34 * alpha))
-	draw_circle(center + Vector2(-220, 130), maxf(size.x, size.y) * 0.42, Color(0.22, 0.50, 0.48, 0.17 * alpha))
-	draw_circle(center + Vector2(size.x * 0.18, size.y * 0.10), maxf(size.x, size.y) * 0.30, Color(0.09, 0.49, 0.54, 0.13 * alpha))
-	_draw_clouds(alpha)
+	draw_circle(center + Vector2(size.x * 0.22, -size.y * 0.18), maxf(size.x, size.y) * 0.52, Color(0.32, 0.70, 0.74, 0.030 * alpha))
+	draw_circle(center + Vector2(-size.x * 0.18, size.y * 0.20), maxf(size.x, size.y) * 0.34, Color(0.18, 0.55, 0.52, 0.022 * alpha))
+	_draw_clouds(alpha * 0.75)
+	_draw_current_streaks(alpha)
+	_draw_suspended_particles(alpha)
+
+func _draw_current_streaks(alpha: float) -> void:
+	for i in 18:
+		var seed := float(abs(("current:%d" % i).hash() % 10000)) / 10000.0
+		var y := lerpf(40.0, size.y - 40.0, fmod(seed * 5.91, 1.0))
+		var x := fmod(seed * 13.71 + _elapsed * (0.008 + seed * 0.006), 1.0) * size.x
+		var length := 72.0 + seed * 160.0
+		var start := Vector2(x - length * 0.5, y + sin(_elapsed * 0.18 + seed * 11.0) * 16.0)
+		var end := start + Vector2(length, -length * 0.10)
+		draw_line(start, end, Color(0.70, 1.0, 0.95, 0.026 * alpha), 1.3, true)
+
+func _draw_suspended_particles(alpha: float) -> void:
 	for particle in _particles:
 		var base: Vector2 = particle.get("pos", Vector2.ZERO)
 		var speed := float(particle.get("speed", 1.0))
 		var phase := float(particle.get("phase", 0.0))
 		var drift_amount := float(particle.get("drift", 12.0))
+		var depth := float(particle.get("depth", 0.55))
 		var drift := Vector2(sin(_elapsed * speed + phase), cos(_elapsed * speed * 0.7 + phase)) * drift_amount
 		var screen: Vector2 = _world_to_screen(base + drift)
 		if not Rect2(Vector2(-40, -40), size + Vector2(80, 80)).has_point(screen):
 			continue
-		var radius := float(particle.get("radius", 2.0)) * zoom
+		var radius := float(particle.get("radius", 2.0)) * zoom * lerpf(0.45, 1.16, depth)
 		var color: Color = particle.get("color", Color("8fcfd3"))
 		var flicker := 0.74 + sin(_elapsed * speed * 1.8 + phase) * 0.26
-		draw_circle(screen, maxf(0.8, radius), Color(color.r, color.g, color.b, 0.18 * flicker * alpha))
+		draw_circle(screen, maxf(0.55, radius), Color(color.r, color.g, color.b, 0.08 * flicker * alpha * depth))
 		if radius > 2.2:
-			draw_circle(screen, maxf(0.5, radius * 0.35), Color(1, 1, 1, 0.10 * flicker * alpha))
+			draw_circle(screen, maxf(0.45, radius * 0.32), Color(1, 1, 1, 0.07 * flicker * alpha * depth))
 
 func _draw_clouds(alpha: float) -> void:
 	for cloud in _clouds:
@@ -279,15 +292,9 @@ func _draw_cell(closeup: float) -> void:
 	var back := -forward
 	var normal := Vector2(-forward.y, forward.x)
 	_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0 - closeup * 0.25)
-	draw_circle(pos, radius * (0.82 + closeup * 0.35), Color(0.12, 0.95, 1.0, 0.06 + closeup * 0.08))
-	draw_circle(pos, radius * 0.58, Color(0.15, 1.0, 1.0, 0.10))
+	draw_circle(pos, radius * (0.62 + closeup * 0.28), Color(0.12, 0.95, 1.0, 0.025 + closeup * 0.04))
 	_draw_player_cell(pos, cell_angle, radius, 1.0)
-	var triangle := PackedVector2Array([
-		pos + forward * radius * 0.88,
-		pos + back * radius * 0.18 + normal * radius * 0.24,
-		pos + back * radius * 0.18 - normal * radius * 0.24
-	])
-	draw_polyline(triangle, Color(0.46, 0.96, 1.0, 1.0 - closeup * 0.72), 2.2, true)
+	_draw_heading_indicator(pos, forward, normal, radius, 1.0 - closeup * 0.55)
 
 func _draw_cell_wake(alpha: float) -> void:
 	if alpha <= 0.02:
@@ -358,13 +365,32 @@ func _draw_internal_label(alpha: float) -> void:
 func _draw_flagellum(anchor: Vector2, dir: Vector2, normal: Vector2, radius: float, alpha: float) -> void:
 	var points := PackedVector2Array()
 	var anim := _elapsed * (7.0 + _swim_power * 8.0)
-	for i in 36:
-		var t := float(i) / 35.0
-		var wave := sin(t * TAU * 2.4 + anim) * radius * 0.12 * (0.25 + t) * (0.25 + _swim_power)
-		points.append(anchor + dir * radius * 1.65 * t + normal * wave)
-	draw_polyline(points, Color(0.0, 0.0, 0.0, 0.75 * alpha), maxf(2.0, radius * 0.065), true)
-	draw_polyline(points, Color(0.1, 1.0, 1.0, (0.15 + _swim_power * 0.12) * alpha), maxf(2.0, radius * 0.085), true)
-	draw_polyline(points, Color(0.46, 0.96, 1.0, alpha), maxf(1.0, radius * 0.028), true)
+	for i in 44:
+		var t := float(i) / 43.0
+		var taper := 1.0 - t * 0.58
+		var wave := sin(t * TAU * 2.8 + anim) * radius * 0.10 * (0.20 + t) * (0.32 + _swim_power)
+		var current := sin(_elapsed * 0.9 + t * 5.0) * radius * 0.015
+		points.append(anchor + dir * radius * 1.76 * t + normal * (wave + current) * taper)
+	draw_polyline(points, Color(0.0, 0.0, 0.0, 0.68 * alpha), maxf(2.0, radius * 0.050), true)
+	draw_polyline(points, Color(0.22, 0.96, 1.0, (0.10 + _swim_power * 0.12) * alpha), maxf(2.0, radius * 0.067), true)
+	draw_polyline(points, Color(0.58, 1.0, 0.96, 0.84 * alpha), maxf(1.0, radius * 0.020), true)
+	draw_circle(anchor, maxf(2.0, radius * 0.040), Color(0.0, 0.025, 0.035, 0.76 * alpha))
+	draw_circle(anchor, maxf(1.0, radius * 0.024), Color(0.58, 1.0, 0.96, 0.66 * alpha))
+
+func _draw_heading_indicator(pos: Vector2, forward: Vector2, normal: Vector2, radius: float, alpha: float) -> void:
+	if alpha <= 0.02:
+		return
+	var edge := PackedVector2Array()
+	for i in 24:
+		var t := lerpf(-0.86, 0.86, float(i) / 23.0)
+		var curve := cos(t) * radius * 0.67
+		edge.append(pos + forward * curve + normal * sin(t) * radius * 0.31)
+	draw_polyline(edge, Color(0.72, 1.0, 0.94, (0.10 + propulsion_energy * 0.16) * alpha), maxf(1.0, radius * 0.014), true)
+	for i in 5:
+		var t := lerpf(-0.64, 0.64, float(i) / 4.0)
+		var plume_start := pos - forward * radius * 0.74 + normal * sin(t) * radius * 0.18
+		var plume_end := plume_start - forward * radius * (0.18 + propulsion_energy * 0.18)
+		draw_line(plume_start, plume_end, Color(0.42, 1.0, 0.90, 0.045 * alpha * (0.4 + propulsion_energy)), maxf(1.0, radius * 0.006), true)
 
 func _draw_bacterium(pos: Vector2, angle: float, scale_value: float, color: Color, player := false, alpha := 1.0) -> void:
 	var rx := 90.0 * scale_value * zoom
@@ -399,30 +425,37 @@ func _draw_bacterium(pos: Vector2, angle: float, scale_value: float, color: Colo
 			var rim_pos := pos + Vector2(cos(a) * rx * 0.82, sin(a) * ry * 0.72).rotated(angle)
 			draw_circle(rim_pos, maxf(1.2, 2.6 * zoom), Color(0.90, 1.0, 1.0, 0.24 * alpha))
 	draw_arc(pos, maxf(rx, ry) * 0.42, angle - 0.9, angle + 0.9, 18, Color(1, 1, 1, 0.24 * alpha), maxf(1.0, 3.0 * zoom), true)
-	if player:
-		draw_string(ThemeDB.fallback_font, pos + Vector2(-30.0, ry + 24.0), "CELL-1", HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(10.0, 14.0 * zoom), Color(0.96, 0.98, 1.0, alpha))
-
 func _draw_player_cell(pos: Vector2, angle: float, radius: float, alpha := 1.0) -> void:
 	var rx := radius * 0.78
 	var ry := radius * 0.34
 	var shell := PackedVector2Array()
 	var inner := PackedVector2Array()
+	var cytoplasm := PackedVector2Array()
 	for i in 88:
 		var a := float(i) / 88.0 * TAU
-		var wobble := 1.0 + sin(a * 5.0 + _elapsed * 0.7) * 0.018
+		var wobble := 1.0 + sin(a * 5.0 + _elapsed * 0.55) * 0.026 + sin(a * 9.0 - _elapsed * 0.34) * 0.010
 		shell.append(pos + Vector2(cos(a) * rx * wobble, sin(a) * ry * wobble).rotated(angle))
-		inner.append(pos + Vector2(cos(a) * rx * 0.88, sin(a) * ry * 0.78).rotated(angle))
-	draw_colored_polygon(shell, Color(0.0, 0.025, 0.035, 0.95 * alpha))
-	draw_colored_polygon(inner, Color(0.18, 0.72, 0.88, 0.78 * alpha))
+		inner.append(pos + Vector2(cos(a) * rx * 0.91, sin(a) * ry * 0.82).rotated(angle))
+		cytoplasm.append(pos + Vector2(cos(a) * rx * 0.78, sin(a) * ry * 0.66).rotated(angle))
+	draw_colored_polygon(shell, Color(0.0, 0.018, 0.024, 0.82 * alpha))
+	draw_colored_polygon(inner, Color(0.13, 0.58, 0.67, 0.74 * alpha))
+	draw_colored_polygon(cytoplasm, Color(0.13, 0.47, 0.52, 0.78 * alpha))
+	var forward := Vector2.RIGHT.rotated(angle)
+	var normal := Vector2(-forward.y, forward.x)
+	for i in 9:
+		var seed := float(abs(("player-cell-patch:%d" % i).hash() % 10000)) / 10000.0
+		var seed_b := float(abs(("player-cell-patch-b:%d" % i).hash() % 10000)) / 10000.0
+		var local := Vector2(lerpf(-0.50, 0.50, seed), lerpf(-0.34, 0.34, seed_b))
+		var patch := pos + forward * local.x * rx + normal * local.y * ry
+		var patch_radius := radius * lerpf(0.045, 0.095, seed_b)
+		draw_circle(patch, patch_radius, Color(0.42, 1.0, 0.82, 0.055 * alpha))
 	for i in 88:
 		if i % 7 != 0:
 			continue
 		var a := float(i) / 88.0 * TAU
 		var p := pos + Vector2(cos(a) * rx * 0.93, sin(a) * ry * 0.84).rotated(angle)
-		draw_circle(p, maxf(1.0, radius * 0.018), Color(0.78, 1.0, 0.92, 0.38 * alpha))
-	draw_arc(pos, rx * 0.64, angle - 0.78, angle + 0.78, 24, Color(1, 1, 1, 0.24 * alpha), maxf(1.0, radius * 0.020), true)
-	var forward := Vector2.RIGHT.rotated(angle)
-	var normal := Vector2(-forward.y, forward.x)
+		draw_circle(p, maxf(1.0, radius * 0.017), Color(0.78, 1.0, 0.92, 0.30 * alpha))
+	draw_arc(pos, rx * 0.64, angle - 0.78, angle + 0.78, 24, Color(1, 1, 1, 0.18 * alpha), maxf(1.0, radius * 0.016), true)
 	for i in 18:
 		var seed := float(abs(("player-cell-dot:%d" % i).hash() % 10000)) / 10000.0
 		var seed_b := float(abs(("player-cell-dot-b:%d" % i).hash() % 10000)) / 10000.0
@@ -431,14 +464,13 @@ func _draw_player_cell(pos: Vector2, angle: float, radius: float, alpha := 1.0) 
 		var color := Color("a8fff0") if i % 3 != 0 else Color("ffe064")
 		draw_circle(dot, maxf(1.0, radius * (0.014 + seed_b * 0.012)), Color(0, 0, 0, 0.26 * alpha))
 		draw_circle(dot, maxf(1.0, radius * (0.010 + seed_b * 0.010)), Color(color.r, color.g, color.b, 0.30 * alpha))
-	draw_string(ThemeDB.fallback_font, pos + Vector2(-28.0, ry + 24.0), "CELL-1", HORIZONTAL_ALIGNMENT_LEFT, -1, maxf(10.0, 13.0 * zoom), Color(0.96, 0.98, 1.0, alpha))
 
 func _draw_deposit(pos: Vector2, scale_value: float, color: Color, count: int, alpha := 1.0) -> void:
 	for i in count:
 		var angle := float(i) / float(count) * TAU + _elapsed * 0.04
 		var offset := Vector2(cos(angle), sin(angle)) * (14.0 + fposmod(i * 11.0, 36.0)) * zoom * scale_value
 		var r := (8.0 + fposmod(i * 5.0, 8.0)) * zoom * scale_value
-		draw_circle(pos + offset, r + 12.0 * zoom, Color(color.r, color.g, color.b, 0.07 * alpha))
+		draw_circle(pos + offset, r + 11.0 * zoom, Color(color.r, color.g, color.b, 0.045 * alpha))
 		draw_circle(pos + offset, r + 3.0 * zoom, Color(0.01, 0.03, 0.05, alpha))
 		draw_circle(pos + offset, r, Color(color.r, color.g, color.b, 0.82 * alpha))
 		draw_circle(pos + offset + Vector2(-r * 0.24, -r * 0.26), maxf(1.0, r * 0.20), Color(1, 1, 1, 0.22 * alpha))
@@ -464,13 +496,15 @@ func _draw_virus(pos: Vector2, scale_value: float, alpha := 1.0) -> void:
 	draw_circle(pos, r + 3.0 * zoom, Color(0.01, 0.03, 0.05, alpha))
 	draw_circle(pos, r, Color(0.46, 0.60, 0.62, 0.65 * alpha))
 
-func _draw_controls_hint() -> void:
-	var panel := Rect2(Vector2(18, size.y - 112), Vector2(238, 88))
-	draw_rect(panel, Color(0.04, 0.10, 0.13, 0.72), true)
-	draw_rect(panel, Color("76f4ff"), false, 1.2)
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 24), "W/S propulsion energy", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 46), "A/D choose direction", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(14, 68), "Mouse wheel / pinch zoom", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
+func _draw_propulsion_widget() -> void:
+	var panel := Rect2(Vector2(18, size.y - 86), Vector2(218, 58))
+	draw_rect(panel, Color(0.035, 0.10, 0.13, 0.58), true)
+	draw_rect(panel, Color(0.46, 0.96, 1.0, 0.42), false, 1.0)
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(12, 22), "Flagellum output", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.76, 0.92, 0.92, 0.90))
+	var bar := Rect2(panel.position + Vector2(12, 34), Vector2(panel.size.x - 24, 10))
+	draw_rect(bar, Color(0.01, 0.04, 0.05, 0.86), true)
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * propulsion_energy, bar.size.y)), Color("76f4ff"), true)
+	draw_rect(bar, Color(0.8, 1.0, 0.94, 0.24), false, 1.0)
 
 func _world_to_screen(world: Vector2) -> Vector2:
 	return (world - camera_position) * zoom + size * 0.5
@@ -501,10 +535,16 @@ func _update_wake(delta: float, forward: Vector2) -> void:
 func _build_environment() -> void:
 	_environment = [
 		{"type": "sugar", "pos": Vector2(520, -220), "scale": 1.3},
+		{"type": "sugar", "pos": Vector2(-1560, -360), "scale": 0.82},
+		{"type": "sugar", "pos": Vector2(1720, 1120), "scale": 0.92},
 		{"type": "sulfur", "pos": Vector2(980, 420), "scale": 1.2},
+		{"type": "sulfur", "pos": Vector2(-1840, 980), "scale": 0.78},
 		{"type": "nitrogen", "pos": Vector2(-840, 680), "scale": 1.1},
+		{"type": "nitrogen", "pos": Vector2(1480, -980), "scale": 0.74},
 		{"type": "bacteria", "pos": Vector2(-720, -520), "angle": 0.4, "scale": 0.80, "color": Color("97b4aa")},
 		{"type": "bacteria", "pos": Vector2(1260, -620), "angle": -0.2, "scale": 0.95, "color": Color("92aaa2")},
+		{"type": "bacteria", "pos": Vector2(2120, 230), "angle": 0.15, "scale": 0.55, "color": Color("6f8f8a")},
+		{"type": "bacteria", "pos": Vector2(-2060, -1120), "angle": -0.48, "scale": 0.52, "color": Color("769893")},
 		{"type": "hostile", "pos": Vector2(-1180, 160), "angle": -0.6, "scale": 0.72},
 		{"type": "hostile", "pos": Vector2(380, 760), "angle": 0.8, "scale": 0.62},
 		{"type": "virus", "pos": Vector2(840, -860), "scale": 0.9},
@@ -526,16 +566,18 @@ func _build_clouds() -> void:
 
 func _build_particles() -> void:
 	_particles = []
-	for i in 220:
+	for i in 420:
 		var seed := float(abs(("particle:%d" % i).hash() % 10000)) / 10000.0
 		var seed_b := float(abs(("particle-b:%d" % i).hash() % 10000)) / 10000.0
+		var depth := 0.24 + fmod(seed * 5.37 + seed_b * 2.11, 0.76)
 		_particles.append({
 			"pos": Vector2(lerpf(WORLD_BOUNDS.position.x, WORLD_BOUNDS.end.x, seed), lerpf(WORLD_BOUNDS.position.y, WORLD_BOUNDS.end.y, seed_b)),
 			"phase": seed * TAU * 4.0,
 			"speed": 0.25 + seed_b * 0.6,
 			"drift": 10.0 + seed * 34.0,
-			"radius": 1.2 + seed_b * 3.2,
-			"color": Color("8fcfd3") if i % 5 != 0 else Color("d8ed67")
+			"radius": 0.8 + seed_b * 2.8,
+			"depth": depth,
+			"color": Color("8fcfd3") if i % 6 != 0 else (Color("d8ed67") if i % 2 == 0 else Color("ef7779"))
 		})
 
 func _build_interior_particles() -> void:
