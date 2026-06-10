@@ -1,5 +1,7 @@
 # Milestones
 
+See also the root-level `ROADMAP.md`, which is the current planning source of truth. This file preserves the original milestone notes.
+
 ## Milestone 0: Foundation
 
 Status: started.

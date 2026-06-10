@@ -1,5 +1,7 @@
 # Architecture
 
+See also the root-level `ARCHITECTURE.md`, which is the current technical source of truth. This file is preserved as the original architecture note and should stay consistent with the root document.
+
 The project uses Godot 4.6.x and GDScript.
 
 Core rule: simulation logic must be separate from presentation. UI reads from `SimulationState`; it does not own rules for resources, enzyme outputs, transport rates, or tech unlocks.

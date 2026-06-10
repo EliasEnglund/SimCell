@@ -1,5 +1,7 @@
 # Sim Cell Vision
 
+See also the root-level `DESIGN.md`, which is the current design source of truth. This file is preserved as the original vision note and should stay consistent with the root document.
+
 Sim Cell is a PC desktop game about controlling cellular biochemistry from the inside. The player fantasy is closer to a biochemist than an arcade pilot: the player studies molecules, designs enzymes, builds proteins, and uses DNA research to unlock stronger cellular machinery.
 
 The first playable version should prove one loop:
