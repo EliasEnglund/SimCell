@@ -542,6 +542,14 @@ func _art_exploration_cell_concepts_section() -> Control:
 	panel.add_child(_art_sheet_section("Pixel Exploration Styles", [
 		["Four pixel-art directions: crisp 16-bit, detailed 32-bit, chunky arcade, glowing hybrid", "res://assets/art_lab/exploration/cell-pixel-concepts.png"]
 	], 360.0))
+	panel.add_child(_art_sheet_section("Exploration Background And Parallax", [
+		["Generated swimming-background concept, used behind the current exploration view", "res://assets/art_lab/exploration/exploration-background.png"],
+		["Transparent parallax particle overlay, intended to move at a different speed than the camera", "res://assets/art_lab/exploration/parallax-particles-alpha.png"]
+	], 300.0))
+	panel.add_child(_art_sheet_section("Exploration Object Concepts", [
+		["Transparent static sprites: bacteria, glucose, sulfur, nitrogen, broken cells, virus/debris", "res://assets/art_lab/exploration/exploration-objects-alpha.png"],
+		["Transparent idle-animation concept rows: bacteria, glucose, sulfur, broken cell", "res://assets/art_lab/exploration/exploration-object-animation-alpha.png"]
+	], 360.0))
 	var cycle_panel := _glow_panel("Sprite Cycle Test")
 	var cycle_note := Label.new()
 	cycle_note.text = "This preview reads a six-frame generated sheet and cycles it. It is a quick test of using pre-rendered frames for membrane breathing and flagellum movement."

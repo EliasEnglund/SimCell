@@ -20,14 +20,18 @@ var _environment: Array[Dictionary] = []
 var _particles: Array[Dictionary] = []
 var _clouds: Array[Dictionary] = []
 var _wake_points: Array[Dictionary] = []
-var _interior_particles: Array[Dictionary] = []
+var _background_texture: Texture2D
+var _particle_overlay_texture: Texture2D
+var _object_texture: Texture2D
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_background_texture = _load_texture("res://assets/art_lab/exploration/exploration-background.png")
+	_particle_overlay_texture = _load_texture("res://assets/art_lab/exploration/parallax-particles-alpha.png")
+	_object_texture = _load_texture("res://assets/art_lab/exploration/exploration-objects-alpha.png")
 	_build_environment()
 	_build_clouds()
 	_build_particles()
-	_build_interior_particles()
 
 func _process(delta: float) -> void:
 	_elapsed += delta
@@ -35,17 +39,6 @@ func _process(delta: float) -> void:
 		_update_cell(delta)
 		camera_position = camera_position.lerp(cell_position, clampf(delta * 5.5, 0.0, 1.0))
 	queue_redraw()
-
-func _gui_input(event: InputEvent) -> void:
-	if view_mode == "overview":
-		return
-	if event is InputEventMagnifyGesture:
-		_zoom_at(event.factor)
-	elif event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom_at(1.09)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom_at(1.0 / 1.09)
 
 func _update_cell(delta: float) -> void:
 	var turn_input := 0.0
@@ -70,26 +63,16 @@ func _update_cell(delta: float) -> void:
 	_swim_power = lerpf(_swim_power, clampf(propulsion_energy + absf(turn_input) * 0.42, 0.0, 1.0), clampf(delta * 4.4, 0.0, 1.0))
 	_update_wake(delta, forward)
 
-func _zoom_at(factor: float) -> void:
-	var min_screen_radius := minf(size.x, size.y) * 0.05
-	var max_screen_radius := minf(size.x, size.y) * 0.50
-	var min_zoom := min_screen_radius / BASE_CELL_RADIUS
-	var max_zoom := max_screen_radius / BASE_CELL_RADIUS
-	zoom = clampf(zoom * factor, min_zoom, max_zoom)
-	queue_redraw()
-
 func _draw() -> void:
 	if view_mode == "overview":
 		_draw_cell_overview()
 		return
-	var closeup := _closeup_amount()
-	var travel_alpha := 1.0 - closeup
-	draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
-	_draw_exploration_medium(1.0 - closeup * 0.34)
-	_draw_environment(travel_alpha)
-	_draw_cell_wake(1.0 - closeup * 0.55)
-	_draw_cell(closeup)
-	_draw_cell_interior(closeup)
+	_draw_exploration_background()
+	_draw_exploration_medium(0.42)
+	_draw_environment(1.0)
+	_draw_cell_wake(1.0)
+	_draw_cell()
+	_draw_parallax_particle_overlay()
 	_draw_propulsion_widget()
 
 func _draw_cell_overview() -> void:
@@ -210,17 +193,46 @@ func _draw_overview_dna(center: Vector2, radius: float) -> void:
 	for i in range(0, 42, 4):
 		draw_line(points_a[i], points_b[i], Color(0.90, 0.82, 0.70, 0.28), 1.0, true)
 
+func _draw_exploration_background() -> void:
+	if _background_texture == null:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("07181c"), true)
+		return
+	var source_size := Vector2(_background_texture.get_width(), _background_texture.get_height())
+	var target := _cover_rect(source_size, Rect2(Vector2.ZERO, size))
+	var drift := Vector2(
+		fposmod(camera_position.x * -0.018, maxf(1.0, target.size.x - size.x + 1.0)),
+		fposmod(camera_position.y * -0.018, maxf(1.0, target.size.y - size.y + 1.0))
+	)
+	target.position -= drift
+	draw_texture_rect(_background_texture, target, false)
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.08, 0.09, 0.22), true)
+
 func _draw_exploration_medium(alpha: float) -> void:
 	for i in 34:
 		var t := float(i) / 33.0
 		var color := Color("0b2730").lerp(Color("1c4249"), t)
-		draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 33.0 + 1.0)), Color(color.r, color.g, color.b, 0.92 * alpha), true)
+		draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 33.0 + 1.0)), Color(color.r, color.g, color.b, 0.32 * alpha), true)
 	var center := size * 0.5
 	draw_circle(center + Vector2(size.x * 0.22, -size.y * 0.18), maxf(size.x, size.y) * 0.52, Color(0.32, 0.70, 0.74, 0.030 * alpha))
 	draw_circle(center + Vector2(-size.x * 0.18, size.y * 0.20), maxf(size.x, size.y) * 0.34, Color(0.18, 0.55, 0.52, 0.022 * alpha))
 	_draw_clouds(alpha * 0.75)
 	_draw_current_streaks(alpha)
 	_draw_suspended_particles(alpha)
+
+func _draw_parallax_particle_overlay() -> void:
+	if _particle_overlay_texture == null:
+		return
+	var texture_size := Vector2(_particle_overlay_texture.get_width(), _particle_overlay_texture.get_height())
+	var scale_value := maxf(size.x / texture_size.x, size.y / texture_size.y) * 1.12
+	var draw_size := texture_size * scale_value
+	var offset := Vector2(
+		fposmod(-camera_position.x * 0.060, draw_size.x),
+		fposmod(-camera_position.y * 0.060, draw_size.y)
+	)
+	for x in range(-1, 2):
+		for y in range(-1, 2):
+			var pos := Vector2(x * draw_size.x, y * draw_size.y) + offset - draw_size * 0.5
+			draw_texture_rect(_particle_overlay_texture, Rect2(pos, draw_size), false, Color(1, 1, 1, 0.42))
 
 func _draw_current_streaks(alpha: float) -> void:
 	for i in 18:
@@ -271,6 +283,9 @@ func _draw_environment(alpha: float) -> void:
 		var margin := 220.0 * zoom
 		if not Rect2(Vector2(-margin, -margin), size + Vector2(margin * 2.0, margin * 2.0)).has_point(pos):
 			continue
+		if _object_texture != null:
+			_draw_environment_sprite(item, pos, alpha)
+			continue
 		match str(item.get("type", "")):
 			"bacteria":
 				_draw_bacterium(pos, float(item.get("angle", 0.0)), float(item.get("scale", 1.0)), item.get("color", Color("8ea6a1")), false, alpha)
@@ -285,16 +300,74 @@ func _draw_environment(alpha: float) -> void:
 			"virus":
 				_draw_virus(pos, float(item.get("scale", 1.0)), alpha)
 
-func _draw_cell(closeup: float) -> void:
+func _draw_environment_sprite(item: Dictionary, pos: Vector2, alpha: float) -> void:
+	var kind := str(item.get("type", ""))
+	var scale_value := float(item.get("scale", 1.0)) * zoom
+	var region := _object_sprite_region(kind, int(item.get("variant", 0)))
+	var target_size := _object_sprite_size(kind) * scale_value
+	var angle := float(item.get("angle", 0.0)) + sin(_elapsed * 0.18 + pos.x * 0.01) * 0.035
+	_draw_texture_region_centered(_object_texture, region, pos, target_size, angle, Color(1, 1, 1, alpha))
+
+func _object_sprite_region(kind: String, variant: int) -> Rect2:
+	var tex_size := Vector2(_object_texture.get_width(), _object_texture.get_height())
+	var bacteria_regions := [
+		Rect2(Vector2(0.03, 0.02), Vector2(0.20, 0.28)),
+		Rect2(Vector2(0.27, 0.03), Vector2(0.20, 0.27)),
+		Rect2(Vector2(0.51, 0.03), Vector2(0.20, 0.26)),
+		Rect2(Vector2(0.75, 0.03), Vector2(0.20, 0.27))
+	]
+	match kind:
+		"bacteria":
+			return _scaled_region(bacteria_regions[variant % bacteria_regions.size()], tex_size)
+		"hostile":
+			return _scaled_region(bacteria_regions[1], tex_size)
+		"sugar":
+			return _scaled_region(Rect2(Vector2(0.02 if variant % 2 == 0 else 0.19, 0.34), Vector2(0.15, 0.23)), tex_size)
+		"sulfur":
+			return _scaled_region(Rect2(Vector2(0.39 if variant % 2 == 0 else 0.55, 0.31), Vector2(0.17, 0.28)), tex_size)
+		"nitrogen":
+			return _scaled_region(Rect2(Vector2(0.71, 0.34), Vector2(0.25, 0.20)), tex_size)
+		"dead_cell":
+			return _scaled_region(Rect2(Vector2(0.02 if variant % 2 == 0 else 0.32, 0.64), Vector2(0.28, 0.31)), tex_size)
+		"virus":
+			return _scaled_region(Rect2(Vector2(0.66 if variant % 2 == 0 else 0.84, 0.67), Vector2(0.15, 0.24)), tex_size)
+	return _scaled_region(Rect2(Vector2(0.02, 0.34), Vector2(0.15, 0.23)), tex_size)
+
+func _object_sprite_size(kind: String) -> Vector2:
+	match kind:
+		"bacteria", "hostile":
+			return Vector2(220, 130)
+		"sugar", "nitrogen":
+			return Vector2(120, 95)
+		"sulfur":
+			return Vector2(130, 120)
+		"dead_cell":
+			return Vector2(220, 150)
+		"virus":
+			return Vector2(95, 95)
+	return Vector2(120, 100)
+
+func _scaled_region(normalized: Rect2, texture_size: Vector2) -> Rect2:
+	return Rect2(normalized.position * texture_size, normalized.size * texture_size)
+
+func _draw_texture_region_centered(texture: Texture2D, region: Rect2, center: Vector2, target_size: Vector2, angle: float, modulate: Color) -> void:
+	var x_axis := Vector2.RIGHT.rotated(angle) * target_size.x
+	var y_axis := Vector2.DOWN.rotated(angle) * target_size.y
+	var top_left := center - x_axis * 0.5 - y_axis * 0.5
+	draw_set_transform_matrix(Transform2D(x_axis / region.size.x, y_axis / region.size.y, top_left))
+	draw_texture_rect_region(texture, Rect2(Vector2.ZERO, region.size), region, modulate)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_cell() -> void:
 	var pos := _world_to_screen(cell_position)
 	var radius := BASE_CELL_RADIUS * zoom
 	var forward := Vector2.RIGHT.rotated(cell_angle)
 	var back := -forward
 	var normal := Vector2(-forward.y, forward.x)
-	_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0 - closeup * 0.25)
-	draw_circle(pos, radius * (0.62 + closeup * 0.28), Color(0.12, 0.95, 1.0, 0.025 + closeup * 0.04))
+	_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
+	draw_circle(pos, radius * 0.62, Color(0.12, 0.95, 1.0, 0.025))
 	_draw_player_cell(pos, cell_angle, radius, 1.0)
-	_draw_heading_indicator(pos, forward, normal, radius, 1.0 - closeup * 0.55)
+	_draw_heading_indicator(pos, forward, normal, radius, 1.0)
 
 func _draw_cell_wake(alpha: float) -> void:
 	if alpha <= 0.02:
@@ -316,51 +389,6 @@ func _draw_cell_wake(alpha: float) -> void:
 		])
 		draw_colored_polygon(wash, Color(0.20, 1.0, 1.0, 0.035 * fade * alpha))
 		draw_polyline(wash, Color(0.42, 1.0, 0.88, 0.12 * fade * alpha), maxf(1.0, 2.0 * zoom), true)
-
-func _draw_cell_interior(alpha: float) -> void:
-	if alpha <= 0.02:
-		return
-	var pos := _world_to_screen(cell_position)
-	var radius := BASE_CELL_RADIUS * zoom
-	var forward := Vector2.RIGHT.rotated(cell_angle)
-	var normal := Vector2(-forward.y, forward.x)
-	var rx := radius * 0.78
-	var ry := radius * 0.34
-	draw_circle(pos, radius * 0.72, Color(0.06, 0.34, 0.36, 0.18 * alpha))
-	_draw_internal_streams(pos, forward, normal, rx, ry, alpha)
-	for particle in _interior_particles:
-		var local: Vector2 = particle.get("local", Vector2.ZERO)
-		var orbit := float(particle.get("orbit", 0.0))
-		var speed := float(particle.get("speed", 0.4))
-		var phase := float(particle.get("phase", 0.0))
-		var wiggle := Vector2(cos(_elapsed * speed + phase), sin(_elapsed * speed * 1.3 + phase)) * orbit
-		var screen := pos + forward * (local.x + wiggle.x) * rx + normal * (local.y + wiggle.y) * ry
-		var depth := clampf(1.0 - absf(local.y + wiggle.y) * 0.55, 0.42, 1.0)
-		var color: Color = particle.get("color", Color("8cff6a"))
-		var particle_radius := float(particle.get("radius", 5.0)) * zoom * (0.72 + depth * 0.28)
-		draw_circle(screen, particle_radius + 3.0 * zoom, Color(0, 0, 0, 0.30 * alpha))
-		draw_circle(screen, particle_radius, Color(color.r, color.g, color.b, alpha * (0.34 + depth * 0.40)))
-		draw_circle(screen + Vector2(-particle_radius * 0.22, -particle_radius * 0.25), maxf(1.0, particle_radius * 0.22), Color(1, 1, 1, 0.24 * alpha))
-	_draw_internal_label(alpha)
-
-func _draw_internal_streams(pos: Vector2, forward: Vector2, normal: Vector2, rx: float, ry: float, alpha: float) -> void:
-	for lane in 4:
-		var y := -0.48 + float(lane) * 0.32
-		var points := PackedVector2Array()
-		for i in 28:
-			var t := float(i) / 27.0
-			var x := -0.74 + t * 1.48
-			var wave := sin(t * TAU * 1.6 + _elapsed * (0.7 + lane * 0.11)) * 0.08
-			points.append(pos + forward * x * rx + normal * (y + wave) * ry)
-		draw_polyline(points, Color(0.48, 1.0, 0.82, 0.11 * alpha), maxf(1.0, 2.4 * zoom), true)
-
-func _draw_internal_label(alpha: float) -> void:
-	var panel := Rect2(Vector2(size.x - 246.0, size.y - 126.0), Vector2(222.0, 82.0))
-	draw_rect(panel, Color(0.03, 0.09, 0.11, 0.72 * alpha), true)
-	draw_rect(panel, Color(0.46, 0.96, 1.0, 0.55 * alpha), false, 1.2)
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(12, 24), "Cytoplasm close-up", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.90, 1.0, 1.0, alpha))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(12, 48), "Internal metabolites active", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.70, 1.0, 0.82, alpha))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(12, 68), "Zoom out for travel", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.82, 0.94, 0.96, alpha * 0.9))
 
 func _draw_flagellum(anchor: Vector2, dir: Vector2, normal: Vector2, radius: float, alpha: float) -> void:
 	var points := PackedVector2Array()
@@ -509,8 +537,21 @@ func _draw_propulsion_widget() -> void:
 func _world_to_screen(world: Vector2) -> Vector2:
 	return (world - camera_position) * zoom + size * 0.5
 
-func _closeup_amount() -> float:
-	return smoothstep(1.35, 2.15, zoom)
+func _cover_rect(source_size: Vector2, bounds: Rect2) -> Rect2:
+	if source_size.x <= 0.0 or source_size.y <= 0.0:
+		return bounds
+	var scale_value := maxf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)
+	var fitted := source_size * scale_value
+	return Rect2(bounds.position + (bounds.size - fitted) * 0.5, fitted)
+
+func _load_texture(path: String) -> Texture2D:
+	var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+	if not FileAccess.file_exists(actual_path):
+		return null
+	var image := Image.load_from_file(actual_path)
+	if image == null:
+		return null
+	return ImageTexture.create_from_image(image)
 
 func _update_wake(delta: float, forward: Vector2) -> void:
 	for i in range(_wake_points.size() - 1, -1, -1):
@@ -541,12 +582,14 @@ func _build_environment() -> void:
 		{"type": "sulfur", "pos": Vector2(-1840, 980), "scale": 0.78},
 		{"type": "nitrogen", "pos": Vector2(-840, 680), "scale": 1.1},
 		{"type": "nitrogen", "pos": Vector2(1480, -980), "scale": 0.74},
-		{"type": "bacteria", "pos": Vector2(-720, -520), "angle": 0.4, "scale": 0.80, "color": Color("97b4aa")},
-		{"type": "bacteria", "pos": Vector2(1260, -620), "angle": -0.2, "scale": 0.95, "color": Color("92aaa2")},
-		{"type": "bacteria", "pos": Vector2(2120, 230), "angle": 0.15, "scale": 0.55, "color": Color("6f8f8a")},
-		{"type": "bacteria", "pos": Vector2(-2060, -1120), "angle": -0.48, "scale": 0.52, "color": Color("769893")},
+		{"type": "bacteria", "variant": 0, "pos": Vector2(-720, -520), "angle": 0.4, "scale": 0.80, "color": Color("97b4aa")},
+		{"type": "bacteria", "variant": 2, "pos": Vector2(1260, -620), "angle": -0.2, "scale": 0.95, "color": Color("92aaa2")},
+		{"type": "bacteria", "variant": 3, "pos": Vector2(2120, 230), "angle": 0.15, "scale": 0.55, "color": Color("6f8f8a")},
+		{"type": "bacteria", "variant": 2, "pos": Vector2(-2060, -1120), "angle": -0.48, "scale": 0.52, "color": Color("769893")},
 		{"type": "hostile", "pos": Vector2(-1180, 160), "angle": -0.6, "scale": 0.72},
 		{"type": "hostile", "pos": Vector2(380, 760), "angle": 0.8, "scale": 0.62},
+		{"type": "dead_cell", "variant": 0, "pos": Vector2(-360, 1150), "angle": 0.25, "scale": 0.92},
+		{"type": "dead_cell", "variant": 1, "pos": Vector2(1880, -260), "angle": -0.18, "scale": 0.72},
 		{"type": "virus", "pos": Vector2(840, -860), "scale": 0.9},
 		{"type": "virus", "pos": Vector2(-1480, -820), "scale": 0.75},
 		{"type": "virus", "pos": Vector2(1540, 760), "scale": 0.85}
@@ -578,22 +621,4 @@ func _build_particles() -> void:
 			"radius": 0.8 + seed_b * 2.8,
 			"depth": depth,
 			"color": Color("8fcfd3") if i % 6 != 0 else (Color("d8ed67") if i % 2 == 0 else Color("ef7779"))
-		})
-
-func _build_interior_particles() -> void:
-	_interior_particles = []
-	var colors := [Color("8cff6a"), Color("5ca8ff"), Color("f0df6a"), Color("d47cff"), Color("76f4ff")]
-	for i in 44:
-		var seed := float(abs(("inside:%d" % i).hash() % 10000)) / 10000.0
-		var seed_b := float(abs(("inside-b:%d" % i).hash() % 10000)) / 10000.0
-		var x := lerpf(-0.72, 0.72, seed)
-		var max_y := sqrt(maxf(0.0, 1.0 - pow(x / 0.82, 2.0))) * 0.72
-		var y := lerpf(-max_y, max_y, seed_b)
-		_interior_particles.append({
-			"local": Vector2(x, y),
-			"phase": seed * TAU * 3.0,
-			"speed": 0.25 + seed_b * 0.55,
-			"orbit": 0.018 + seed * 0.045,
-			"radius": 2.6 + seed_b * 4.8,
-			"color": colors[i % colors.size()]
 		})
