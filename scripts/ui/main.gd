@@ -2119,11 +2119,21 @@ func _membrane_side_panel(title_text: String) -> VBoxContainer:
 	panel.border = Color("6df3ff")
 	panel.border_width = 1.4
 	panel.add_theme_constant_override("separation", 10)
+	panel.add_theme_constant_override("margin_left", 10)
+	panel.add_theme_constant_override("margin_right", 10)
+	panel.add_theme_constant_override("margin_top", 8)
+	panel.add_theme_constant_override("margin_bottom", 8)
 	var title := Label.new()
 	title.text = title_text
 	title.add_theme_font_size_override("font_size", 17)
 	title.modulate = Color("adfaff")
-	panel.add_child(title)
+	var title_inset := MarginContainer.new()
+	title_inset.add_theme_constant_override("margin_left", 12)
+	title_inset.add_theme_constant_override("margin_right", 12)
+	title_inset.add_theme_constant_override("margin_top", 8)
+	title_inset.add_theme_constant_override("margin_bottom", 0)
+	title_inset.add_child(title)
+	panel.add_child(title_inset)
 	return panel
 
 func _metabolism_side_panel(title_text: String) -> VBoxContainer:
@@ -2632,6 +2642,7 @@ class MembraneCrossSection:
 
 	signal scroll_changed(next_scroll: float)
 
+	var environment_texture: Texture2D
 	var membrane_texture: Texture2D
 	var transporter_texture: Texture2D
 	var simulation
@@ -2649,6 +2660,7 @@ class MembraneCrossSection:
 		_membrane_scroll = fposmod(next_scroll, 1.0)
 
 	func _ready() -> void:
+		environment_texture = _load_texture_from_file("res://assets/membrane/membrane-environment-clouds.png")
 		membrane_texture = _load_texture_from_file("res://assets/membrane/flat-layered-membrane-reference-style.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet-opaque.png")
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2765,10 +2777,13 @@ class MembraneCrossSection:
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
 
 	func _draw_scene_background(rect: Rect2) -> void:
-		draw_rect(rect, Color("102b34"), true)
+		if environment_texture != null:
+			draw_texture_rect(environment_texture, rect, false)
+		else:
+			draw_rect(rect, Color("102b34"), true)
 		var split_y := _membrane_center_y()
-		draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, split_y)), Color("123d49"), true)
-		draw_rect(Rect2(Vector2(0.0, split_y), Vector2(size.x, size.y - split_y)), Color("eeb184"), true)
+		draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, split_y)), Color(0.02, 0.18, 0.22, 0.34), true)
+		draw_rect(Rect2(Vector2(0.0, split_y), Vector2(size.x, size.y - split_y)), Color(0.42, 0.30, 0.22, 0.22), true)
 		for i in 12:
 			var t := float(i) / 11.0
 			draw_rect(Rect2(Vector2(0.0, split_y * t), Vector2(size.x, split_y / 12.0 + 1.0)), Color(0.56, 0.95, 1.0, 0.025 * (1.0 - t)), true)
@@ -2816,7 +2831,8 @@ class MembraneCrossSection:
 	func _draw_scrolling_membrane_texture() -> void:
 		var rect := _membrane_texture_rect()
 		var tile_width := rect.size.x
-		var offset := -fposmod(_membrane_scroll / VISIBLE_MEMBRANE_ARC, 1.0) * tile_width
+		var visible_width := rect.size.x * 0.92
+		var offset := -fposmod((_membrane_scroll / VISIBLE_MEMBRANE_ARC) * visible_width, tile_width)
 		var x := rect.position.x + offset
 		while x > rect.position.x - tile_width:
 			x -= tile_width
@@ -2919,7 +2935,7 @@ class MembraneCrossSection:
 		for i in total:
 			var arrow: Dictionary = arrows[i]
 			var world_t := _transporter_world_t(arrow)
-			var screen_t := _world_to_visible_t(world_t)
+			var screen_t := _world_to_visible_t_with_margin(world_t, 0.16)
 			if screen_t < 0.0:
 				continue
 			var t := screen_t
@@ -2934,8 +2950,8 @@ class MembraneCrossSection:
 			var copies := clampi(int(arrow.get("count", 0)) + int(arrow.get("queued_count", 0)), 1, 9)
 			for copy_index in range(copies - 1, -1, -1):
 				var depth := float(copy_index) / float(maxi(1, copies - 1))
-				var offset := tangent * (-depth * 24.0) - normal * (depth * 24.0)
-				var scale := 1.0 - depth * 0.12
+				var offset := tangent * (-depth * 18.0) - normal * (depth * 18.0)
+				var scale := 1.0 - depth * 0.10
 				var alpha := 1.0
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0, visual_variant)
 
@@ -2949,9 +2965,12 @@ class MembraneCrossSection:
 		return fposmod(0.15 + seed * 0.70, 1.0)
 
 	func _world_to_visible_t(world_t: float) -> float:
+		return _world_to_visible_t_with_margin(world_t, 0.0)
+
+	func _world_to_visible_t_with_margin(world_t: float, margin: float) -> float:
 		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5
 		var half_visible := VISIBLE_MEMBRANE_ARC * 0.5
-		if absf(rel) > half_visible:
+		if absf(rel) > half_visible + margin * VISIBLE_MEMBRANE_ARC:
 			return -1.0
 		return clampf(rel / VISIBLE_MEMBRANE_ARC + 0.5, 0.0, 1.0)
 
