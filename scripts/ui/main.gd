@@ -2646,7 +2646,7 @@ class MembraneCrossSection:
 	const VISIBLE_MEMBRANE_ARC := 0.42
 
 	func set_scroll_position(next_scroll: float) -> void:
-		_membrane_scroll = clampf(next_scroll, 0.0, 1.0)
+		_membrane_scroll = fposmod(next_scroll, 1.0)
 
 	func _ready() -> void:
 		membrane_texture = _load_texture_from_file("res://assets/membrane/flat-layered-membrane-reference-style.png")
@@ -2656,7 +2656,17 @@ class MembraneCrossSection:
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			_dragging = false
+			_dragging = event.pressed
+			_last_drag_position = event.position
+			accept_event()
+		elif event is InputEventMouseMotion and _dragging:
+			var delta: Vector2 = event.position - _last_drag_position
+			_last_drag_position = event.position
+			if size.x > 1.0:
+				_membrane_scroll = fposmod(_membrane_scroll - delta.x / size.x * VISIBLE_MEMBRANE_ARC, 1.0)
+				scroll_changed.emit(_membrane_scroll)
+				_update_particle_transforms()
+				queue_redraw()
 			accept_event()
 
 	func _process(delta: float) -> void:
@@ -2756,24 +2766,21 @@ class MembraneCrossSection:
 
 	func _draw_scene_background(rect: Rect2) -> void:
 		draw_rect(rect, Color("102b34"), true)
-		var anchor := _anchor_points(96, 0.0, false)
-		var outside_poly := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0)])
-		for i in range(anchor.size() - 1, -1, -1):
-			outside_poly.append(anchor[i])
-		var inside_poly := PackedVector2Array()
-		for point in anchor:
-			inside_poly.append(point)
-		inside_poly.append(Vector2(size.x, size.y))
-		inside_poly.append(Vector2(0, size.y))
-		draw_colored_polygon(outside_poly, Color("123d49"))
-		draw_colored_polygon(inside_poly, Color("f2b58c"))
+		var split_y := _membrane_center_y()
+		draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, split_y)), Color("123d49"), true)
+		draw_rect(Rect2(Vector2(0.0, split_y), Vector2(size.x, size.y - split_y)), Color("eeb184"), true)
+		for i in 12:
+			var t := float(i) / 11.0
+			draw_rect(Rect2(Vector2(0.0, split_y * t), Vector2(size.x, split_y / 12.0 + 1.0)), Color(0.56, 0.95, 1.0, 0.025 * (1.0 - t)), true)
+		for i in 10:
+			var t := float(i) / 9.0
+			draw_rect(Rect2(Vector2(0.0, split_y + (size.y - split_y) * t), Vector2(size.x, (size.y - split_y) / 10.0 + 1.0)), Color(1.0, 0.78, 0.55, 0.035 * (1.0 - t)), true)
+		draw_rect(Rect2(Vector2(0.0, split_y - 2.0), Vector2(size.x, 4.0)), Color(0.0, 0.04, 0.05, 0.32), true)
 		for i in 18:
 			var t := float(i) / 17.0
-			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 18.0 + 1.0)), Color(0.58, 0.95, 1.0, 0.025 * (1.0 - t)), true)
-		draw_circle(Vector2(size.x * 0.50, size.y * 0.77), size.x * 0.56, Color(1.0, 0.73, 0.54, 0.16))
-		draw_circle(Vector2(size.x * 0.54, size.y * 0.78), size.x * 0.42, Color(1.0, 0.93, 0.78, 0.08))
+			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / 18.0 + 1.0)), Color(0.58, 0.95, 1.0, 0.014 * (1.0 - t)), true)
 		for i in 22:
-			var y := lerpf(22.0, size.y * 0.45, float(i) / 21.0)
+			var y := lerpf(22.0, split_y - 20.0, float(i) / 21.0)
 			var wave := sin(_elapsed * 0.16 + float(i) * 0.62) * 18.0
 			draw_line(Vector2(-40.0, y + wave), Vector2(size.x + 40.0, y - 28.0 + wave), Color(0.72, 0.96, 1.0, 0.035), 2.0, true)
 		for i in 36:
@@ -2784,7 +2791,7 @@ class MembraneCrossSection:
 
 	func _draw_membrane_body() -> void:
 		if membrane_texture != null:
-			draw_texture_rect(membrane_texture, _membrane_texture_rect(), false)
+			_draw_scrolling_membrane_texture()
 			return
 		var rect := _fallback_membrane_rect()
 		draw_rect(rect, Color("1d4248"), true)
@@ -2800,11 +2807,22 @@ class MembraneCrossSection:
 			return _fallback_membrane_rect()
 		var aspect := membrane_texture.get_size().x / membrane_texture.get_size().y
 		var width := size.x * 1.04
-		var height := minf(width / aspect, size.y * 0.50)
+		var height := minf(width / aspect, size.y * 0.44)
 		width = height * aspect
 		var x := (size.x - width) * 0.5
-		var y := size.y * 0.50 - height * 0.56
+		var y := size.y * 0.50 - height * 0.52
 		return Rect2(Vector2(x, y), Vector2(width, height))
+
+	func _draw_scrolling_membrane_texture() -> void:
+		var rect := _membrane_texture_rect()
+		var tile_width := rect.size.x
+		var offset := -fposmod(_membrane_scroll, 1.0) * tile_width
+		var x := rect.position.x + offset
+		while x > rect.position.x - tile_width:
+			x -= tile_width
+		while x < rect.position.x + rect.size.x + tile_width:
+			draw_texture_rect(membrane_texture, Rect2(Vector2(x, rect.position.y), rect.size), false)
+			x += tile_width
 
 	func _fallback_membrane_rect() -> Rect2:
 		var height := size.y * 0.28
@@ -2931,10 +2949,14 @@ class MembraneCrossSection:
 		return fposmod(0.15 + seed * 0.70, 1.0)
 
 	func _world_to_visible_t(world_t: float) -> float:
-		return clampf(world_t, 0.0, 1.0)
+		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5
+		var half_visible := VISIBLE_MEMBRANE_ARC * 0.5
+		if absf(rel) > half_visible:
+			return -1.0
+		return clampf(rel / VISIBLE_MEMBRANE_ARC + 0.5, 0.0, 1.0)
 
 	func _visible_to_world_t(screen_t: float) -> float:
-		return clampf(screen_t, 0.0, 1.0)
+		return fposmod(_membrane_scroll + (screen_t - 0.5) * VISIBLE_MEMBRANE_ARC, 1.0)
 
 	func _membrane_placement(t: float) -> Dictionary:
 		var sample := _anchor_sample(t, true)
