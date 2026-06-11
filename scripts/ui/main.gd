@@ -329,16 +329,30 @@ func _build_metabolism_view() -> void:
 	layout.add_theme_constant_override("separation", 12)
 	content.add_child(layout)
 
-	var side := VBoxContainer.new()
-	side.custom_minimum_size = Vector2(300, 0)
-	side.add_theme_constant_override("separation", 8)
+	var side := _metabolism_side_panel("METABOLISM CONTROL")
+	side.custom_minimum_size = Vector2(340, 0)
+	side.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	layout.add_child(side)
 	side.add_child(_section_label("Molecules In Cell"))
+	var molecule_scroll := ScrollContainer.new()
+	molecule_scroll.custom_minimum_size = Vector2(0, 170)
+	molecule_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	molecule_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	side.add_child(molecule_scroll)
 	molecule_list = VBoxContainer.new()
-	side.add_child(molecule_list)
+	molecule_list.add_theme_constant_override("separation", 8)
+	molecule_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	molecule_scroll.add_child(molecule_list)
 	side.add_child(_section_label("Selection"))
+	var detail_scroll := ScrollContainer.new()
+	detail_scroll.custom_minimum_size = Vector2(0, 270)
+	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	side.add_child(detail_scroll)
 	detail_panel = VBoxContainer.new()
-	side.add_child(detail_panel)
+	detail_panel.add_theme_constant_override("separation", 10)
+	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail_scroll.add_child(detail_panel)
 	pathway_box = VBoxContainer.new()
 
 	map_layer = Control.new()
@@ -1112,6 +1126,8 @@ func _molecule_list_button(id: String) -> Button:
 	var button := Button.new()
 	button.toggle_mode = true
 	button.custom_minimum_size = Vector2(0, 62)
+	button.add_theme_font_size_override("font_size", 15)
+	button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_update_molecule_list_button(button, id)
 	button.mouse_entered.connect(func():
 		hovered_metabolism_molecule = id
@@ -1137,6 +1153,15 @@ func _update_molecule_list_button(button: Button, id: String) -> void:
 		float(rates.get("consumption", 0.0))
 	]
 	button.button_pressed = sim.selected_molecule == id
+	var selected: bool = sim.selected_molecule == id
+	var color := _molecule_color(id)
+	button.add_theme_stylebox_override("normal", _metabolism_molecule_row_style(id, false, false))
+	button.add_theme_stylebox_override("hover", _metabolism_molecule_row_style(id, false, true))
+	button.add_theme_stylebox_override("pressed", _metabolism_molecule_row_style(id, true, false))
+	button.add_theme_stylebox_override("focus", _metabolism_molecule_row_style(id, true, true))
+	button.add_theme_color_override("font_color", color.lightened(0.46) if selected else Color("dbeff2"))
+	button.add_theme_color_override("font_hover_color", color.lightened(0.60))
+	button.add_theme_color_override("font_pressed_color", color.lightened(0.70))
 
 func _set_metabolism_hover(id: String) -> void:
 	if metabolism_workspace == null or metabolism_workspace.highlighted_molecule_id == id:
@@ -1171,6 +1196,9 @@ func _refresh_selection_detail() -> void:
 	var button := Button.new()
 	button.text = "Design Enzyme"
 	button.custom_minimum_size = Vector2(0, 42)
+	button.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	button.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	button.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	button.pressed.connect(func(): _open_enzyme_designer(sim.selected_molecule))
 	detail_panel.add_child(button)
 
@@ -1211,6 +1239,9 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_one.text = "+ Build 1"
 	build_one.custom_minimum_size = Vector2(0, 42)
 	build_one.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	build_one.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	build_one.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	build_one.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	build_one.pressed.connect(func():
 		sim.queue_enzyme_build(blueprint_id, 1)
 	)
@@ -1219,6 +1250,9 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_five.text = "+ Build 5"
 	build_five.custom_minimum_size = Vector2(0, 42)
 	build_five.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	build_five.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	build_five.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	build_five.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	build_five.pressed.connect(func():
 		sim.queue_enzyme_build(blueprint_id, 5)
 	)
@@ -1228,6 +1262,9 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	remove.text = "Destroy 1 Active Enzyme"
 	remove.custom_minimum_size = Vector2(0, 42)
 	remove.disabled = int(pathway.get("active_count", 0)) <= 0
+	remove.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	remove.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	remove.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	remove.pressed.connect(func():
 		sim.destroy_active_enzyme(blueprint_id)
 	)
@@ -1291,6 +1328,9 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 	var select := Button.new()
 	select.text = "Manage"
 	select.custom_minimum_size = Vector2(0, 32)
+	select.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	select.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	select.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	select.pressed.connect(func():
 		_handle_pathway_click(str(pathway.get("id", "")))
 	)
@@ -1789,6 +1829,21 @@ func _membrane_list_row_style(active: bool, id: String, hover: bool) -> StyleBox
 	style.content_margin_bottom = 4
 	return style
 
+func _metabolism_molecule_row_style(id: String, active: bool, hover: bool) -> StyleBoxFlat:
+	var color := _molecule_color(id)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(color.r, color.g, color.b, 0.18) if active else Color(0.03, 0.12, 0.14, 0.72 if hover else 0.52)
+	style.border_color = Color(color.r, color.g, color.b, 0.88 if active else 0.45 if hover else 0.22)
+	style.set_border_width_all(2 if active else 1)
+	style.set_corner_radius_all(4)
+	style.shadow_color = Color(color.r, color.g, color.b, 0.22 if active else 0.10 if hover else 0.0)
+	style.shadow_size = 7 if active else 4 if hover else 0
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	return style
+
 func _formula_badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("c8c8c8")
@@ -1869,6 +1924,19 @@ func _glow_panel(title_text: String) -> VBoxContainer:
 func _membrane_side_panel(title_text: String) -> VBoxContainer:
 	var panel := GlowVBox.new()
 	panel.fill = Color(0.025, 0.105, 0.135, 0.90)
+	panel.border = Color("6df3ff")
+	panel.border_width = 1.4
+	panel.add_theme_constant_override("separation", 10)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 17)
+	title.modulate = Color("adfaff")
+	panel.add_child(title)
+	return panel
+
+func _metabolism_side_panel(title_text: String) -> VBoxContainer:
+	var panel := GlowVBox.new()
+	panel.fill = Color(0.030, 0.095, 0.105, 0.92)
 	panel.border = Color("6df3ff")
 	panel.border_width = 1.4
 	panel.add_theme_constant_override("separation", 10)

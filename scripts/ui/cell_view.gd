@@ -312,7 +312,7 @@ func _draw_environment_sprite(item: Dictionary, pos: Vector2, alpha: float) -> v
 	var region := _object_sprite_region(kind, int(item.get("variant", 0)))
 	var phase := pos.x * 0.013 + pos.y * 0.007
 	var pulse := 1.0 + sin(_elapsed * 1.7 + phase) * 0.025
-	var target_size := _object_sprite_size(kind) * scale_value * pulse
+	var target_size := _object_sprite_size(kind, region) * scale_value * pulse
 	var angle := float(item.get("angle", 0.0)) + sin(_elapsed * 0.42 + phase) * 0.018
 	var bob := Vector2(0, sin(_elapsed * 1.1 + phase) * 3.0)
 	_draw_texture_region_centered(_object_texture, region, pos + bob, target_size, angle, Color(1, 1, 1, alpha))
@@ -330,18 +330,18 @@ func _object_sprite_region(kind: String, variant: int) -> Rect2:
 			return Rect2(Vector2(396, 59), Vector2(324, 263))
 		"sugar":
 			var regions := [
-				Rect2(Vector2(109, 439), Vector2(141, 148)),
-				Rect2(Vector2(406, 459), Vector2(133, 128)),
+				Rect2(Vector2(62, 410), Vector2(232, 212)),
+				Rect2(Vector2(360, 424), Vector2(226, 196)),
 			]
 			return regions[variant % regions.size()]
 		"sulfur":
 			var regions := [
-				Rect2(Vector2(663, 417), Vector2(175, 187)),
-				Rect2(Vector2(919, 476), Vector2(120, 123)),
+				Rect2(Vector2(626, 384), Vector2(252, 246)),
+				Rect2(Vector2(880, 432), Vector2(208, 198)),
 			]
 			return regions[variant % regions.size()]
 		"nitrogen":
-			return Rect2(Vector2(1126, 448), Vector2(302, 153))
+			return Rect2(Vector2(1086, 420), Vector2(368, 208))
 		"dead_cell":
 			var regions := [
 				Rect2(Vector2(100, 733), Vector2(313, 186)),
@@ -356,19 +356,27 @@ func _object_sprite_region(kind: String, variant: int) -> Rect2:
 			return regions[variant % regions.size()]
 	return Rect2(Vector2(57, 50), Vector2(297, 268))
 
-func _object_sprite_size(kind: String) -> Vector2:
+func _object_sprite_size(kind: String, region := Rect2()) -> Vector2:
 	match kind:
 		"bacteria", "hostile":
 			return Vector2(250, 170)
-		"sugar", "nitrogen":
-			return Vector2(145, 120)
+		"sugar":
+			return _fit_sprite_size(region, 170.0, 150.0)
+		"nitrogen":
+			return _fit_sprite_size(region, 170.0, 122.0)
 		"sulfur":
-			return Vector2(160, 145)
+			return _fit_sprite_size(region, 172.0, 160.0)
 		"dead_cell":
 			return Vector2(260, 190)
 		"virus":
 			return Vector2(120, 110)
 	return Vector2(120, 100)
+
+func _fit_sprite_size(region: Rect2, max_width: float, max_height: float) -> Vector2:
+	if region.size.x <= 0.0 or region.size.y <= 0.0:
+		return Vector2(max_width, max_height)
+	var scale := minf(max_width / region.size.x, max_height / region.size.y)
+	return region.size * scale
 
 func _draw_texture_region_centered(texture: Texture2D, region: Rect2, center: Vector2, target_size: Vector2, angle: float, modulate: Color) -> void:
 	var x_axis := Vector2.RIGHT.rotated(angle) * target_size.x
