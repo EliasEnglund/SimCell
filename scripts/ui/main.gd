@@ -9,7 +9,7 @@ const MoleculeGraphScript := preload("res://scripts/core/molecule_graph.gd")
 
 const VIEW_ICON_PATHS := {
 	"cell": "res://assets/art_lab/icons/views/cell.png",
-	"exploration": "res://assets/art_lab/icons/views/cell.png",
+	"exploration": "res://assets/art_lab/icons/views/exploration.png",
 	"metabolism": "res://assets/art_lab/icons/views/metabolism.png",
 	"membrane": "res://assets/art_lab/icons/views/membrane.png",
 	"proteins": "res://assets/art_lab/icons/views/proteins.png",
@@ -326,13 +326,23 @@ func _build_metabolism_view() -> void:
 	hovered_metabolism_molecule = ""
 	var layout := HBoxContainer.new()
 	layout.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layout.add_theme_constant_override("separation", 12)
+	layout.add_theme_constant_override("separation", 0)
 	content.add_child(layout)
 
-	var side := _metabolism_side_panel("METABOLISM CONTROL")
-	side.custom_minimum_size = Vector2(340, 0)
+	var side_shell := PanelContainer.new()
+	side_shell.custom_minimum_size = Vector2(340, 0)
+	side_shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_shell.add_theme_stylebox_override("panel", _metabolism_panel_style())
+	layout.add_child(side_shell)
+	var side := VBoxContainer.new()
 	side.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	layout.add_child(side)
+	side.add_theme_constant_override("separation", 10)
+	side_shell.add_child(side)
+	var title := Label.new()
+	title.text = "METABOLISM CONTROL"
+	title.add_theme_font_size_override("font_size", 17)
+	title.modulate = Color("adfaff")
+	side.add_child(title)
 	side.add_child(_section_label("Molecules In Cell"))
 	var molecule_scroll := ScrollContainer.new()
 	molecule_scroll.custom_minimum_size = Vector2(0, 170)
@@ -399,7 +409,6 @@ func _build_protein_view() -> void:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	center.add_theme_constant_override("separation", 10)
 	layout.add_child(center)
-	center.add_child(_protein_screen_title())
 	queue_box = VBoxContainer.new()
 	queue_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	queue_box.add_theme_constant_override("separation", 12)
@@ -515,6 +524,7 @@ func _build_art_lab_view() -> void:
 	margin.add_child(stack)
 	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
 	stack.add_child(_art_exploration_cell_concepts_section())
+	stack.add_child(_art_flagellum_animation_section())
 	stack.add_child(_art_molecule_variant_section())
 	stack.add_child(_art_selected_molecule_examples_section())
 	stack.add_child(_art_enzyme_card_variants_section())
@@ -533,6 +543,7 @@ func _build_art_lab_view() -> void:
 	]))
 	stack.add_child(_art_icon_section("View Navigation", [
 		["Cell", VIEW_ICON_PATHS["cell"]],
+		["Exploration", VIEW_ICON_PATHS["exploration"]],
 		["Metabolism", VIEW_ICON_PATHS["metabolism"]],
 		["Membrane", VIEW_ICON_PATHS["membrane"]],
 		["Proteins", VIEW_ICON_PATHS["proteins"]],
@@ -591,6 +602,54 @@ func _art_exploration_cell_concepts_section() -> Control:
 	preview.custom_minimum_size = Vector2(760, 230)
 	cycle_panel.add_child(preview)
 	panel.add_child(cycle_panel)
+	return panel
+
+func _art_flagellum_animation_section() -> Control:
+	var panel := _glow_panel("Flagellum Animation Concepts")
+	var note := Label.new()
+	note.text = "Prototype-only flagellum sprite sheets. Each row is a separate state: idle, wind-up, and full swimming. The anchor dot marks where the sprite attaches to the cell, so the animation should cycle without jumping."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	panel.add_child(_art_sheet_section("Generated Flagellum Sheet", [
+		["Variant 1: clean cyan filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-animation-alpha.png"],
+		["Variant 2: thicker ribbon filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-ribbon-animation-alpha.png"],
+		["Variant 3: organic filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"]
+	], 330.0))
+	var variants := [
+		["1 Clean Cyan", "res://assets/art_lab/exploration/flagellum-animation-alpha.png"],
+		["2 Ribbon", "res://assets/art_lab/exploration/flagellum-ribbon-animation-alpha.png"],
+		["3 Organic", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"]
+	]
+	for variant in variants:
+		var title := Label.new()
+		title.text = str(variant[0])
+		title.add_theme_font_size_override("font_size", 16)
+		title.modulate = Color("76f4ff")
+		panel.add_child(title)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 14)
+		panel.add_child(row)
+		var states := [
+			["Idle", 0],
+			["Wind-up", 1],
+			["Swim", 2]
+		]
+		for item in states:
+			var card := VBoxContainer.new()
+			card.custom_minimum_size = Vector2(270, 190)
+			card.add_theme_constant_override("separation", 6)
+			var preview := FlagellumSpritePreview.new()
+			preview.sheet_path = str(variant[1])
+			preview.row_index = int(item[1])
+			preview.custom_minimum_size = Vector2(260, 150)
+			card.add_child(preview)
+			var label := Label.new()
+			label.text = str(item[0])
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label.modulate = Color("dbeff2")
+			card.add_child(label)
+			row.add_child(card)
 	return panel
 
 func _art_molecule_variant_section() -> Control:
@@ -1844,6 +1903,19 @@ func _metabolism_molecule_row_style(id: String, active: bool, hover: bool) -> St
 	style.content_margin_bottom = 8
 	return style
 
+func _metabolism_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.030, 0.095, 0.105, 0.94)
+	style.border_color = Color("6df3ff")
+	style.set_border_width_all(2)
+	style.shadow_color = Color(0.25, 0.95, 1.0, 0.18)
+	style.shadow_size = 9
+	style.content_margin_left = 18
+	style.content_margin_right = 14
+	style.content_margin_top = 12
+	style.content_margin_bottom = 14
+	return style
+
 func _formula_badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("c8c8c8")
@@ -2967,6 +3039,56 @@ class CellSpriteCyclePreview:
 		draw_texture_rect_region(_texture, target, source)
 		draw_rect(target, Color(0.46, 0.96, 1.0, 0.28), false, 1.0)
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 16), "Cycling frame %d/%d at %.1f fps" % [frame + 1, frame_count, frame_rate], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
+
+	func _fit_rect(source_size: Vector2, bounds: Rect2) -> Rect2:
+		var scale_value := minf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)
+		var fitted := source_size * scale_value
+		return Rect2(bounds.position + (bounds.size - fitted) * 0.5, fitted)
+
+	func _load_texture(path: String) -> Texture2D:
+		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+		var image := Image.load_from_file(actual_path)
+		if image == null:
+			return null
+		return ImageTexture.create_from_image(image)
+
+class FlagellumSpritePreview:
+	extends Control
+
+	var sheet_path := ""
+	var row_index := 0
+	var frame_count := 8
+	var row_count := 3
+	var _texture: Texture2D
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		set_process(true)
+		_texture = _load_texture(sheet_path)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("0b242b"), true)
+		for i in 8:
+			var x := size.x * float(i) / 7.0
+			draw_line(Vector2(x, 0), Vector2(x, size.y), Color(0.45, 0.95, 1.0, 0.025), 1.0)
+		if _texture == null:
+			draw_string(ThemeDB.fallback_font, Vector2(18, 36), "Missing flagellum sheet", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("dbeff2"))
+			return
+		var frame := int(floor(_elapsed * 8.0)) % frame_count
+		var frame_w := float(_texture.get_width()) / float(frame_count)
+		var frame_h := float(_texture.get_height()) / float(row_count)
+		var source := Rect2(Vector2(frame_w * float(frame), frame_h * float(row_index)), Vector2(frame_w, frame_h))
+		var target := _fit_rect(source.size, Rect2(Vector2(14, 18), size - Vector2(28, 40)))
+		draw_texture_rect_region(_texture, target, source)
+		var anchor := Vector2(target.position.x + target.size.x * 0.16, target.position.y + target.size.y * 0.5)
+		draw_circle(anchor, 9.0, Color(1.0, 0.2, 0.9, 0.18))
+		draw_circle(anchor, 4.5, Color("ff76f4"))
+		draw_rect(target, Color(0.46, 0.96, 1.0, 0.26), false, 1.0)
+		draw_string(ThemeDB.fallback_font, Vector2(16, size.y - 15), "frame %d/%d" % [frame + 1, frame_count], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
 
 	func _fit_rect(source_size: Vector2, bounds: Rect2) -> Rect2:
 		var scale_value := minf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)

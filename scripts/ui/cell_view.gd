@@ -394,7 +394,7 @@ func _draw_cell() -> void:
 	var normal := Vector2(-forward.y, forward.x)
 	if _player_cell_texture != null:
 		var frame_count := 6
-		var frame := int(floor(_elapsed * (5.0 + _swim_power * 1.5))) % frame_count
+		var frame := int(floor(_elapsed * 4.0)) % frame_count
 		var frame_w := float(_player_cell_texture.get_width()) / float(frame_count)
 		var region := Rect2(Vector2(0, 0), Vector2(frame_w, _player_cell_texture.get_height()))
 		region.position.x += region.size.x * float(frame)
@@ -429,7 +429,7 @@ func _draw_cell_wake(alpha: float) -> void:
 
 func _draw_flagellum(anchor: Vector2, dir: Vector2, normal: Vector2, radius: float, alpha: float) -> void:
 	var points := PackedVector2Array()
-	var anim := _elapsed * (7.0 + _swim_power * 8.0)
+	var anim := _elapsed * 7.0
 	for i in 44:
 		var t := float(i) / 43.0
 		var taper := 1.0 - t * 0.58
