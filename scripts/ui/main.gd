@@ -51,6 +51,7 @@ var selected_membrane_direction := "import"
 var hovered_membrane_molecule := ""
 var membrane_outside_signature := ""
 var membrane_transporter_signature := ""
+var membrane_scroll := 0.5
 var selected_pathway := ""
 var metabolism_layout_positions := {}
 var metabolism_manual_positions := {}
@@ -62,6 +63,7 @@ var metabolism_zoom := 1.0
 var metabolism_molecule_list_signature := ""
 var metabolism_molecule_buttons := {}
 var hovered_metabolism_molecule := ""
+var exploration_state := {}
 
 var designer_tool := "lyase"
 var designer_target := -1
@@ -310,6 +312,10 @@ func _build_exploration_view() -> void:
 	var cell_view = CellViewScript.new()
 	cell_view.simulation = sim
 	cell_view.view_mode = "exploration"
+	cell_view.set_persistent_state(exploration_state)
+	cell_view.state_changed.connect(func(next_state: Dictionary):
+		exploration_state = next_state
+	)
 	cell_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cell_view.clip_contents = true
 	content.add_child(cell_view)
@@ -537,7 +543,7 @@ func _build_art_lab_view() -> void:
 	]))
 	stack.add_child(_art_icon_section("Source Metabolites And Elements", [
 		["Glucose", "res://assets/art_lab/icons/elements/glucose_simple.png"],
-		["Nitrogen", "res://assets/art_lab/icons/elements/nitrogen_simple.png"],
+		["Nitrogen", "res://assets/art_lab/icons/elements/nitrogen_simple_clean.png"],
 		["Sulfur", "res://assets/art_lab/icons/elements/sulfur_simple.png"],
 		["Phosphorus", "res://assets/art_lab/icons/elements/phosphorus_simple.png"]
 	]))
@@ -614,12 +620,14 @@ func _art_flagellum_animation_section() -> Control:
 	panel.add_child(_art_sheet_section("Generated Flagellum Sheet", [
 		["Variant 1: clean cyan filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-animation-alpha.png"],
 		["Variant 2: thicker ribbon filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-ribbon-animation-alpha.png"],
-		["Variant 3: organic filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"]
+		["Variant 3: organic filament. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"],
+		["Variant 4: AI painted filament, used in exploration. Rows: idle, wind-up, swim.", "res://assets/art_lab/exploration/flagellum-ai-alpha.png"]
 	], 330.0))
 	var variants := [
 		["1 Clean Cyan", "res://assets/art_lab/exploration/flagellum-animation-alpha.png"],
 		["2 Ribbon", "res://assets/art_lab/exploration/flagellum-ribbon-animation-alpha.png"],
-		["3 Organic", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"]
+		["3 Organic", "res://assets/art_lab/exploration/flagellum-organic-animation-alpha.png"],
+		["4 AI Painted", "res://assets/art_lab/exploration/flagellum-ai-alpha.png"]
 	]
 	for variant in variants:
 		var title := Label.new()
@@ -999,7 +1007,7 @@ func _refresh() -> void:
 			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
 			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff"), "Electrons (NADH)"],
 			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
-			["res://assets/art_lab/icons/elements/nitrogen_simple.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"],
+			["res://assets/art_lab/icons/elements/nitrogen_simple_clean.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"],
 			["res://assets/art_lab/icons/resources/dna_simple.png", "%.0f" % float(sim.resources.get("DNA Points", 0.0)), Color("76f4ff"), "DNA Points"]
 		])
 	if molecule_summary_box != null:
@@ -1182,6 +1190,10 @@ func _membrane_transporter_signature() -> String:
 func _membrane_cross_section() -> Control:
 	var scene := MembraneCrossSection.new()
 	scene.simulation = sim
+	scene.set_scroll_position(membrane_scroll)
+	scene.scroll_changed.connect(func(next_scroll: float):
+		membrane_scroll = next_scroll
+	)
 	scene.custom_minimum_size = Vector2(0, 430)
 	scene.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scene.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2536,6 +2548,8 @@ class ProteinContextDish:
 class MembraneCrossSection:
 	extends Control
 
+	signal scroll_changed(next_scroll: float)
+
 	var transporter_texture: Texture2D
 	var simulation
 	var highlight_molecule := ""
@@ -2547,8 +2561,11 @@ class MembraneCrossSection:
 	var _last_drag_position := Vector2.ZERO
 	const VISIBLE_MEMBRANE_ARC := 0.42
 
+	func set_scroll_position(next_scroll: float) -> void:
+		_membrane_scroll = fposmod(next_scroll, 1.0)
+
 	func _ready() -> void:
-		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet.png")
+		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet-opaque.png")
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		set_process(true)
 
@@ -2562,6 +2579,7 @@ class MembraneCrossSection:
 			_last_drag_position = event.position
 			if size.x > 1.0:
 				_membrane_scroll = fposmod(_membrane_scroll - delta.x / size.x * VISIBLE_MEMBRANE_ARC, 1.0)
+				scroll_changed.emit(_membrane_scroll)
 				_update_particle_transforms()
 				queue_redraw()
 			accept_event()
@@ -2809,7 +2827,7 @@ class MembraneCrossSection:
 			return
 		for i in total:
 			var arrow: Dictionary = arrows[i]
-			var world_t := (float(i) + 0.5) / float(total)
+			var world_t := _transporter_world_t(arrow)
 			var screen_t := _world_to_visible_t(world_t)
 			if screen_t < 0.0:
 				continue
@@ -2822,13 +2840,25 @@ class MembraneCrossSection:
 			var molecule_id := str(arrow.get("molecule", ""))
 			var visual_variant := int(arrow.get("visual_variant", 0))
 			var protein_color: Color = _source_color(molecule_id).lightened(0.12)
-			var copies := 1
+			var copies := clampi(int(arrow.get("count", 0)) + int(arrow.get("queued_count", 0)), 1, 9)
 			for copy_index in range(copies - 1, -1, -1):
 				var depth := float(copy_index) / float(maxi(1, copies - 1))
-				var offset := tangent * (-depth * 22.0) - normal * (depth * 34.0)
-				var scale := 1.0 - depth * 0.20
+				var offset := tangent * (-depth * 24.0) - normal * (depth * 24.0)
+				var scale := 1.0 - depth * 0.12
 				var alpha := 1.0
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0, visual_variant)
+
+	func _transporter_world_t(arrow: Dictionary) -> float:
+		var direction := str(arrow.get("direction", ""))
+		var molecule_id := str(arrow.get("molecule", ""))
+		if direction == "import" and simulation != null and simulation.molecule_types.has(molecule_id):
+			var molecule: Dictionary = simulation.molecule_types[molecule_id]
+			var name := str(molecule.get("name", "")).to_lower()
+			if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
+				return 0.5
+		var key := "%s:%s" % [direction, molecule_id]
+		var seed := float(abs(key.hash() % 10000)) / 10000.0
+		return fposmod(0.15 + seed * 0.70, 1.0)
 
 	func _world_to_visible_t(world_t: float) -> float:
 		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5

@@ -1,6 +1,8 @@
 extends Control
 class_name CellView
 
+signal state_changed(next_state: Dictionary)
+
 var simulation
 var view_mode := "exploration"
 
@@ -26,6 +28,7 @@ var _background_texture: Texture2D
 var _particle_overlay_texture: Texture2D
 var _object_texture: Texture2D
 var _player_cell_texture: Texture2D
+var _flagellum_texture: Texture2D
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -33,15 +36,43 @@ func _ready() -> void:
 	_particle_overlay_texture = _load_texture("res://assets/art_lab/exploration/parallax-particles-alpha.png")
 	_object_texture = _load_texture("res://assets/art_lab/exploration/exploration-objects-alpha.png")
 	_player_cell_texture = _load_texture("res://assets/art_lab/exploration/player-cell-idle-alpha.png")
+	_flagellum_texture = _load_texture("res://assets/art_lab/exploration/flagellum-ai-alpha.png")
 	_build_environment()
 	_build_clouds()
 	_build_particles()
+
+func set_persistent_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	cell_position = state.get("cell_position", cell_position)
+	cell_angle = float(state.get("cell_angle", cell_angle))
+	desired_angle = float(state.get("desired_angle", desired_angle))
+	propulsion_energy = float(state.get("propulsion_energy", propulsion_energy))
+	cell_velocity = state.get("cell_velocity", cell_velocity)
+	camera_position = state.get("camera_position", camera_position)
+	zoom = float(state.get("zoom", zoom))
+	_elapsed = float(state.get("elapsed", _elapsed))
+	_swim_power = float(state.get("swim_power", _swim_power))
+
+func _persistent_state() -> Dictionary:
+	return {
+		"cell_position": cell_position,
+		"cell_angle": cell_angle,
+		"desired_angle": desired_angle,
+		"propulsion_energy": propulsion_energy,
+		"cell_velocity": cell_velocity,
+		"camera_position": camera_position,
+		"zoom": zoom,
+		"elapsed": _elapsed,
+		"swim_power": _swim_power
+	}
 
 func _process(delta: float) -> void:
 	_elapsed += delta
 	if view_mode == "exploration":
 		_update_cell(delta)
 		camera_position = camera_position.lerp(cell_position, clampf(delta * 5.5, 0.0, 1.0))
+		state_changed.emit(_persistent_state())
 	queue_redraw()
 
 func _update_cell(delta: float) -> void:
@@ -399,6 +430,7 @@ func _draw_cell() -> void:
 		var region := Rect2(Vector2(0, 0), Vector2(frame_w, _player_cell_texture.get_height()))
 		region.position.x += region.size.x * float(frame)
 		draw_circle(pos, radius * 0.84, Color(0.12, 0.95, 1.0, 0.035))
+		_draw_sprite_flagellum(pos + back * radius * 0.42, back, radius)
 		_draw_texture_region_centered(_player_cell_texture, region, pos, Vector2(215, 215) * zoom, cell_angle + PI * 0.5, Color(1, 1, 1, 1))
 	else:
 		_draw_flagellum(pos + back * radius * 0.84, back, normal, radius, 1.0)
@@ -426,6 +458,31 @@ func _draw_cell_wake(alpha: float) -> void:
 		])
 		draw_colored_polygon(wash, Color(0.20, 1.0, 1.0, 0.035 * fade * alpha))
 		draw_polyline(wash, Color(0.42, 1.0, 0.88, 0.12 * fade * alpha), maxf(1.0, 2.0 * zoom), true)
+
+func _draw_sprite_flagellum(anchor: Vector2, dir: Vector2, radius: float) -> void:
+	if _flagellum_texture == null:
+		return
+	var state_row := 0
+	var frame_rate := 3.5
+	if _swim_power > 0.62:
+		state_row = 2
+		frame_rate = 9.0
+	elif _swim_power > 0.14:
+		state_row = 1
+		frame_rate = 6.5
+	var frame_count := 8
+	var row_count := 3
+	var frame := int(floor(_elapsed * frame_rate)) % frame_count
+	var frame_w := float(_flagellum_texture.get_width()) / float(frame_count)
+	var frame_h := float(_flagellum_texture.get_height()) / float(row_count)
+	var source := Rect2(Vector2(frame_w * float(frame), frame_h * float(state_row)), Vector2(frame_w, frame_h))
+	var target_height := radius * 0.48
+	var target_width := target_height * source.size.x / source.size.y
+	var anchor_u := 0.16
+	draw_set_transform(anchor, dir.angle(), Vector2.ONE)
+	var target := Rect2(Vector2(-target_width * anchor_u, -target_height * 0.5), Vector2(target_width, target_height))
+	draw_texture_rect_region(_flagellum_texture, target, source, Color(1, 1, 1, 1))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_flagellum(anchor: Vector2, dir: Vector2, normal: Vector2, radius: float, alpha: float) -> void:
 	var points := PackedVector2Array()

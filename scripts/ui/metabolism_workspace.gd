@@ -391,6 +391,7 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 				"product_id": product_id,
 				"product_index": product_index,
 				"target_rect_world": target_rect_world,
+				"target_center": target_center,
 				"source_dir": source_dir,
 				"target_dir": target_dir
 			})
@@ -398,15 +399,14 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 		for spec in route_specs:
 			var side_key := _axis_key(spec.get("source_dir", Vector2.ZERO))
 			sibling_side_counts[side_key] = int(sibling_side_counts.get(side_key, 0)) + 1
-		var sibling_side_indices := {}
+		var sibling_side_indices := _spatial_lane_indices(route_specs, source_center)
 		for spec in route_specs:
 			var product_id: String = spec.get("product_id", "")
 			var product_index: int = int(spec.get("product_index", 0))
 			var source_dir: Vector2 = spec.get("source_dir", Vector2.DOWN)
 			var target_dir: Vector2 = spec.get("target_dir", Vector2.UP)
 			var side_key := _axis_key(source_dir)
-			var side_index := int(sibling_side_indices.get(side_key, 0))
-			sibling_side_indices[side_key] = side_index + 1
+			var side_index := int(sibling_side_indices.get(product_id, 0))
 			var lane_offset := _route_lane_offset(source_dir, side_index, int(sibling_side_counts.get(side_key, 1)))
 			var target_rect_world: Rect2 = spec.get("target_rect_world", Rect2())
 			var source_port := _node_port_world(source_rect_world.position, source_rect_world.size, source_dir) + lane_offset
@@ -484,6 +484,27 @@ func _route_lane_offset(direction: Vector2, index: int, count: int) -> Vector2:
 	if perpendicular.length_squared() <= 0.001:
 		return Vector2.ZERO
 	return perpendicular.normalized() * lane_gap * centered_index
+
+func _spatial_lane_indices(route_specs: Array[Dictionary], source_center: Vector2) -> Dictionary:
+	var result := {}
+	var grouped := {}
+	for spec in route_specs:
+		var side_key := _axis_key(spec.get("source_dir", Vector2.ZERO))
+		if not grouped.has(side_key):
+			grouped[side_key] = []
+		grouped[side_key].append(spec)
+	for side_key in grouped.keys():
+		var specs: Array = grouped[side_key]
+		specs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var dir: Vector2 = a.get("source_dir", Vector2.DOWN)
+			var lane_axis := Vector2(-dir.y, dir.x).normalized()
+			var a_center: Vector2 = a.get("target_center", source_center)
+			var b_center: Vector2 = b.get("target_center", source_center)
+			return (a_center - source_center).dot(lane_axis) < (b_center - source_center).dot(lane_axis)
+		)
+		for i in specs.size():
+			result[str(specs[i].get("product_id", ""))] = i
+	return result
 
 func _axis_key(direction: Vector2) -> String:
 	if absf(direction.x) > absf(direction.y):
