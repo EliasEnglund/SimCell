@@ -52,6 +52,7 @@ var hovered_membrane_molecule := ""
 var membrane_outside_signature := ""
 var membrane_transporter_signature := ""
 var membrane_scroll := 0.5
+var membrane_transporter_slots := {}
 var selected_pathway := ""
 var metabolism_layout_positions := {}
 var metabolism_manual_positions := {}
@@ -1040,12 +1041,14 @@ func _refresh_membrane() -> void:
 	_apply_membrane_focus()
 
 func _apply_membrane_focus() -> void:
+	_ensure_membrane_transporter_slots()
 	if membrane_build_button != null:
 		membrane_build_button.visible = not selected_membrane_molecule.is_empty() and sim.molecule_types.has(selected_membrane_molecule)
 		if membrane_build_button.visible:
 			membrane_build_button.text = "Build %s Importer" % sim.molecule_types[selected_membrane_molecule].get("formula", "Molecule")
 	if membrane_scene != null:
 		membrane_scene.highlight_molecule = selected_membrane_molecule if not selected_membrane_molecule.is_empty() else hovered_membrane_molecule
+		membrane_scene.transporter_slots = membrane_transporter_slots.duplicate(true)
 		membrane_scene.update_from_simulation()
 
 func _clear_membrane_selection() -> void:
@@ -1063,7 +1066,8 @@ func _handle_membrane_empty_click(event: InputEvent) -> void:
 func _build_selected_importer() -> void:
 	if selected_membrane_molecule.is_empty():
 		return
-	sim.build_transporter("import", selected_membrane_molecule)
+	if sim.build_transporter("import", selected_membrane_molecule):
+		_ensure_membrane_transporter_slot("import", selected_membrane_molecule)
 	membrane_transporter_signature = ""
 	_refresh_membrane()
 
@@ -1188,8 +1192,10 @@ func _membrane_transporter_signature() -> String:
 	return "|".join(parts)
 
 func _membrane_cross_section() -> Control:
+	_ensure_membrane_transporter_slots()
 	var scene := MembraneCrossSection.new()
 	scene.simulation = sim
+	scene.transporter_slots = membrane_transporter_slots.duplicate(true)
 	scene.set_scroll_position(membrane_scroll)
 	scene.scroll_changed.connect(func(next_scroll: float):
 		membrane_scroll = next_scroll
@@ -1199,6 +1205,24 @@ func _membrane_cross_section() -> Control:
 	scene.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scene.clip_contents = true
 	return scene
+
+func _ensure_membrane_transporter_slots() -> void:
+	var glucose_id := _glucose_molecule_id()
+	if not glucose_id.is_empty():
+		_ensure_membrane_transporter_slot("import", glucose_id)
+	for transporter in sim.transporter_list():
+		_ensure_membrane_transporter_slot(str(transporter.get("direction", "")), str(transporter.get("molecule", "")))
+
+func _ensure_membrane_transporter_slot(direction: String, molecule_id: String) -> void:
+	if direction.is_empty() or molecule_id.is_empty():
+		return
+	var key := "%s:%s" % [direction, molecule_id]
+	if membrane_transporter_slots.has(key):
+		return
+	var next_slot := 0
+	for value in membrane_transporter_slots.values():
+		next_slot = maxi(next_slot, int(value) + 1)
+	membrane_transporter_slots[key] = next_slot
 
 func _refresh_metabolism() -> void:
 	var ids := sim.present_molecule_ids()
@@ -2553,6 +2577,7 @@ class MembraneCrossSection:
 	var transporter_texture: Texture2D
 	var simulation
 	var highlight_molecule := ""
+	var transporter_slots := {}
 	var _particles := {}
 	var _signature := ""
 	var _elapsed := 0.0
@@ -2673,9 +2698,9 @@ class MembraneCrossSection:
 		var rect := Rect2(Vector2.ZERO, size)
 		_draw_scene_background(rect)
 		_draw_membrane_body()
+		_draw_membrane_front_heads()
 		if simulation != null:
 			_draw_transporter_proteins()
-		_draw_membrane_front_heads()
 		draw_string(ThemeDB.fallback_font, Vector2(18, 32), "EXTRACELLULAR SPACE", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.82, 0.94, 0.96, 0.66))
 		draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 24), "CYTOPLASM", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.88, 0.78, 0.62))
 
@@ -2851,12 +2876,9 @@ class MembraneCrossSection:
 	func _transporter_world_t(arrow: Dictionary) -> float:
 		var direction := str(arrow.get("direction", ""))
 		var molecule_id := str(arrow.get("molecule", ""))
-		if direction == "import" and simulation != null and simulation.molecule_types.has(molecule_id):
-			var molecule: Dictionary = simulation.molecule_types[molecule_id]
-			var name := str(molecule.get("name", "")).to_lower()
-			if name == "glucose" or str(molecule.get("formula", "")) == "C₆O₂":
-				return 0.5
 		var key := "%s:%s" % [direction, molecule_id]
+		if transporter_slots.has(key):
+			return fposmod(0.5 + float(transporter_slots[key]) * 0.055, 1.0)
 		var seed := float(abs(key.hash() % 10000)) / 10000.0
 		return fposmod(0.15 + seed * 0.70, 1.0)
 
