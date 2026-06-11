@@ -2632,6 +2632,7 @@ class MembraneCrossSection:
 
 	signal scroll_changed(next_scroll: float)
 
+	var membrane_texture: Texture2D
 	var transporter_texture: Texture2D
 	var simulation
 	var highlight_molecule := ""
@@ -2645,26 +2646,17 @@ class MembraneCrossSection:
 	const VISIBLE_MEMBRANE_ARC := 0.42
 
 	func set_scroll_position(next_scroll: float) -> void:
-		_membrane_scroll = fposmod(next_scroll, 1.0)
+		_membrane_scroll = clampf(next_scroll, 0.0, 1.0)
 
 	func _ready() -> void:
+		membrane_texture = _load_texture_from_file("res://assets/membrane/flat-layered-membrane-reference-style.png")
 		transporter_texture = _load_texture_from_file("res://assets/membrane/transporter-sheet-opaque.png")
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		set_process(true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			_dragging = event.pressed
-			_last_drag_position = event.position
-			accept_event()
-		elif event is InputEventMouseMotion and _dragging:
-			var delta: Vector2 = event.position - _last_drag_position
-			_last_drag_position = event.position
-			if size.x > 1.0:
-				_membrane_scroll = fposmod(_membrane_scroll - delta.x / size.x * VISIBLE_MEMBRANE_ARC, 1.0)
-				scroll_changed.emit(_membrane_scroll)
-				_update_particle_transforms()
-				queue_redraw()
+			_dragging = false
 			accept_event()
 
 	func _process(delta: float) -> void:
@@ -2791,25 +2783,36 @@ class MembraneCrossSection:
 			draw_circle(p + drift, 1.2 + fmod(seed * 5.0, 2.2), Color(0.82, 1.0, 0.94, 0.08 + seed * 0.06))
 
 	func _draw_membrane_body() -> void:
-		var upper_edge := _membrane_edge_points(-43.0, 96)
-		var lower_edge := _membrane_edge_points(43.0, 96)
-		var membrane_band := PackedVector2Array()
-		for point in upper_edge:
-			membrane_band.append(point)
-		for i in range(lower_edge.size() - 1, -1, -1):
-			membrane_band.append(lower_edge[i])
-		draw_colored_polygon(membrane_band, Color("9d6134"))
-		draw_colored_polygon(_membrane_inner_band(-28.0, 28.0, 96), Color("ca8245"))
-		draw_polyline(upper_edge, Color(0.0, 0.03, 0.05, 0.86), 8.0, true)
-		draw_polyline(lower_edge, Color(0.0, 0.03, 0.05, 0.82), 8.0, true)
-		_draw_tail_lattice()
-		_draw_membrane_depth_rows()
+		if membrane_texture != null:
+			draw_texture_rect(membrane_texture, _membrane_texture_rect(), false)
+			return
+		var rect := _fallback_membrane_rect()
+		draw_rect(rect, Color("1d4248"), true)
+		draw_rect(Rect2(rect.position + Vector2(0.0, rect.size.y * 0.36), Vector2(rect.size.x, rect.size.y * 0.28)), Color("607f7f"), true)
 
 	func _draw_membrane_front_heads() -> void:
-		_draw_lipid_head_row(-44.0, 48, 1.0, 1.0)
-		_draw_lipid_head_row(44.0, 48, 0.94, 1.0)
-		draw_polyline(_membrane_edge_points(-43.0, 96), Color(0.62, 1.0, 1.0, 0.20), 1.8, true)
-		draw_polyline(_membrane_edge_points(43.0, 96), Color(0.62, 1.0, 1.0, 0.14), 1.6, true)
+		if membrane_texture == null:
+			_draw_lipid_head_row(-44.0, 48, 1.0, 1.0)
+			_draw_lipid_head_row(44.0, 48, 0.94, 1.0)
+
+	func _membrane_texture_rect() -> Rect2:
+		if membrane_texture == null:
+			return _fallback_membrane_rect()
+		var aspect := membrane_texture.get_size().x / membrane_texture.get_size().y
+		var width := size.x * 1.04
+		var height := minf(width / aspect, size.y * 0.50)
+		width = height * aspect
+		var x := (size.x - width) * 0.5
+		var y := size.y * 0.50 - height * 0.56
+		return Rect2(Vector2(x, y), Vector2(width, height))
+
+	func _fallback_membrane_rect() -> Rect2:
+		var height := size.y * 0.28
+		return Rect2(Vector2(-size.x * 0.02, size.y * 0.50 - height * 0.50), Vector2(size.x * 1.04, height))
+
+	func _membrane_center_y() -> float:
+		var rect := _membrane_texture_rect()
+		return rect.position.y + rect.size.y * 0.56
 
 	func _draw_membrane_depth_rows() -> void:
 		_draw_lipid_head_row(-57.0, 52, 0.52, 0.45, -15.0)
@@ -2880,28 +2883,15 @@ class MembraneCrossSection:
 		return points
 
 	func _anchor_sample(t: float, animated: bool = true) -> Dictionary:
-		var x := lerpf(-size.x * 0.12, size.x * 1.12, t)
-		var arch := -sin(t * PI) * size.y * 0.15
-		var wave := 0.0
-		if animated:
-			wave = sin(t * TAU * 1.55 - _elapsed * 0.95) * 5.2 + sin(t * TAU * 3.1 + _elapsed * 0.72) * 1.5
-		var point := Vector2(x, size.y * 0.67 + arch + wave)
-		var dt := 0.006
-		var p2 := _anchor_point_static(clampf(t + dt, 0.0, 1.0), animated)
-		var p1 := _anchor_point_static(clampf(t - dt, 0.0, 1.0), animated)
-		var tangent := (p2 - p1).normalized()
-		var inside_normal := Vector2(-tangent.y, tangent.x)
-		if inside_normal.y < 0.0:
-			inside_normal = -inside_normal
+		var point := _anchor_point_static(t, false)
+		var tangent := Vector2.RIGHT
+		var inside_normal := Vector2.DOWN
 		return {"point": point, "tangent": tangent, "inside_normal": inside_normal}
 
 	func _anchor_point_static(t: float, animated: bool) -> Vector2:
-		var x := lerpf(-size.x * 0.12, size.x * 1.12, t)
-		var arch := -sin(t * PI) * size.y * 0.15
-		var wave := 0.0
-		if animated:
-			wave = sin(t * TAU * 1.55 - _elapsed * 0.95) * 5.2 + sin(t * TAU * 3.1 + _elapsed * 0.72) * 1.5
-		return Vector2(x, size.y * 0.67 + arch + wave)
+		var rect := _membrane_texture_rect()
+		var x := lerpf(rect.position.x + rect.size.x * 0.04, rect.position.x + rect.size.x * 0.96, t)
+		return Vector2(x, _membrane_center_y())
 
 	func _draw_transporter_proteins() -> void:
 		var arrows: Array = simulation.membrane_transport_arrows()
@@ -2941,14 +2931,10 @@ class MembraneCrossSection:
 		return fposmod(0.15 + seed * 0.70, 1.0)
 
 	func _world_to_visible_t(world_t: float) -> float:
-		var rel := fposmod(world_t - _membrane_scroll + 0.5, 1.0) - 0.5
-		var half_visible := VISIBLE_MEMBRANE_ARC * 0.5
-		if absf(rel) > half_visible:
-			return -1.0
-		return clampf(rel / VISIBLE_MEMBRANE_ARC + 0.5, 0.0, 1.0)
+		return clampf(world_t, 0.0, 1.0)
 
 	func _visible_to_world_t(screen_t: float) -> float:
-		return fposmod(_membrane_scroll + (screen_t - 0.5) * VISIBLE_MEMBRANE_ARC, 1.0)
+		return clampf(screen_t, 0.0, 1.0)
 
 	func _membrane_placement(t: float) -> Dictionary:
 		var sample := _anchor_sample(t, true)
