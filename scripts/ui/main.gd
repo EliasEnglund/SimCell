@@ -2816,7 +2816,7 @@ class MembraneCrossSection:
 	func _draw_scrolling_membrane_texture() -> void:
 		var rect := _membrane_texture_rect()
 		var tile_width := rect.size.x
-		var offset := -fposmod(_membrane_scroll, 1.0) * tile_width
+		var offset := -fposmod(_membrane_scroll / VISIBLE_MEMBRANE_ARC, 1.0) * tile_width
 		var x := rect.position.x + offset
 		while x > rect.position.x - tile_width:
 			x -= tile_width
