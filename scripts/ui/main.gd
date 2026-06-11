@@ -574,6 +574,7 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_sheet_section("Layered Phospholipid Palettes", [
 		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
 	], 520.0))
+	stack.add_child(_art_prerendered_membrane_section())
 	stack.add_child(_art_phospholipid_animation_section())
 
 func _art_exploration_cell_concepts_section() -> Control:
@@ -946,6 +947,32 @@ func _art_sheet_section(label_text: String, items: Array, image_height: float = 
 		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		panel.add_child(texture)
+	return panel
+
+func _art_prerendered_membrane_section() -> Control:
+	var panel := _glow_panel("Prerendered Seamless Membrane Concepts")
+	var note := Label.new()
+	note.text = "Tileable raster membrane strips tested on a curved scrolling path. These are candidates for replacing the code-drawn membrane while still allowing horizontal membrane scrolling."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var variants := [
+		["1 Depth Blue/Amber", "res://assets/art_lab/membrane/prerendered/membrane_depth_blue_amber.png"],
+		["2 Dense Cyan Depth", "res://assets/art_lab/membrane/prerendered/membrane_cyan_dense_depth.png"],
+		["3 Microscope Soft", "res://assets/art_lab/membrane/prerendered/membrane_microscope_soft.png"],
+		["4 High Contrast Game", "res://assets/art_lab/membrane/prerendered/membrane_high_contrast_game.png"]
+	]
+	for item in variants:
+		var title := Label.new()
+		title.text = str(item[0])
+		title.add_theme_font_size_override("font_size", 16)
+		title.modulate = Color("76f4ff")
+		panel.add_child(title)
+		var preview := MembraneStripScrollPreview.new()
+		preview.strip_path = str(item[1])
+		preview.custom_minimum_size = Vector2(0, 270)
+		preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.add_child(preview)
 	return panel
 
 func _art_phospholipid_animation_section() -> Control:
@@ -3111,6 +3138,86 @@ class CellSpriteCyclePreview:
 		var scale_value := minf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)
 		var fitted := source_size * scale_value
 		return Rect2(bounds.position + (bounds.size - fitted) * 0.5, fitted)
+
+	func _load_texture(path: String) -> Texture2D:
+		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+		var image := Image.load_from_file(actual_path)
+		if image == null:
+			return null
+		return ImageTexture.create_from_image(image)
+
+class MembraneStripScrollPreview:
+	extends Control
+
+	var strip_path := ""
+	var _texture: Texture2D
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		_texture = _load_texture(strip_path)
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("0b242b"), true)
+		_draw_split_background()
+		if _texture == null:
+			draw_string(ThemeDB.fallback_font, Vector2(18, 34), "Missing membrane strip", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("dbeff2"))
+			return
+		var segment_width := 78.0
+		var target_height := 188.0
+		var scroll_px := fmod(_elapsed * 56.0, float(_texture.get_width()))
+		var segments := int(ceil(size.x / segment_width)) + 4
+		for i in range(-2, segments):
+			var x := float(i) * segment_width
+			var t := clampf((x + segment_width * 0.5) / maxf(1.0, size.x), 0.0, 1.0)
+			var y := _curve_y(t)
+			var y_next := _curve_y(clampf(t + segment_width / maxf(1.0, size.x), 0.0, 1.0))
+			var angle := atan2(y_next - y, segment_width)
+			var source_x := fmod(scroll_px + float(i + 2) * segment_width, float(_texture.get_width()))
+			var source := Rect2(Vector2(source_x, 0.0), Vector2(minf(segment_width, float(_texture.get_width()) - source_x), float(_texture.get_height())))
+			_draw_curved_segment(source, Vector2(x, y), segment_width, target_height, angle)
+			if source.size.x < segment_width:
+				var wrap_source := Rect2(Vector2.ZERO, Vector2(segment_width - source.size.x, float(_texture.get_height())))
+				_draw_curved_segment(wrap_source, Vector2(x + source.size.x, y), segment_width - source.size.x, target_height, angle)
+		_draw_seam_markers()
+		draw_string(ThemeDB.fallback_font, Vector2(16, size.y - 14), "animated seamless scroll test along curved membrane path", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
+
+	func _draw_split_background() -> void:
+		var curve := PackedVector2Array()
+		for i in 72:
+			var t := float(i) / 71.0
+			curve.append(Vector2(t * size.x, _curve_y(t)))
+		var outside := PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0.0)])
+		for i in range(curve.size() - 1, -1, -1):
+			outside.append(curve[i] + Vector2(0, -24))
+		var inside := PackedVector2Array()
+		for point in curve:
+			inside.append(point + Vector2(0, 42))
+		inside.append(Vector2(size.x, size.y))
+		inside.append(Vector2(0, size.y))
+		draw_colored_polygon(outside, Color("123d49"))
+		draw_colored_polygon(inside, Color("f2b58c", 0.82))
+		for i in 16:
+			var y := size.y * float(i) / 15.0
+			draw_line(Vector2(0, y), Vector2(size.x, y), Color(0.72, 0.96, 1.0, 0.025), 1.0)
+
+	func _curve_y(t: float) -> float:
+		return size.y * 0.54 - sin(t * PI) * size.y * 0.16
+
+	func _draw_curved_segment(source: Rect2, center_left: Vector2, width: float, height: float, angle: float) -> void:
+		var center := center_left + Vector2(width * 0.5, 0.0)
+		var target := Rect2(Vector2(-width * 0.5, -height * 0.50), Vector2(width + 1.0, height))
+		draw_set_transform(center, angle, Vector2.ONE)
+		draw_texture_rect_region(_texture, target, source)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	func _draw_seam_markers() -> void:
+		for x in [size.x * 0.25, size.x * 0.5, size.x * 0.75]:
+			draw_line(Vector2(x, 20), Vector2(x, size.y - 20), Color(1.0, 1.0, 1.0, 0.035), 1.0)
 
 	func _load_texture(path: String) -> Texture2D:
 		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
