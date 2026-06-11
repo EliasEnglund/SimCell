@@ -574,6 +574,7 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_sheet_section("Layered Phospholipid Palettes", [
 		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
 	], 520.0))
+	stack.add_child(_art_ai_membrane_concepts_section())
 	stack.add_child(_art_prerendered_membrane_section())
 	stack.add_child(_art_phospholipid_animation_section())
 
@@ -943,6 +944,36 @@ func _art_sheet_section(label_text: String, items: Array, image_height: float = 
 		var texture := TextureRect.new()
 		texture.texture = _texture_from_png(str(item[1]))
 		texture.custom_minimum_size = Vector2(0.0, image_height)
+		texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		panel.add_child(texture)
+	return panel
+
+func _art_ai_membrane_concepts_section() -> Control:
+	var panel := _glow_panel("AI Artist Membrane Concepts")
+	var note := Label.new()
+	note.text = "Six raster concept directions for the membrane view. These are visual-direction tests, not yet the final scrollable membrane asset."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	var concepts := [
+		["1 Painterly Depth", "res://assets/art_lab/membrane/ai_concepts/01_painterly_depth.png"],
+		["2 Cinematic Microscope", "res://assets/art_lab/membrane/ai_concepts/02_cinematic_microscope.png"],
+		["3 Game Concept High Contrast", "res://assets/art_lab/membrane/ai_concepts/03_game_concept_high_contrast.png"],
+		["4 Bioluminescent Teal", "res://assets/art_lab/membrane/ai_concepts/04_bioluminescent_teal.png"],
+		["5 Scientific Cutaway", "res://assets/art_lab/membrane/ai_concepts/05_scientific_cutaway.png"],
+		["6 Deep Perspective Surface", "res://assets/art_lab/membrane/ai_concepts/06_deep_perspective_surface.png"]
+	]
+	for item in concepts:
+		var title := Label.new()
+		title.text = str(item[0])
+		title.add_theme_font_size_override("font_size", 16)
+		title.modulate = Color("76f4ff")
+		panel.add_child(title)
+		var texture := TextureRect.new()
+		texture.texture = _texture_from_png(str(item[1]))
+		texture.custom_minimum_size = Vector2(0.0, 320.0)
 		texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
