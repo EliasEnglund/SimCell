@@ -331,7 +331,7 @@ func _node_center(pos: Vector2, node_size: Vector2) -> Vector2:
 	return pos + node_size * 0.5
 
 func _node_radius(node_size: Vector2) -> float:
-	return minf(node_size.x, node_size.y) * 0.34
+	return minf(node_size.x, node_size.y) * 0.43
 
 func _node_port(pos: Vector2, node_size: Vector2, direction: Vector2) -> Vector2:
 	var center := _node_center(pos, node_size)
@@ -378,7 +378,6 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			continue
 		var source_rect_world := _screen_rect_to_world(positions[substrate], sizes[substrate])
 		var source_center := source_rect_world.get_center()
-		var used_source_sides: Array[String] = []
 		var route_specs: Array[Dictionary] = []
 		for product_index in visible_products.size():
 			var product_id := visible_products[product_index]
@@ -386,11 +385,8 @@ func _draw_reaction_arrows(positions: Dictionary, sizes: Dictionary) -> void:
 			var product_is_goal := target_rect.size.x > 0.0
 			var target_rect_world := _screen_rect_to_world(target_rect.position, target_rect.size) if product_is_goal else _screen_rect_to_world(positions[product_id], sizes[product_id])
 			var target_center := target_rect_world.get_center()
-			var source_dir := _preferred_output_axis(target_center - source_center, incoming_sides.get(substrate, []), used_source_sides)
-			used_source_sides.append(_axis_key(source_dir))
-			var target_dir := -source_dir
-			if absf((source_center - target_center).dot(target_dir)) < 0.001:
-				target_dir = _primary_axis(source_center - target_center)
+			var source_dir := _preferred_output_axis(target_center - source_center, incoming_sides.get(substrate, []))
+			var target_dir := _primary_axis(source_center - target_center)
 			route_specs.append({
 				"product_id": product_id,
 				"product_index": product_index,
@@ -462,7 +458,7 @@ func _add_side(lookup: Dictionary, node_id: String, direction: Vector2) -> void:
 	if not lookup[node_id].has(key):
 		lookup[node_id].append(key)
 
-func _preferred_output_axis(delta: Vector2, blocked_sides: Array, used_sides: Array[String]) -> Vector2:
+func _preferred_output_axis(delta: Vector2, blocked_sides: Array) -> Vector2:
 	var primary := _primary_axis(delta)
 	var candidates: Array[Vector2] = [primary]
 	if absf(primary.x) > 0.0:
@@ -473,10 +469,6 @@ func _preferred_output_axis(delta: Vector2, blocked_sides: Array, used_sides: Ar
 		candidates.append(Vector2.RIGHT if delta.x >= 0.0 else Vector2.LEFT)
 		candidates.append(Vector2.LEFT if delta.x >= 0.0 else Vector2.RIGHT)
 		candidates.append(-primary)
-	for candidate in candidates:
-		var key := _axis_key(candidate)
-		if not blocked_sides.has(key) and not used_sides.has(key):
-			return candidate
 	for candidate in candidates:
 		var key := _axis_key(candidate)
 		if not blocked_sides.has(key):
@@ -532,13 +524,16 @@ func _routed_between_nodes(start: Vector2, end: Vector2, start_dir: Vector2, tar
 func _routed_between_nodes_world(start: Vector2, end: Vector2, start_dir: Vector2, target_dir: Vector2, route_key: String = "") -> Array[Vector2]:
 	if not route_key.is_empty() and _manual_route_bends.has(route_key):
 		var bend: Vector2 = _manual_route_bends[route_key]
-		var manual_route: Array[Vector2] = [start]
+		var away := start + start_dir.normalized() * GRID_CELL * 0.24
+		var approach := end + target_dir.normalized() * GRID_CELL * 0.24
+		var manual_route: Array[Vector2] = [start, away]
 		if absf(start_dir.y) > 0.0:
-			manual_route.append(Vector2(start.x, bend.y))
-			manual_route.append(Vector2(end.x, bend.y))
+			manual_route.append(Vector2(away.x, bend.y))
+			manual_route.append(Vector2(approach.x, bend.y))
 		else:
-			manual_route.append(Vector2(bend.x, start.y))
-			manual_route.append(Vector2(bend.x, end.y))
+			manual_route.append(Vector2(bend.x, away.y))
+			manual_route.append(Vector2(bend.x, approach.y))
+		manual_route.append(approach)
 		manual_route.append(end)
 		return _clean_route(manual_route)
 	var away := start + start_dir.normalized() * GRID_CELL * 0.32
@@ -558,7 +553,18 @@ func _clean_route(points: Array[Vector2]) -> Array[Vector2]:
 	for point in points:
 		if cleaned.is_empty() or cleaned[cleaned.size() - 1].distance_to(point) > 1.0:
 			cleaned.append(point)
-	return cleaned
+	var simplified: Array[Vector2] = []
+	for point in cleaned:
+		simplified.append(point)
+		while simplified.size() >= 3:
+			var a: Vector2 = simplified[simplified.size() - 3]
+			var b: Vector2 = simplified[simplified.size() - 2]
+			var c: Vector2 = simplified[simplified.size() - 1]
+			if (absf(a.x - b.x) < 1.0 and absf(b.x - c.x) < 1.0) or (absf(a.y - b.y) < 1.0 and absf(b.y - c.y) < 1.0):
+				simplified.remove_at(simplified.size() - 2)
+			else:
+				break
+	return simplified
 
 func _reaction_route_key(reaction: Dictionary, product_id: String) -> String:
 	return "reaction:%s:%s" % [str(reaction.get("blueprint_id", "")), product_id]

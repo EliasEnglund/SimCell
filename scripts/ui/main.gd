@@ -650,6 +650,32 @@ func _art_flagellum_animation_section() -> Control:
 			label.modulate = Color("dbeff2")
 			card.add_child(label)
 			row.add_child(card)
+	var attached_panel := _glow_panel("Attached Flagellum Rotation Test")
+	var attached_note := Label.new()
+	attached_note.text = "The same sheets attached to the current exploration cell sprite while the full cell rotates. This is for checking anchor placement before the flagellum is used in exploration."
+	attached_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	attached_note.modulate = Color("dbeff2")
+	attached_panel.add_child(attached_note)
+	var attached_row := HBoxContainer.new()
+	attached_row.add_theme_constant_override("separation", 14)
+	attached_panel.add_child(attached_row)
+	for variant in variants:
+		var card := VBoxContainer.new()
+		card.custom_minimum_size = Vector2(360, 300)
+		card.add_theme_constant_override("separation", 6)
+		var attached_preview := AttachedFlagellumPreview.new()
+		attached_preview.cell_sheet_path = "res://assets/art_lab/exploration/player-cell-idle-alpha.png"
+		attached_preview.flagellum_sheet_path = str(variant[1])
+		attached_preview.flagellum_row_index = 2
+		attached_preview.custom_minimum_size = Vector2(350, 250)
+		card.add_child(attached_preview)
+		var attached_label := Label.new()
+		attached_label.text = str(variant[0])
+		attached_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		attached_label.modulate = Color("dbeff2")
+		card.add_child(attached_label)
+		attached_row.add_child(card)
+	panel.add_child(attached_panel)
 	return panel
 
 func _art_molecule_variant_section() -> Control:
@@ -2802,8 +2828,6 @@ class MembraneCrossSection:
 				var offset := tangent * (-depth * 22.0) - normal * (depth * 34.0)
 				var scale := 1.0 - depth * 0.20
 				var alpha := 1.0
-				if not highlight_molecule.is_empty() and molecule_id != highlight_molecule:
-					alpha = 0.26
 				_draw_single_transporter(top + offset, bottom + offset, tangent, normal, protein_color, scale, alpha, copy_index == 0, visual_variant)
 
 	func _world_to_visible_t(world_t: float) -> float:
@@ -2863,17 +2887,8 @@ class MembraneCrossSection:
 		var target_width := target_height * (source.size.x / source.size.y)
 		var center := top.lerp(bottom, 0.52) - normal * (target_height * 0.02)
 		var rect := Rect2(Vector2(-target_width * 0.5, -target_height * 0.5), Vector2(target_width, target_height))
-		var backing_color := Color(base_color.r, base_color.g, base_color.b, alpha)
-		var backing_a := Vector2(-target_width * 0.19, -target_height * 0.42)
-		var backing_b := Vector2(-target_width * 0.19, target_height * 0.42)
-		var backing_c := Vector2(target_width * 0.19, -target_height * 0.42)
-		var backing_d := Vector2(target_width * 0.19, target_height * 0.42)
 		var rotation := normal.angle() - PI * 0.5
 		draw_set_transform(center, rotation, Vector2.ONE)
-		draw_line(backing_a, backing_b, Color(0.0, 0.03, 0.05, alpha), target_width * 0.30, true)
-		draw_line(backing_c, backing_d, Color(0.0, 0.03, 0.05, alpha), target_width * 0.30, true)
-		draw_line(backing_a, backing_b, backing_color.darkened(0.10), target_width * 0.22, true)
-		draw_line(backing_c, backing_d, backing_color.lightened(0.10), target_width * 0.22, true)
 		draw_texture_rect_region(transporter_texture, rect, source, Color(1, 1, 1, alpha))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -3094,6 +3109,72 @@ class FlagellumSpritePreview:
 		var scale_value := minf(bounds.size.x / source_size.x, bounds.size.y / source_size.y)
 		var fitted := source_size * scale_value
 		return Rect2(bounds.position + (bounds.size - fitted) * 0.5, fitted)
+
+	func _load_texture(path: String) -> Texture2D:
+		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
+		var image := Image.load_from_file(actual_path)
+		if image == null:
+			return null
+		return ImageTexture.create_from_image(image)
+
+class AttachedFlagellumPreview:
+	extends Control
+
+	var cell_sheet_path := ""
+	var flagellum_sheet_path := ""
+	var cell_frame_count := 6
+	var flagellum_frame_count := 8
+	var flagellum_row_count := 3
+	var flagellum_row_index := 2
+	var _cell_texture: Texture2D
+	var _flagellum_texture: Texture2D
+	var _elapsed := 0.0
+
+	func _ready() -> void:
+		_cell_texture = _load_texture(cell_sheet_path)
+		_flagellum_texture = _load_texture(flagellum_sheet_path)
+		set_process(true)
+
+	func _process(delta: float) -> void:
+		_elapsed += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("0b242b"), true)
+		for i in 10:
+			var y := size.y * float(i) / 9.0
+			draw_line(Vector2(0, y), Vector2(size.x, y), Color(0.45, 0.95, 1.0, 0.025), 1.0)
+		draw_circle(size * 0.5, minf(size.x, size.y) * 0.38, Color(0.30, 0.95, 1.0, 0.035))
+		if _cell_texture == null or _flagellum_texture == null:
+			draw_string(ThemeDB.fallback_font, Vector2(18, 34), "Missing cell or flagellum sheet", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("dbeff2"))
+			return
+		var angle := _elapsed * 0.55
+		var cell_frame := int(floor(_elapsed * 4.0)) % cell_frame_count
+		var flagellum_frame := int(floor(_elapsed * 8.0)) % flagellum_frame_count
+		var cell_frame_w := float(_cell_texture.get_width()) / float(cell_frame_count)
+		var cell_source := Rect2(Vector2(cell_frame_w * float(cell_frame), 0.0), Vector2(cell_frame_w, _cell_texture.get_height()))
+		var flag_frame_w := float(_flagellum_texture.get_width()) / float(flagellum_frame_count)
+		var flag_frame_h := float(_flagellum_texture.get_height()) / float(flagellum_row_count)
+		var flag_source := Rect2(Vector2(flag_frame_w * float(flagellum_frame), flag_frame_h * float(flagellum_row_index)), Vector2(flag_frame_w, flag_frame_h))
+		var center := size * 0.5 + Vector2(22.0, 4.0)
+		var forward := Vector2.RIGHT.rotated(angle)
+		var back := -forward
+		var cell_draw_size := minf(size.x, size.y) * 0.42
+		var cell_rect := Rect2(Vector2(-cell_draw_size * 0.5, -cell_draw_size * 0.5), Vector2(cell_draw_size, cell_draw_size))
+		var flag_height := cell_draw_size * 0.42
+		var flag_width := flag_height * (flag_source.size.x / flag_source.size.y)
+		var flag_anchor_u := 0.16
+		var flag_anchor := center + back * cell_draw_size * 0.34
+		draw_set_transform(flag_anchor, back.angle(), Vector2.ONE)
+		var flag_rect := Rect2(Vector2(-flag_width * flag_anchor_u, -flag_height * 0.5), Vector2(flag_width, flag_height))
+		draw_texture_rect_region(_flagellum_texture, flag_rect, flag_source)
+		draw_circle(Vector2.ZERO, 5.0, Color(1.0, 0.2, 0.9, 0.22))
+		draw_set_transform(center, angle + PI * 0.5, Vector2.ONE)
+		draw_texture_rect_region(_cell_texture, cell_rect, cell_source)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		draw_circle(flag_anchor, 4.0, Color("ff76f4"))
+		draw_line(center, center + forward * cell_draw_size * 0.58, Color("76f4ff", 0.38), 2.0, true)
+		draw_string(ThemeDB.fallback_font, Vector2(14, size.y - 15), "rotating attachment test", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dbeff2"))
 
 	func _load_texture(path: String) -> Texture2D:
 		var actual_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
