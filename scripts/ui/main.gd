@@ -534,6 +534,7 @@ func _build_art_lab_view() -> void:
 	stack.add_child(_art_flagellum_animation_section())
 	stack.add_child(_art_molecule_variant_section())
 	stack.add_child(_art_selected_molecule_examples_section())
+	stack.add_child(_art_enzyme_reaction_selector_section())
 	stack.add_child(_art_enzyme_card_variants_section())
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
@@ -840,6 +841,23 @@ func _art_enzyme_card_variants_section() -> Control:
 		card.custom_minimum_size = Vector2(440, 286)
 		card.data = variant
 		grid.add_child(card)
+	return panel
+
+func _art_enzyme_reaction_selector_section() -> Control:
+	var panel := _glow_panel("Enzyme Reaction Selector Concepts")
+	var note := Label.new()
+	note.text = "Concept directions for organizing enzyme groups and sub-reactions in the enzyme designer. The intended hierarchy is element group first, then specific reaction action: carbon reactions, oxygen reactions, nitrogen reactions, sulfur reactions, and phosphate reactions."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color("dbeff2")
+	panel.add_child(note)
+	panel.add_child(_art_sheet_section("Selector Layout Sheets", [
+		["1 Compact group selector", "res://assets/art_lab/enzyme_reactions/01_compact_group_selector.png"],
+		["2 Expanded reaction drawer", "res://assets/art_lab/enzyme_reactions/02_expanded_reaction_drawer.png"],
+		["3 Reaction storyboard cards", "res://assets/art_lab/enzyme_reactions/03_reaction_storyboard_cards.png"],
+		["4 Scientific reaction cards", "res://assets/art_lab/enzyme_reactions/04_scientific_reaction_cards.png"],
+		["5 Elemental radial selector", "res://assets/art_lab/enzyme_reactions/05_elemental_radial_selector.png"],
+		["6 Premium hover panels", "res://assets/art_lab/enzyme_reactions/06_premium_hover_panels.png"]
+	], 360.0))
 	return panel
 
 func _art_molecule_example_card(label_text: String, molecule: Dictionary, style: Dictionary) -> Control:
