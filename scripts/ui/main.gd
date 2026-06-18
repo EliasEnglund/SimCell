@@ -530,7 +530,11 @@ func _build_art_lab_view() -> void:
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_theme_constant_override("separation", 18)
 	margin.add_child(stack)
-	stack.add_child(_title("ART LAB", "Current in-game icon and UI asset references. Old animation, membrane, molecule-style, and concept-card experiments are hidden from this view."))
+	stack.add_child(_title("ART LAB", "Current in-game icon references plus focused enzyme selector concepts. Old animation, membrane, molecule-style, and broad concept experiments are hidden from this view."))
+	stack.add_child(_art_sheet_section("Enzyme Selector Icon Concepts", [
+		["1 Reaction-forward card concepts", "res://assets/art_lab/enzyme_selector/enzyme_selector_icon_concepts_01.png"],
+		["2 Element class and reaction icon concepts", "res://assets/art_lab/enzyme_selector/enzyme_selector_icon_concepts_02.png"]
+	], 390.0))
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
 		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
