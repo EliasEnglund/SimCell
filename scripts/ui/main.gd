@@ -17,6 +17,10 @@ const VIEW_ICON_PATHS := {
 	"art_lab": "res://assets/art_lab/icons/views/art_lab.png",
 	"map_designer": "res://assets/art_lab/icons/views/map_designer.png"
 }
+const ENZYME_SELECTOR_SHEET := "res://assets/art_lab/enzyme_selector/enzyme_selector_runtime_atlas.png"
+const ENZYME_SELECTOR_CARD_SIZE := Vector2(465.0, 184.0)
+const ENZYME_SELECTOR_CARD_ORIGIN := Vector2(39.0, 56.0)
+const ENZYME_SELECTOR_CARD_STEP := Vector2(491.0, 216.0)
 
 var sim = SimulationStateScript.new()
 var root: VBoxContainer
@@ -72,6 +76,7 @@ var designer_target := -1
 var designer_preview: HBoxContainer
 var designer_canvas: Control
 var designer_info_panel: VBoxContainer
+var enzyme_selector_sheet_texture: Texture2D
 
 func _ready() -> void:
 	get_tree().auto_accept_quit = true
@@ -1050,6 +1055,24 @@ func _texture_from_png(path: String) -> Texture2D:
 		return null
 	return ImageTexture.create_from_image(image)
 
+func _enzyme_selector_card_texture(card_number: int) -> Texture2D:
+	if card_number <= 0:
+		return null
+	if enzyme_selector_sheet_texture == null:
+		enzyme_selector_sheet_texture = _texture_from_png(ENZYME_SELECTOR_SHEET)
+	if enzyme_selector_sheet_texture == null:
+		return null
+	var index := card_number - 1
+	var col := index % 3
+	var row := index / 3
+	var atlas := AtlasTexture.new()
+	atlas.atlas = enzyme_selector_sheet_texture
+	atlas.region = Rect2(
+		ENZYME_SELECTOR_CARD_ORIGIN + Vector2(col, row) * ENZYME_SELECTOR_CARD_STEP,
+		ENZYME_SELECTOR_CARD_SIZE
+	)
+	return atlas
+
 func _refresh() -> void:
 	if status_label == null:
 		return
@@ -1646,8 +1669,11 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 		for category in _enzyme_categories():
 			list.add_child(_enzyme_category_button(category))
 	else:
-		for tool in _enzyme_tools_for_category(designer_category):
-			list.add_child(_tool_button(str(tool.get("id", "")), str(tool.get("icon", "")), str(tool.get("label", "")), str(tool.get("summary", ""))))
+		var category_tools := _enzyme_tools_for_category(designer_category)
+		if category_tools.is_empty():
+			list.add_child(_empty_enzyme_category_card(designer_category))
+		for tool in category_tools:
+			list.add_child(_tool_button(str(tool.get("id", "")), int(tool.get("card", 0)), str(tool.get("label", "")), str(tool.get("summary", ""))))
 		var back := Button.new()
 		back.text = "←  BACK TO REACTION CLASSES"
 		back.custom_minimum_size = Vector2(0, 48)
@@ -1664,11 +1690,11 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 
 func _enzyme_categories() -> Array[Dictionary]:
 	return [
-		{"id": "carbon", "label": "CARBON", "icon": "C", "summary": "Break, remove, or reshape carbon bonds", "color": Color("7fe6b7"), "tools": ["lyase", "decarboxylase", "desaturase"]},
-		{"id": "oxygen", "label": "OXYGEN / REDOX", "icon": "O", "summary": "Add oxygen or change redox state", "color": Color("77dfff"), "tools": ["reductase", "dehydrogenase", "oxygenase"]},
-		{"id": "nitrogen", "label": "NITROGEN", "icon": "N", "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
-		{"id": "sulfur", "label": "SULFUR", "icon": "S", "summary": "Locked for later sulfur chemistry", "color": Color("ffe36b"), "tools": []},
-		{"id": "phosphate", "label": "PHOSPHATE", "icon": "P", "summary": "Locked for ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
+		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Break, remove, or reshape carbon bonds", "color": Color("7fe6b7"), "tools": ["lyase", "decarboxylase", "desaturase"]},
+		{"id": "oxygen", "label": "OXYGEN / REDOX", "card": 2, "summary": "Add oxygen or change redox state", "color": Color("77dfff"), "tools": ["reductase", "dehydrogenase", "oxygenase"]},
+		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
+		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
+		{"id": "phosphate", "label": "PHOSPHATE", "card": 5, "summary": "Future ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
 	]
 
 func _enzyme_category_label(category_id: String) -> String:
@@ -1693,26 +1719,40 @@ func _enzyme_tools_for_category(category_id: String) -> Array[Dictionary]:
 	var output: Array[Dictionary] = []
 	for tool in sim.enzyme_tools():
 		if allowed.has(str(tool.get("id", ""))):
-			output.append(tool)
+			var enriched := tool.duplicate(true)
+			enriched["card"] = _enzyme_tool_card_number(str(tool.get("id", "")))
+			output.append(enriched)
 	return output
 
-func _enzyme_category_button(category: Dictionary) -> Button:
+func _enzyme_tool_card_number(tool_id: String) -> int:
+	var cards := {
+		"lyase": 6,
+		"reductase": 7,
+		"dehydrogenase": 8,
+		"oxygenase": 9,
+		"decarboxylase": 10,
+		"aminase": 11,
+		"desaturase": 12
+	}
+	return int(cards.get(tool_id, 0))
+
+func _enzyme_category_button(category: Dictionary) -> Control:
 	var tool_count: int = category.get("tools", []).size()
 	var category_id := str(category.get("id", ""))
 	var is_active_category := _enzyme_category_for_tool(designer_tool) == category_id
 	var status := "%d reaction%s" % [tool_count, "" if tool_count == 1 else "s"] if tool_count > 0 else "Locked"
 	if is_active_category:
 		status = "Selected: %s" % designer_tool.capitalize()
+	var wrapper := VBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.add_theme_constant_override("separation", 4)
 	var button := Button.new()
-	button.text = "%s  %s\n%s" % [
-		str(category.get("icon", "")),
-		str(category.get("label", "")),
-		status
-	]
-	button.tooltip_text = str(category.get("summary", ""))
-	button.custom_minimum_size = Vector2(0, 68)
-	button.disabled = tool_count == 0
-	button.add_theme_font_size_override("font_size", 17)
+	button.text = ""
+	button.icon = _enzyme_selector_card_texture(int(category.get("card", 0)))
+	button.expand_icon = true
+	button.tooltip_text = "%s: %s (%s)" % [str(category.get("label", "")), str(category.get("summary", "")), status]
+	button.custom_minimum_size = Vector2(0, 86)
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var accent: Color = category.get("color", Color("73dfff"))
 	button.add_theme_stylebox_override("normal", _category_style(Color("263f50") if is_active_category else Color("243747"), accent, is_active_category))
 	button.add_theme_stylebox_override("hover", _category_style(Color("263f50"), accent, true))
@@ -1728,7 +1768,9 @@ func _enzyme_category_button(category: Dictionary) -> Button:
 				designer_target = -1
 		_open_enzyme_designer(sim.selected_molecule)
 	)
-	return button
+	wrapper.add_child(button)
+	wrapper.add_child(_selector_caption(str(category.get("label", "")), status, accent))
+	return wrapper
 
 func _category_style(fill: Color, border: Color, active: bool) -> StyleBoxFlat:
 	var style := _glow_panel_style(fill, border, 1.4, 8)
@@ -1740,13 +1782,20 @@ func _category_style(fill: Color, border: Color, active: bool) -> StyleBoxFlat:
 	style.content_margin_bottom = 8
 	return style
 
-func _tool_button(id: String, icon: String, label_text: String, summary: String = "") -> Button:
+func _tool_button(id: String, card_number: int, label_text: String, summary: String = "") -> Control:
+	var wrapper := VBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.add_theme_constant_override("separation", 4)
 	var button := Button.new()
-	button.text = "%s  %s\n%s" % [icon, label_text, summary]
-	button.custom_minimum_size = Vector2(0, 74)
+	button.text = ""
+	button.icon = _enzyme_selector_card_texture(card_number)
+	button.expand_icon = true
+	button.tooltip_text = "%s: %s" % [label_text, summary]
+	button.custom_minimum_size = Vector2(0, 86)
 	button.toggle_mode = true
 	button.button_pressed = designer_tool == id
 	button.add_theme_font_size_override("font_size", 16)
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.add_theme_stylebox_override("normal", _tool_style(false))
 	button.add_theme_stylebox_override("hover", _tool_style(true))
 	button.add_theme_stylebox_override("pressed", _tool_style(true))
@@ -1756,7 +1805,47 @@ func _tool_button(id: String, icon: String, label_text: String, summary: String 
 		designer_target = -1
 		_refresh_designer()
 	)
-	return button
+	wrapper.add_child(button)
+	wrapper.add_child(_selector_caption(label_text, summary, Color("73dfff") if designer_tool == id else Color("dbeff2")))
+	return wrapper
+
+func _selector_caption(title_text: String, subtitle: String, accent: Color) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	var title := Label.new()
+	title.text = title_text
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 13)
+	title.modulate = accent
+	box.add_child(title)
+	var sub := Label.new()
+	sub.text = subtitle
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 11)
+	sub.modulate = Color(0.76, 0.84, 0.84)
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(sub)
+	return box
+
+func _empty_enzyme_category_card(category_id: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _glow_panel_style(Color("172430"), Color("355b66"), 1.0, 8))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "NO REACTIONS YET"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 14)
+	title.modulate = Color("76f4ff")
+	box.add_child(title)
+	var copy := Label.new()
+	copy.text = "%s chemistry will unlock in a later prototype." % _enzyme_category_label(category_id).capitalize()
+	copy.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	copy.modulate = Color(0.72, 0.84, 0.82)
+	box.add_child(copy)
+	return panel
 
 func _locked_tool_card(label_text: String) -> Button:
 	var button := Button.new()
