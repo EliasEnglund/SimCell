@@ -18,9 +18,6 @@ const VIEW_ICON_PATHS := {
 	"map_designer": "res://assets/art_lab/icons/views/map_designer.png"
 }
 const ENZYME_SELECTOR_SHEET := "res://assets/art_lab/enzyme_selector/enzyme_selector_runtime_atlas.png"
-const ENZYME_SELECTOR_CARD_SIZE := Vector2(465.0, 184.0)
-const ENZYME_SELECTOR_CARD_ORIGIN := Vector2(39.0, 56.0)
-const ENZYME_SELECTOR_CARD_STEP := Vector2(491.0, 216.0)
 
 var sim = SimulationStateScript.new()
 var root: VBoxContainer
@@ -1062,16 +1059,30 @@ func _enzyme_selector_card_texture(card_number: int) -> Texture2D:
 		enzyme_selector_sheet_texture = _texture_from_png(ENZYME_SELECTOR_SHEET)
 	if enzyme_selector_sheet_texture == null:
 		return null
-	var index := card_number - 1
-	var col := index % 3
-	var row := index / 3
+	var region := _enzyme_selector_icon_region(card_number)
+	if region.size == Vector2.ZERO:
+		return null
 	var atlas := AtlasTexture.new()
 	atlas.atlas = enzyme_selector_sheet_texture
-	atlas.region = Rect2(
-		ENZYME_SELECTOR_CARD_ORIGIN + Vector2(col, row) * ENZYME_SELECTOR_CARD_STEP,
-		ENZYME_SELECTOR_CARD_SIZE
-	)
+	atlas.region = region
 	return atlas
+
+func _enzyme_selector_icon_region(card_number: int) -> Rect2:
+	var regions := {
+		1: Rect2(165, 76, 220, 150),
+		2: Rect2(565, 92, 430, 122),
+		3: Rect2(1080, 76, 420, 145),
+		4: Rect2(72, 315, 410, 150),
+		5: Rect2(565, 315, 425, 150),
+		6: Rect2(1070, 292, 438, 168),
+		7: Rect2(64, 520, 420, 165),
+		8: Rect2(550, 515, 450, 170),
+		9: Rect2(1080, 520, 420, 165),
+		10: Rect2(70, 738, 440, 172),
+		11: Rect2(560, 735, 440, 172),
+		12: Rect2(1075, 748, 420, 150)
+	}
+	return regions.get(card_number, Rect2())
 
 func _refresh() -> void:
 	if status_label == null:
@@ -3873,7 +3884,14 @@ class EnzymeSelectorCardButton:
 	func _draw() -> void:
 		if _card_texture == null:
 			return
-		draw_texture_rect(_card_texture, Rect2(Vector2.ZERO, size), false)
+		var texture_size := _card_texture.get_size()
+		if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+			return
+		var max_size := Vector2(size.x * 0.76, size.y * 0.72)
+		var scale := minf(max_size.x / texture_size.x, max_size.y / texture_size.y)
+		var draw_size := texture_size * scale
+		var draw_pos := (size - draw_size) * 0.5
+		draw_texture_rect(_card_texture, Rect2(draw_pos, draw_size), false)
 
 class DesignerTitleFrame:
 	extends Control
