@@ -67,6 +67,7 @@ var hovered_metabolism_molecule := ""
 var exploration_state := {}
 
 var designer_tool := "lyase"
+var designer_category := ""
 var designer_target := -1
 var designer_preview: HBoxContainer
 var designer_canvas: Control
@@ -1523,6 +1524,8 @@ func _pathway_by_id(blueprint_id: String) -> Dictionary:
 	return {}
 
 func _open_enzyme_designer(molecule_id: String) -> void:
+	if sim.active_view != "enzyme_designer":
+		designer_category = ""
 	sim.select_molecule(molecule_id)
 	sim.active_view = "enzyme_designer"
 	_clear(content)
@@ -1563,8 +1566,7 @@ func _open_enzyme_designer(molecule_id: String) -> void:
 	tools_title.add_theme_font_size_override("font_size", 26)
 	tools_title.modulate = Color("76f4ff")
 	tools.add_child(tools_title)
-	for tool in sim.enzyme_tools():
-		tools.add_child(_tool_button(str(tool.get("id", "")), str(tool.get("icon", "")), str(tool.get("label", "")), str(tool.get("summary", ""))))
+	_populate_enzyme_selector(tools)
 
 	var center := VBoxContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1618,6 +1620,121 @@ func _handle_pathway_click(blueprint_id: String) -> void:
 func _handle_empty_metabolism_click() -> void:
 	selected_pathway = ""
 	sim.deselect_molecule()
+
+func _populate_enzyme_selector(tools: VBoxContainer) -> void:
+	var subheading := Label.new()
+	subheading.add_theme_font_size_override("font_size", 13)
+	subheading.modulate = Color(0.70, 0.90, 0.93)
+	subheading.text = "REACTION CLASS" if designer_category == "" else "%s REACTIONS" % _enzyme_category_label(designer_category).to_upper()
+	tools.add_child(subheading)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tools.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 13)
+	scroll.add_child(list)
+
+	if designer_category == "":
+		for category in _enzyme_categories():
+			list.add_child(_enzyme_category_button(category))
+	else:
+		for tool in _enzyme_tools_for_category(designer_category):
+			list.add_child(_tool_button(str(tool.get("id", "")), str(tool.get("icon", "")), str(tool.get("label", "")), str(tool.get("summary", ""))))
+		var back := Button.new()
+		back.text = "←  BACK TO REACTION CLASSES"
+		back.custom_minimum_size = Vector2(0, 48)
+		back.add_theme_font_size_override("font_size", 14)
+		back.add_theme_stylebox_override("normal", _category_style(Color("22323f"), Color("73dfff"), false))
+		back.add_theme_stylebox_override("hover", _category_style(Color("253d4c"), Color("73dfff"), true))
+		back.add_theme_stylebox_override("pressed", _category_style(Color("253d4c"), Color("73dfff"), true))
+		back.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		back.pressed.connect(func():
+			designer_category = ""
+			_open_enzyme_designer(sim.selected_molecule)
+		)
+		tools.add_child(back)
+
+func _enzyme_categories() -> Array[Dictionary]:
+	return [
+		{"id": "carbon", "label": "CARBON", "icon": "C", "summary": "Break, remove, or reshape carbon bonds", "color": Color("7fe6b7"), "tools": ["lyase", "decarboxylase", "desaturase"]},
+		{"id": "oxygen", "label": "OXYGEN / REDOX", "icon": "O", "summary": "Add oxygen or change redox state", "color": Color("77dfff"), "tools": ["reductase", "dehydrogenase", "oxygenase"]},
+		{"id": "nitrogen", "label": "NITROGEN", "icon": "N", "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
+		{"id": "sulfur", "label": "SULFUR", "icon": "S", "summary": "Locked for later sulfur chemistry", "color": Color("ffe36b"), "tools": []},
+		{"id": "phosphate", "label": "PHOSPHATE", "icon": "P", "summary": "Locked for ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
+	]
+
+func _enzyme_category_label(category_id: String) -> String:
+	for category in _enzyme_categories():
+		if str(category.get("id", "")) == category_id:
+			return str(category.get("label", "Reaction"))
+	return "Reaction"
+
+func _enzyme_category_for_tool(tool_id: String) -> String:
+	for category in _enzyme_categories():
+		var tools: Array = category.get("tools", [])
+		if tools.has(tool_id):
+			return str(category.get("id", ""))
+	return ""
+
+func _enzyme_tools_for_category(category_id: String) -> Array[Dictionary]:
+	var allowed: Array = []
+	for category in _enzyme_categories():
+		if str(category.get("id", "")) == category_id:
+			allowed = category.get("tools", [])
+			break
+	var output: Array[Dictionary] = []
+	for tool in sim.enzyme_tools():
+		if allowed.has(str(tool.get("id", ""))):
+			output.append(tool)
+	return output
+
+func _enzyme_category_button(category: Dictionary) -> Button:
+	var tool_count: int = category.get("tools", []).size()
+	var category_id := str(category.get("id", ""))
+	var is_active_category := _enzyme_category_for_tool(designer_tool) == category_id
+	var status := "%d reaction%s" % [tool_count, "" if tool_count == 1 else "s"] if tool_count > 0 else "Locked"
+	if is_active_category:
+		status = "Selected: %s" % designer_tool.capitalize()
+	var button := Button.new()
+	button.text = "%s  %s\n%s" % [
+		str(category.get("icon", "")),
+		str(category.get("label", "")),
+		status
+	]
+	button.tooltip_text = str(category.get("summary", ""))
+	button.custom_minimum_size = Vector2(0, 68)
+	button.disabled = tool_count == 0
+	button.add_theme_font_size_override("font_size", 17)
+	var accent: Color = category.get("color", Color("73dfff"))
+	button.add_theme_stylebox_override("normal", _category_style(Color("263f50") if is_active_category else Color("243747"), accent, is_active_category))
+	button.add_theme_stylebox_override("hover", _category_style(Color("263f50"), accent, true))
+	button.add_theme_stylebox_override("pressed", _category_style(Color("263f50"), accent, true))
+	button.add_theme_stylebox_override("disabled", _category_style(Color("172430"), Color(accent.r, accent.g, accent.b, 0.34), false))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	button.pressed.connect(func():
+		designer_category = category_id
+		if not is_active_category:
+			var tools: Array = category.get("tools", [])
+			if not tools.is_empty():
+				designer_tool = str(tools[0])
+				designer_target = -1
+		_open_enzyme_designer(sim.selected_molecule)
+	)
+	return button
+
+func _category_style(fill: Color, border: Color, active: bool) -> StyleBoxFlat:
+	var style := _glow_panel_style(fill, border, 1.4, 8)
+	style.shadow_color = Color(border.r, border.g, border.b, 0.26 if active else 0.12)
+	style.shadow_size = 8 if active else 3
+	style.content_margin_left = 14
+	style.content_margin_top = 8
+	style.content_margin_right = 14
+	style.content_margin_bottom = 8
+	return style
 
 func _tool_button(id: String, icon: String, label_text: String, summary: String = "") -> Button:
 	var button := Button.new()
