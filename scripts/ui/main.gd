@@ -529,13 +529,7 @@ func _build_art_lab_view() -> void:
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_theme_constant_override("separation", 18)
 	margin.add_child(stack)
-	stack.add_child(_title("ART LAB", "Temporary prototype view for comparing generated UI assets and art styles."))
-	stack.add_child(_art_exploration_cell_concepts_section())
-	stack.add_child(_art_flagellum_animation_section())
-	stack.add_child(_art_molecule_variant_section())
-	stack.add_child(_art_selected_molecule_examples_section())
-	stack.add_child(_art_enzyme_reaction_selector_section())
-	stack.add_child(_art_enzyme_card_variants_section())
+	stack.add_child(_title("ART LAB", "Current in-game icon and UI asset references. Old animation, membrane, molecule-style, and concept-card experiments are hidden from this view."))
 	stack.add_child(_art_icon_section("Basic Resources", [
 		["Energy (ATP)", "res://assets/art_lab/icons/resources/atp_simple.png"],
 		["Electrons (NADH)", "res://assets/art_lab/icons/resources/nadh_simple.png"],
@@ -566,18 +560,6 @@ func _build_art_lab_view() -> void:
 		["Detailed Elements", "res://assets/art_lab/sheets/source_icons_sheet.png"],
 		["Views", "res://assets/art_lab/sheets/view_icons_sheet.png"]
 	]))
-	stack.add_child(_art_sheet_section("Membrane Transporter Concepts", [
-		["20 transporter variants", "res://assets/art_lab/membrane/transporter-variants.png"]
-	], 520.0))
-	stack.add_child(_art_sheet_section("Membrane Unit And Strip Concepts", [
-		["Phospholipid units and repeatable membrane strips", "res://assets/art_lab/membrane/membrane-variants.png"]
-	], 470.0))
-	stack.add_child(_art_sheet_section("Layered Phospholipid Palettes", [
-		["Separated heads, separated tails, assembled units, and bilayer previews", "res://assets/art_lab/membrane/layered-phospholipid-palette.png"]
-	], 520.0))
-	stack.add_child(_art_ai_membrane_concepts_section())
-	stack.add_child(_art_prerendered_membrane_section())
-	stack.add_child(_art_phospholipid_animation_section())
 
 func _art_exploration_cell_concepts_section() -> Control:
 	var panel := _glow_panel("Exploration Cell Concepts")
