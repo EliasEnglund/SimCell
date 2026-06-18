@@ -1746,10 +1746,8 @@ func _enzyme_category_button(category: Dictionary) -> Control:
 	var wrapper := VBoxContainer.new()
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.add_theme_constant_override("separation", 4)
-	var button := Button.new()
-	button.text = ""
-	button.icon = _enzyme_selector_card_texture(int(category.get("card", 0)))
-	button.expand_icon = true
+	var button := EnzymeSelectorCardButton.new()
+	button.card_texture = _enzyme_selector_card_texture(int(category.get("card", 0)))
 	button.tooltip_text = "%s: %s (%s)" % [str(category.get("label", "")), str(category.get("summary", "")), status]
 	button.custom_minimum_size = Vector2(0, 86)
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -1786,10 +1784,8 @@ func _tool_button(id: String, card_number: int, label_text: String, summary: Str
 	var wrapper := VBoxContainer.new()
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.add_theme_constant_override("separation", 4)
-	var button := Button.new()
-	button.text = ""
-	button.icon = _enzyme_selector_card_texture(card_number)
-	button.expand_icon = true
+	var button := EnzymeSelectorCardButton.new()
+	button.card_texture = _enzyme_selector_card_texture(card_number)
 	button.tooltip_text = "%s: %s" % [label_text, summary]
 	button.custom_minimum_size = Vector2(0, 86)
 	button.toggle_mode = true
@@ -3858,6 +3854,26 @@ class FloatingMolecule3D:
 		if element == "S":
 			return Color("ffe064")
 		return Color("728186")
+
+class EnzymeSelectorCardButton:
+	extends Button
+
+	var _card_texture: Texture2D
+	var card_texture: Texture2D:
+		set(value):
+			_card_texture = value
+			queue_redraw()
+		get:
+			return _card_texture
+
+	func _ready() -> void:
+		text = ""
+		clip_contents = true
+
+	func _draw() -> void:
+		if _card_texture == null:
+			return
+		draw_texture_rect(_card_texture, Rect2(Vector2.ZERO, size), false)
 
 class DesignerTitleFrame:
 	extends Control
