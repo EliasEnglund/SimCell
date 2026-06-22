@@ -298,8 +298,6 @@ static func valid_dehydrogenase_targets(graph: Dictionary) -> Array[int]:
 		var order := int(bond.get("order", 1))
 		if order == 1 and not _has_double_oxygen_neighbor(graph, carbon_index):
 			targets.append(i)
-		elif order == 2 and not _is_carboxyl_carbon(graph, carbon_index):
-			targets.append(i)
 	return targets
 
 static func apply_dehydrogenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
@@ -319,8 +317,6 @@ static func apply_dehydrogenase(graph: Dictionary, bond_index: int) -> Array[Dic
 		return []
 	if int(bond.get("order", 1)) == 1:
 		return _set_bond_order(graph, bond_index, 2)
-	if int(bond.get("order", 1)) == 2 and not _is_carboxyl_carbon(graph, carbon_index):
-		return _add_carboxyl_oxygen(graph, bond_index)
 	return []
 
 static func valid_desaturase_targets(graph: Dictionary) -> Array[int]:
@@ -405,18 +401,29 @@ static func apply_aminase(graph: Dictionary, bond_index: int) -> Array[Dictionar
 		return []
 	if int(bonds[bond_index].get("order", 1)) != 2 or not _has_carboxyl_neighbor(product, carbon_index):
 		return []
-	bonds[bond_index]["order"] = 1
 	var carbon_pos: Vector2 = atoms[carbon_index].get("pos", Vector2.ZERO)
 	var oxygen_pos: Vector2 = atoms[oxygen_index].get("pos", carbon_pos + Vector2.UP)
 	var dir := (carbon_pos - oxygen_pos).normalized()
 	if dir.length() <= 0.0:
 		dir = Vector2.RIGHT
 	var normal := Vector2(-dir.y, dir.x)
-	var new_index := atoms.size()
-	atoms.append({"element": NITROGEN, "pos": carbon_pos + normal * 84.0})
-	bonds.append({"a": carbon_index, "b": new_index, "order": 1})
-	product["atoms"] = atoms
-	product["bonds"] = bonds
+	var keep: Array[int] = []
+	for i in atoms.size():
+		if i != oxygen_index:
+			keep.append(i)
+	var without_oxygen := _subgraph_with_positions(product, keep)
+	var output_atoms: Array = without_oxygen.get("atoms", [])
+	var output_bonds: Array = without_oxygen.get("bonds", [])
+	var new_carbon_index := _mapped_index(keep, carbon_index)
+	if new_carbon_index < 0:
+		return []
+	var new_carbon_pos: Vector2 = output_atoms[new_carbon_index].get("pos", carbon_pos)
+	var new_index := output_atoms.size()
+	output_atoms.append({"element": NITROGEN, "pos": new_carbon_pos + normal * 84.0})
+	output_bonds.append({"a": new_carbon_index, "b": new_index, "order": 1})
+	without_oxygen["atoms"] = output_atoms
+	without_oxygen["bonds"] = output_bonds
+	product = without_oxygen
 	product["name"] = product.get("formula", "Molecule")
 	return [normalize(product)]
 
@@ -711,6 +718,36 @@ static func _subgraph(graph: Dictionary, component: Array[int]) -> Dictionary:
 	var product := normalize({"atoms": atoms, "bonds": new_bonds})
 	product["name"] = product["formula"]
 	return product
+
+static func _subgraph_with_positions(graph: Dictionary, component: Array[int]) -> Dictionary:
+	var index_map := {}
+	var atoms: Array[Dictionary] = []
+	var source_atoms: Array = graph.get("atoms", [])
+	for old_index in component:
+		index_map[old_index] = atoms.size()
+		atoms.append({
+			"element": source_atoms[old_index].get("element", CARBON),
+			"pos": source_atoms[old_index].get("pos", Vector2.ZERO)
+		})
+	var new_bonds: Array[Dictionary] = []
+	for bond in graph.get("bonds", []):
+		var a := int(bond.get("a", 0))
+		var b := int(bond.get("b", 0))
+		if index_map.has(a) and index_map.has(b):
+			new_bonds.append({
+				"a": int(index_map[a]),
+				"b": int(index_map[b]),
+				"order": int(bond.get("order", 1))
+			})
+	var product := normalize({"atoms": atoms, "bonds": new_bonds})
+	product["name"] = product["formula"]
+	return product
+
+static func _mapped_index(component: Array[int], old_index: int) -> int:
+	for i in component.size():
+		if int(component[i]) == old_index:
+			return i
+	return -1
 
 static func _subscript(value: int) -> String:
 	if value <= 1:

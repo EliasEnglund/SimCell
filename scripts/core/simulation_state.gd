@@ -20,7 +20,7 @@ const STARTING_ATP := 80.0
 const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
-const STARTING_ENZYME_TOOLS := ["dehydrogenase", "reductase", "decarboxylase", "aminase"]
+const STARTING_ENZYME_TOOLS := ["dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase"]
 
 var time_seconds := 0.0
 var paused := false
@@ -448,11 +448,11 @@ func pathway_arrows() -> Array[Dictionary]:
 func enzyme_tools() -> Array[Dictionary]:
 	return [
 		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O + NADH", "unlocked": true},
+		{"id": "oxygenase", "label": "CARBOXYL OXIDASE", "icon": "O", "summary": "C=O to COOH + NADH", "unlocked": true},
 		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
 		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
-		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "Alpha-keto acid + N + NADH", "unlocked": true},
+		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "C=O to C-N, removes O", "unlocked": true},
 		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C", "unlocked": false},
-		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "C=O to COOH", "unlocked": false},
 		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
 
@@ -915,7 +915,7 @@ func _resource_delta(tool: String) -> Dictionary:
 	if tool == "dehydrogenase":
 		return {RESOURCE_NADH: 1.0}
 	if tool == "oxygenase":
-		return {RESOURCE_NADH: -1.0}
+		return {RESOURCE_NADH: 1.0}
 	if tool == "decarboxylase":
 		return {RESOURCE_ATP: 1.0}
 	if tool == "aminase":

@@ -1702,7 +1702,7 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 func _enzyme_categories() -> Array[Dictionary]:
 	return [
 		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Harvest ATP from COOH ends, then unlock carbon reshaping", "color": Color("7fe6b7"), "tools": ["decarboxylase", "lyase", "desaturase"]},
-		{"id": "oxygen", "label": "OXYGEN", "card": 2, "summary": "C-O, C=O, and COOH redox chemistry", "color": Color("77dfff"), "tools": ["dehydrogenase", "reductase", "oxygenase"]},
+		{"id": "oxygen", "label": "OXYGEN", "card": 2, "summary": "C-O, C=O, and COOH redox chemistry", "color": Color("77dfff"), "tools": ["dehydrogenase", "oxygenase", "reductase"]},
 		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
 		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
 		{"id": "phosphate", "label": "PHOSPHATE", "card": 5, "summary": "Future ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
@@ -1793,9 +1793,9 @@ func _enzyme_category_button(category: Dictionary) -> Control:
 	return wrapper
 
 func _category_style(fill: Color, border: Color, active: bool) -> StyleBoxFlat:
-	var style := _glow_panel_style(fill, border, 1.4, 8)
-	style.shadow_color = Color(border.r, border.g, border.b, 0.26 if active else 0.12)
-	style.shadow_size = 8 if active else 3
+	var style := _glow_panel_style(fill, Color(border.r, border.g, border.b, 0.55 if active else 0.25), 0.8 if active else 0.0, 8)
+	style.shadow_color = Color(border.r, border.g, border.b, 0.18 if active else 0.06)
+	style.shadow_size = 7 if active else 2
 	style.content_margin_left = 14
 	style.content_margin_top = 8
 	style.content_margin_right = 14
@@ -2186,8 +2186,10 @@ func _glow_panel_style(fill: Color, border: Color, width: float, radius: int) ->
 	return style
 
 func _tool_style(active: bool) -> StyleBoxFlat:
-	var style := _glow_panel_style(Color("243b4b") if active else Color("253747"), Color("73dfff"), 1.5, 8)
-	style.shadow_size = 8 if active else 4
+	var border := Color("73dfff")
+	border.a = 0.58 if active else 0.20
+	var style := _glow_panel_style(Color("243b4b") if active else Color("253747"), border, 0.8 if active else 0.0, 8)
+	style.shadow_size = 7 if active else 2
 	return style
 
 func _nav_style(active: bool) -> StyleBoxFlat:
@@ -3908,10 +3910,9 @@ class EnzymeSelectorCardButton:
 		var rect := Rect2(Vector2(16.0, 10.0), size - Vector2(32.0, 20.0))
 		var bg := Color("0e2932") if not locked else Color("17232a")
 		var edge := accent if not locked else Color("425661")
-		draw_rect(rect.grow(4.0), Color(edge.r, edge.g, edge.b, 0.08), true)
+		draw_rect(rect.grow(4.0), Color(edge.r, edge.g, edge.b, 0.05), true)
 		draw_rect(rect, bg, true)
-		draw_rect(rect, Color(edge.r, edge.g, edge.b, 0.80 if not locked else 0.34), false, 1.6)
-		draw_line(rect.position + Vector2(0, 0), rect.position + Vector2(rect.size.x, 0), Color(edge.r, edge.g, edge.b, 0.36), 4.0, true)
+		draw_line(rect.position + Vector2(8.0, 0), rect.position + Vector2(rect.size.x - 8.0, 0), Color(edge.r, edge.g, edge.b, 0.24 if not locked else 0.10), 2.0, true)
 		var content := rect.grow(-8.0)
 		if locked:
 			draw_rect(rect, Color(0.0, 0.0, 0.0, 0.28), true)
