@@ -448,11 +448,11 @@ func pathway_arrows() -> Array[Dictionary]:
 func enzyme_tools() -> Array[Dictionary]:
 	return [
 		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O + NADH", "unlocked": true},
-		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O/C=C to single, spends NADH", "unlocked": true},
+		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
 		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
 		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "Alpha-keto acid + N + NADH", "unlocked": true},
 		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C", "unlocked": false},
-		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "Future oxygen insertion chemistry", "unlocked": false},
+		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "C=O to COOH", "unlocked": false},
 		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
 

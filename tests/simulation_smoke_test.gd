@@ -33,11 +33,11 @@ func _init() -> void:
 	assert(sim.enzyme_tool_unlocked("aminase") == true)
 	assert(sim.enzyme_tool_unlocked("lyase") == false)
 	assert(sim.valid_targets("lyase", glucose_id).size() == 0)
-	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
-	for tool in ["dehydrogenase", "decarboxylase"]:
-		assert(sim.valid_targets(tool, glucose_id).size() > 0)
-		var tool_target := int(sim.valid_targets(tool, glucose_id)[0])
-		assert(sim.preview_products(tool, glucose_id, tool_target).size() > 0)
+	assert(sim.valid_targets("reductase", glucose_id).size() == 0)
+	assert(sim.valid_targets("dehydrogenase", glucose_id).size() == 0)
+	assert(sim.valid_targets("decarboxylase", glucose_id).size() > 0)
+	var decarb_target := int(sim.valid_targets("decarboxylase", glucose_id)[0])
+	assert(sim.preview_products("decarboxylase", glucose_id, decarb_target).size() > 0)
 	assert(sim.valid_targets("oxygenase", glucose_id).size() == 0)
 	assert(sim.valid_targets("desaturase", glucose_id).size() == 0)
 	assert(float(sim.resources.get("NADH", 0.0)) > 0.0)
@@ -66,6 +66,12 @@ func _init() -> void:
 			pyruvate_id = id
 			break
 	assert(pyruvate_id != "")
+	assert(sim.valid_targets("reductase", pyruvate_id).size() > 0)
+	var reduced_pyruvate := sim.preview_products("reductase", pyruvate_id, int(sim.valid_targets("reductase", pyruvate_id)[0]))
+	assert(reduced_pyruvate.size() == 1)
+	var reduced_id: String = reduced_pyruvate[0]["signature"]
+	sim.molecule_types[reduced_id] = reduced_pyruvate[0]
+	assert(sim.valid_targets("dehydrogenase", reduced_id).size() > 0)
 	assert(sim.valid_targets("aminase", glucose_id).size() == 0)
 	var aminase_target := int(sim.valid_targets("aminase", pyruvate_id)[0])
 	var aminase_preview := sim.preview_products("aminase", pyruvate_id, aminase_target)
@@ -87,13 +93,13 @@ func _init() -> void:
 	for i in 10:
 		resource_sim.tick(0.1)
 	assert(float(resource_sim.resources.get("N", 0.0)) < starting_n)
-	var target := int(sim.valid_targets("dehydrogenase", glucose_id)[0])
-	var preview := sim.preview_products("dehydrogenase", glucose_id, target)
+	var target := int(sim.valid_targets("decarboxylase", glucose_id)[0])
+	var preview := sim.preview_products("decarboxylase", glucose_id, target)
 	assert(preview.size() == 1)
-	var preview_info := sim.product_preview_info("dehydrogenase", glucose_id, target)
+	var preview_info := sim.product_preview_info("decarboxylase", glucose_id, target)
 	assert(preview_info.size() == 1)
-	assert(float(sim.enzyme_preview_summary("dehydrogenase", glucose_id, target).get("equilibrium", 0.0)) > 0.0)
-	assert(sim.design_enzyme("dehydrogenase", glucose_id, target) == true)
+	assert(float(sim.enzyme_preview_summary("decarboxylase", glucose_id, target).get("equilibrium", 0.0)) > 0.0)
+	assert(sim.design_enzyme("decarboxylase", glucose_id, target) == true)
 	assert(sim.protein_queue.size() == 1)
 	assert(sim.pathway_list().size() == 1)
 	var blueprint_id: String = sim.pathway_list()[0].get("id", "")

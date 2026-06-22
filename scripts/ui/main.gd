@@ -1701,8 +1701,8 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 
 func _enzyme_categories() -> Array[Dictionary]:
 	return [
-		{"id": "oxygen", "label": "OXYGEN / REDOX", "card": 2, "summary": "Oxidize C-O bonds or spend NADH with reduction", "color": Color("77dfff"), "tools": ["dehydrogenase", "reductase", "oxygenase"]},
 		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Harvest ATP from COOH ends, then unlock carbon reshaping", "color": Color("7fe6b7"), "tools": ["decarboxylase", "lyase", "desaturase"]},
+		{"id": "oxygen", "label": "OXYGEN", "card": 2, "summary": "C-O, C=O, and COOH redox chemistry", "color": Color("77dfff"), "tools": ["dehydrogenase", "reductase", "oxygenase"]},
 		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
 		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
 		{"id": "phosphate", "label": "PHOSPHATE", "card": 5, "summary": "Future ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}

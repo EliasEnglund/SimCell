@@ -254,7 +254,8 @@ static func valid_reductase_targets(graph: Dictionary) -> Array[int]:
 			continue
 		var e1: String = atoms[a].get("element", "")
 		var e2: String = atoms[b].get("element", "")
-		if int(bond.get("order", 1)) > 1 and ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON) or (e1 == CARBON and e2 == CARBON)):
+		var carbon_index := a if e1 == CARBON else b
+		if int(bond.get("order", 1)) > 1 and ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _is_carboxyl_carbon(graph, carbon_index):
 			targets.append(i)
 	return targets
 
@@ -285,7 +286,8 @@ static func valid_dehydrogenase_targets(graph: Dictionary) -> Array[int]:
 			continue
 		var e1: String = atoms[a].get("element", "")
 		var e2: String = atoms[b].get("element", "")
-		if (e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON):
+		var carbon_index := a if e1 == CARBON else b
+		if ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _has_double_oxygen_neighbor(graph, carbon_index):
 			targets.append(i)
 	return targets
 
@@ -310,7 +312,23 @@ static func apply_desaturase(graph: Dictionary, bond_index: int) -> Array[Dictio
 	return _set_bond_order(graph, bond_index, 2)
 
 static func valid_oxygenase_targets(graph: Dictionary) -> Array[int]:
-	return _valid_bonds_with_carbon(graph)
+	var targets: Array[int] = []
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	for i in bonds.size():
+		var bond: Dictionary = bonds[i]
+		if int(bond.get("order", 1)) != 2:
+			continue
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
+		var e1: String = atoms[a].get("element", "")
+		var e2: String = atoms[b].get("element", "")
+		var carbon_index := a if e1 == CARBON else b
+		if ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _is_carboxyl_carbon(graph, carbon_index):
+			targets.append(i)
+	return targets
 
 static func apply_oxygenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
 	return _add_atom_to_bond_carbon(graph, bond_index, OXYGEN)
@@ -517,6 +535,24 @@ static func _is_carboxyl_carbon(graph: Dictionary, atom_index: int) -> bool:
 			if int(bond.get("order", 1)) >= 2:
 				has_double_oxygen = true
 	return oxygen_neighbors >= 2 and has_double_oxygen
+
+static func _has_double_oxygen_neighbor(graph: Dictionary, atom_index: int) -> bool:
+	var atoms: Array = graph.get("atoms", [])
+	if atom_index < 0 or atom_index >= atoms.size() or atoms[atom_index].get("element", "") != CARBON:
+		return false
+	for bond in graph.get("bonds", []):
+		var a := int(bond.get("a", -1))
+		var b := int(bond.get("b", -1))
+		var other := -1
+		if a == atom_index:
+			other = b
+		elif b == atom_index:
+			other = a
+		if other < 0 or other >= atoms.size():
+			continue
+		if atoms[other].get("element", "") == OXYGEN and int(bond.get("order", 1)) >= 2:
+			return true
+	return false
 
 static func _has_carboxyl_neighbor(graph: Dictionary, atom_index: int) -> bool:
 	var atoms: Array = graph.get("atoms", [])
