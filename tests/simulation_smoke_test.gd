@@ -39,6 +39,8 @@ func _init() -> void:
 	assert(sim.valid_targets("decarboxylase", glucose_id).size() > 0)
 	assert(sim.valid_targets("oxygenase", glucose_id).size() == 0)
 	assert(sim.valid_targets("aminase", glucose_id).size() > 0)
+	for target in sim.valid_targets("decarboxylase", glucose_id):
+		assert(not sim.valid_targets("lyase", glucose_id).has(target))
 	var glucose_oxidation_target := int(sim.valid_targets("dehydrogenase", glucose_id)[0])
 	assert(sim.preview_products("dehydrogenase", glucose_id, glucose_oxidation_target).size() > 0)
 	assert(sim.valid_targets("desaturase", glucose_id).size() == 0)

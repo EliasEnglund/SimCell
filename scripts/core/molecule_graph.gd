@@ -246,8 +246,13 @@ static func valid_lyase_targets(graph: Dictionary) -> Array[int]:
 		var bond: Dictionary = bonds[i]
 		var a := int(bond.get("a", -1))
 		var b := int(bond.get("b", -1))
-		if a >= 0 and b >= 0 and atoms[a].get("element") == CARBON and atoms[b].get("element") == CARBON:
-			targets.append(i)
+		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+			continue
+		if atoms[a].get("element", "") != CARBON or atoms[b].get("element", "") != CARBON:
+			continue
+		if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
+			continue
+		targets.append(i)
 	return targets
 
 static func valid_reductase_targets(graph: Dictionary) -> Array[int]:
