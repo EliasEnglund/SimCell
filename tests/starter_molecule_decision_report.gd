@@ -27,10 +27,11 @@ func _init() -> void:
 	])
 	print("")
 	print("Design read:")
-	print("- The new starter has immediate ATP, amination, oxidation, and reduction hooks.")
+	print("- The new starter has immediate ATP, amination, dehydrogenase, and reduction hooks.")
+	print("- Carboxyl oxidase now correctly rejects the internal C=O because COOH formation is only valid on terminal carbonyl carbons.")
 	print("- Decarboxylase gives a simple ATP branch but removes the terminal COOH, so it competes with amination context.")
 	print("- Aminase can act immediately on the second-to-last C=O because the neighboring terminal carbon is COOH.")
-	print("- Oxidation branches produce NADH; without a strong sink, NADH accumulation remains the intended early pressure.")
+	print("- Dehydrogenase branches produce NADH; without a strong sink, NADH accumulation remains the intended early pressure.")
 	quit(0)
 
 func _print_starter_options() -> void:

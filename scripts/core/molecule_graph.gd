@@ -351,7 +351,7 @@ static func valid_oxygenase_targets(graph: Dictionary) -> Array[int]:
 		var e1: String = atoms[a].get("element", "")
 		var e2: String = atoms[b].get("element", "")
 		var carbon_index := a if e1 == CARBON else b
-		if ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _is_carboxyl_carbon(graph, carbon_index):
+		if ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _is_carboxyl_carbon(graph, carbon_index) and _is_terminal_carbon(graph, carbon_index):
 			targets.append(i)
 	return targets
 
@@ -552,6 +552,8 @@ static func _add_carboxyl_oxygen(graph: Dictionary, bond_index: int) -> Array[Di
 		return []
 	if _is_carboxyl_carbon(product, carbon_index):
 		return []
+	if not _is_terminal_carbon(product, carbon_index):
+		return []
 	var carbon_pos: Vector2 = atoms[carbon_index].get("pos", Vector2.ZERO)
 	var oxygen_pos: Vector2 = atoms[oxygen_index].get("pos", carbon_pos + Vector2.RIGHT)
 	var dir := (carbon_pos - oxygen_pos).normalized()
@@ -639,6 +641,16 @@ static func _has_carboxyl_neighbor(graph: Dictionary, atom_index: int) -> bool:
 		if _is_carboxyl_carbon(graph, int(neighbor)):
 			return true
 	return false
+
+static func _is_terminal_carbon(graph: Dictionary, atom_index: int) -> bool:
+	var atoms: Array = graph.get("atoms", [])
+	if atom_index < 0 or atom_index >= atoms.size() or atoms[atom_index].get("element", "") != CARBON:
+		return false
+	var carbon_neighbors := 0
+	for neighbor in _neighbors(graph, atom_index):
+		if atoms[int(neighbor)].get("element", "") == CARBON:
+			carbon_neighbors += 1
+	return carbon_neighbors <= 1
 
 static func _oxygen_neighbor_count(graph: Dictionary, atom_index: int) -> int:
 	var count := 0
