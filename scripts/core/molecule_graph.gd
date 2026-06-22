@@ -25,23 +25,31 @@ static func amino_acid_target() -> Dictionary:
 
 static func initial_glucose_like() -> Dictionary:
 	var atoms: Array[Dictionary] = [
-		{"element": CARBON, "pos": Vector2(-220.0, 34.0)},
-		{"element": CARBON, "pos": Vector2(-138.0, -10.0)},
-		{"element": CARBON, "pos": Vector2(-138.0, -96.0)},
-		{"element": CARBON, "pos": Vector2(-50.0, 24.0)},
-		{"element": CARBON, "pos": Vector2(42.0, -22.0)},
-		{"element": CARBON, "pos": Vector2(130.0, 20.0)},
-		{"element": OXYGEN, "pos": Vector2(202.0, -32.0)},
-		{"element": OXYGEN, "pos": Vector2(206.0, 70.0)}
+		{"element": CARBON, "pos": Vector2(-230.0, 20.0)},
+		{"element": CARBON, "pos": Vector2(-146.0, -28.0)},
+		{"element": CARBON, "pos": Vector2(-62.0, 20.0)},
+		{"element": CARBON, "pos": Vector2(22.0, -28.0)},
+		{"element": CARBON, "pos": Vector2(106.0, 20.0)},
+		{"element": CARBON, "pos": Vector2(190.0, -28.0)},
+		{"element": OXYGEN, "pos": Vector2(-226.0, 108.0)},
+		{"element": OXYGEN, "pos": Vector2(-148.0, -116.0)},
+		{"element": OXYGEN, "pos": Vector2(-60.0, 108.0)},
+		{"element": OXYGEN, "pos": Vector2(24.0, -116.0)},
+		{"element": OXYGEN, "pos": Vector2(108.0, 108.0)},
+		{"element": OXYGEN, "pos": Vector2(266.0, -72.0)}
 	]
 	var bonds: Array[Dictionary] = [
 		{"a": 0, "b": 1, "order": 1},
 		{"a": 1, "b": 2, "order": 1},
-		{"a": 1, "b": 3, "order": 1},
-		{"a": 3, "b": 4, "order": 2},
+		{"a": 2, "b": 3, "order": 1},
+		{"a": 3, "b": 4, "order": 1},
 		{"a": 4, "b": 5, "order": 1},
-		{"a": 5, "b": 6, "order": 1},
-		{"a": 5, "b": 7, "order": 2}
+		{"a": 0, "b": 6, "order": 1},
+		{"a": 1, "b": 7, "order": 1},
+		{"a": 2, "b": 8, "order": 1},
+		{"a": 3, "b": 9, "order": 1},
+		{"a": 4, "b": 10, "order": 1},
+		{"a": 5, "b": 11, "order": 2}
 	]
 	return normalize({"name": "Glucose", "atoms": atoms, "bonds": bonds})
 
@@ -278,8 +286,6 @@ static func valid_dehydrogenase_targets(graph: Dictionary) -> Array[int]:
 	var atoms: Array = graph.get("atoms", [])
 	for i in bonds.size():
 		var bond: Dictionary = bonds[i]
-		if int(bond.get("order", 1)) != 1:
-			continue
 		var a := int(bond.get("a", -1))
 		var b := int(bond.get("b", -1))
 		if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
@@ -287,12 +293,35 @@ static func valid_dehydrogenase_targets(graph: Dictionary) -> Array[int]:
 		var e1: String = atoms[a].get("element", "")
 		var e2: String = atoms[b].get("element", "")
 		var carbon_index := a if e1 == CARBON else b
-		if ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)) and not _has_double_oxygen_neighbor(graph, carbon_index):
+		if not ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)):
+			continue
+		var order := int(bond.get("order", 1))
+		if order == 1 and not _has_double_oxygen_neighbor(graph, carbon_index):
+			targets.append(i)
+		elif order == 2 and not _is_carboxyl_carbon(graph, carbon_index):
 			targets.append(i)
 	return targets
 
 static func apply_dehydrogenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
-	return _set_bond_order(graph, bond_index, 2)
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return []
+	var bond: Dictionary = bonds[bond_index]
+	var a := int(bond.get("a", -1))
+	var b := int(bond.get("b", -1))
+	if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+		return []
+	var e1: String = atoms[a].get("element", "")
+	var e2: String = atoms[b].get("element", "")
+	var carbon_index := a if e1 == CARBON else b
+	if not ((e1 == CARBON and e2 == OXYGEN) or (e1 == OXYGEN and e2 == CARBON)):
+		return []
+	if int(bond.get("order", 1)) == 1:
+		return _set_bond_order(graph, bond_index, 2)
+	if int(bond.get("order", 1)) == 2 and not _is_carboxyl_carbon(graph, carbon_index):
+		return _add_carboxyl_oxygen(graph, bond_index)
+	return []
 
 static func valid_desaturase_targets(graph: Dictionary) -> Array[int]:
 	var targets: Array[int] = []
@@ -331,7 +360,7 @@ static func valid_oxygenase_targets(graph: Dictionary) -> Array[int]:
 	return targets
 
 static func apply_oxygenase(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
-	return _add_atom_to_bond_carbon(graph, bond_index, OXYGEN)
+	return _add_carboxyl_oxygen(graph, bond_index)
 
 static func valid_aminase_targets(graph: Dictionary) -> Array[int]:
 	var targets: Array[int] = []
@@ -491,6 +520,47 @@ static func _add_atom_to_bond_carbon(graph: Dictionary, bond_index: int, element
 	var new_pos := carbon_pos + (normal * side + dir * 0.24).normalized() * 86.0
 	var new_index := atoms.size()
 	atoms.append({"element": element, "pos": new_pos})
+	bonds.append({"a": carbon_index, "b": new_index, "order": 1})
+	product["atoms"] = atoms
+	product["bonds"] = bonds
+	product["name"] = product.get("formula", "Molecule")
+	return [normalize(product)]
+
+static func _add_carboxyl_oxygen(graph: Dictionary, bond_index: int) -> Array[Dictionary]:
+	var product := clone(graph)
+	var atoms: Array = product.get("atoms", [])
+	var bonds: Array = product.get("bonds", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return []
+	var bond: Dictionary = bonds[bond_index]
+	if int(bond.get("order", 1)) != 2:
+		return []
+	var a := int(bond.get("a", -1))
+	var b := int(bond.get("b", -1))
+	if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+		return []
+	var carbon_index := a if atoms[a].get("element", "") == CARBON else b
+	var oxygen_index := b if carbon_index == a else a
+	if atoms[carbon_index].get("element", "") != CARBON or atoms[oxygen_index].get("element", "") != OXYGEN:
+		return []
+	if _is_carboxyl_carbon(product, carbon_index):
+		return []
+	var carbon_pos: Vector2 = atoms[carbon_index].get("pos", Vector2.ZERO)
+	var oxygen_pos: Vector2 = atoms[oxygen_index].get("pos", carbon_pos + Vector2.RIGHT)
+	var dir := (carbon_pos - oxygen_pos).normalized()
+	if dir.length() <= 0.0:
+		dir = Vector2.RIGHT
+	var normal := Vector2(-dir.y, dir.x)
+	var side := -1.0
+	for neighbor in _neighbors(product, carbon_index):
+		if int(neighbor) == oxygen_index:
+			continue
+		var neighbor_pos: Vector2 = atoms[int(neighbor)].get("pos", carbon_pos)
+		if signf((neighbor_pos - carbon_pos).dot(normal)) == side:
+			side = 1.0
+			break
+	var new_index := atoms.size()
+	atoms.append({"element": OXYGEN, "pos": carbon_pos + (normal * side + dir * 0.15).normalized() * 86.0})
 	bonds.append({"a": carbon_index, "b": new_index, "order": 1})
 	product["atoms"] = atoms
 	product["bonds"] = bonds

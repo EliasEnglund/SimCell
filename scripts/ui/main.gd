@@ -1763,12 +1763,15 @@ func _enzyme_category_button(category: Dictionary) -> Control:
 	var wrapper := VBoxContainer.new()
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.add_theme_constant_override("separation", 4)
+	var accent: Color = category.get("color", Color("73dfff"))
 	var button := EnzymeSelectorCardButton.new()
-	button.card_texture = _enzyme_selector_card_texture(int(category.get("card", 0)))
+	button.card_kind = "category"
+	button.enzyme_id = category_id
+	button.accent = accent
+	button.locked = tool_count <= 0
 	button.tooltip_text = "%s: %s (%s)" % [str(category.get("label", "")), str(category.get("summary", "")), status]
 	button.custom_minimum_size = Vector2(0, 86)
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var accent: Color = category.get("color", Color("73dfff"))
 	button.add_theme_stylebox_override("normal", _category_style(Color("263f50") if is_active_category else Color("243747"), accent, is_active_category))
 	button.add_theme_stylebox_override("hover", _category_style(Color("263f50"), accent, true))
 	button.add_theme_stylebox_override("pressed", _category_style(Color("263f50"), accent, true))
@@ -1805,7 +1808,10 @@ func _tool_button(id: String, card_number: int, label_text: String, summary: Str
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.add_theme_constant_override("separation", 4)
 	var button := EnzymeSelectorCardButton.new()
-	button.card_texture = _enzyme_selector_card_texture(card_number)
+	button.card_kind = "tool"
+	button.enzyme_id = id
+	button.locked = not unlocked
+	button.accent = Color("73dfff") if unlocked else Color("405865")
 	button.tooltip_text = "%s: %s" % [label_text, summary] if unlocked else "%s locked: unlock this reaction class later." % label_text
 	button.custom_minimum_size = Vector2(0, 86)
 	button.toggle_mode = true
@@ -3889,29 +3895,164 @@ class FloatingMolecule3D:
 class EnzymeSelectorCardButton:
 	extends Button
 
-	var _card_texture: Texture2D
-	var card_texture: Texture2D:
-		set(value):
-			_card_texture = value
-			queue_redraw()
-		get:
-			return _card_texture
+	var card_kind := "tool"
+	var enzyme_id := ""
+	var accent := Color("73dfff")
+	var locked := false
 
 	func _ready() -> void:
 		text = ""
 		clip_contents = true
 
 	func _draw() -> void:
-		if _card_texture == null:
-			return
-		var texture_size := _card_texture.get_size()
-		if texture_size.x <= 0.0 or texture_size.y <= 0.0:
-			return
-		var max_size := Vector2(size.x * 0.76, size.y * 0.72)
-		var scale := minf(max_size.x / texture_size.x, max_size.y / texture_size.y)
-		var draw_size := texture_size * scale
-		var draw_pos := (size - draw_size) * 0.5
-		draw_texture_rect(_card_texture, Rect2(draw_pos, draw_size), false)
+		var rect := Rect2(Vector2(16.0, 10.0), size - Vector2(32.0, 20.0))
+		var bg := Color("0e2932") if not locked else Color("17232a")
+		var edge := accent if not locked else Color("425661")
+		draw_rect(rect.grow(4.0), Color(edge.r, edge.g, edge.b, 0.08), true)
+		draw_rect(rect, bg, true)
+		draw_rect(rect, Color(edge.r, edge.g, edge.b, 0.80 if not locked else 0.34), false, 1.6)
+		draw_line(rect.position + Vector2(0, 0), rect.position + Vector2(rect.size.x, 0), Color(edge.r, edge.g, edge.b, 0.36), 4.0, true)
+		var content := rect.grow(-8.0)
+		if locked:
+			draw_rect(rect, Color(0.0, 0.0, 0.0, 0.28), true)
+		if card_kind == "category":
+			_draw_category_icon(content)
+		else:
+			_draw_tool_icon(content)
+
+	func _draw_category_icon(rect: Rect2) -> void:
+		var center := rect.get_center()
+		match enzyme_id:
+			"carbon":
+				_draw_atom(center, 20.0, Color("78878a"))
+			"oxygen":
+				_draw_atom(center + Vector2(-34, 0), 16.0, Color("78878a"))
+				_draw_bond(center + Vector2(-18, 0), center + Vector2(18, 0), 2)
+				_draw_atom(center + Vector2(34, 0), 16.0, Color("e95058"))
+			"nitrogen":
+				_draw_atom(center + Vector2(-28, 12), 16.0, Color("4a90df"))
+				_draw_bond(center + Vector2(-10, 4), center + Vector2(20, -10), 1)
+				_draw_atom(center + Vector2(34, -16), 14.0, Color("78878a"))
+			"sulfur":
+				_draw_atom(center, 20.0, Color("ffe064"))
+			"phosphate":
+				_draw_atom(center, 20.0, Color("a34ed0"))
+			_:
+				_draw_atom(center, 18.0, Color("78878a"))
+
+	func _draw_tool_icon(rect: Rect2) -> void:
+		var y := rect.get_center().y
+		var left := rect.position.x + rect.size.x * 0.28
+		var right := rect.position.x + rect.size.x * 0.72
+		var mid := rect.get_center().x
+		_draw_arrow(Vector2(mid - 18.0, y), Vector2(mid + 18.0, y))
+		match enzyme_id:
+			"decarboxylase":
+				_draw_carboxyl(Vector2(left, y), 0.78)
+				_draw_atom(Vector2(right - 10.0, y), 15.0, Color("78878a"))
+				_draw_text_small("CO2", Vector2(right + 22.0, y + 5.0), Color("dbeff2"))
+			"lyase":
+				_draw_chain(Vector2(left, y), false)
+				_draw_scissors(Vector2(left + 34.0, y - 4.0))
+				_draw_chain(Vector2(right - 16.0, y), true)
+			"desaturase":
+				_draw_two_atom(Vector2(left, y), 1, Color("78878a"), Color("78878a"))
+				_draw_two_atom(Vector2(right, y), 2, Color("78878a"), Color("78878a"))
+			"dehydrogenase":
+				_draw_two_atom(Vector2(left, y), 1, Color("78878a"), Color("e95058"))
+				_draw_two_atom(Vector2(right, y), 2, Color("78878a"), Color("e95058"))
+			"reductase":
+				_draw_two_atom(Vector2(left, y), 2, Color("78878a"), Color("e95058"))
+				_draw_two_atom(Vector2(right, y), 1, Color("78878a"), Color("e95058"))
+			"oxygenase":
+				_draw_two_atom(Vector2(left, y), 2, Color("78878a"), Color("e95058"))
+				_draw_carboxyl(Vector2(right, y), 0.62)
+			"aminase":
+				_draw_alpha_keto(Vector2(left, y), 0.58, false)
+				_draw_alpha_keto(Vector2(right, y), 0.58, true)
+			_:
+				_draw_chain(Vector2(left, y), false)
+				_draw_chain(Vector2(right, y), false)
+
+	func _draw_atom(pos: Vector2, radius: float, color: Color) -> void:
+		var alpha := 0.48 if locked else 1.0
+		draw_circle(pos + Vector2(0, radius * 0.18), radius + 4.0, Color(0, 0, 0, 0.28 * alpha))
+		draw_circle(pos, radius + 4.0, Color(0.01, 0.03, 0.05, alpha))
+		draw_circle(pos, radius + 1.0, color.lightened(0.18) * Color(1, 1, 1, alpha))
+		draw_circle(pos, radius - 2.0, color.darkened(0.12) * Color(1, 1, 1, alpha))
+		draw_circle(pos + Vector2(radius * 0.30, -radius * 0.38), radius * 0.20, Color(1, 1, 1, 0.46 * alpha))
+
+	func _draw_bond(a: Vector2, b: Vector2, order: int) -> void:
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var offsets := [0.0] if order == 1 else [-4.0, 4.0]
+		for offset in offsets:
+			var p0 := a + normal * float(offset)
+			var p1 := b + normal * float(offset)
+			draw_line(p0, p1, Color("02070b"), 8.0, true)
+			draw_line(p0, p1, Color("dbeff2", 0.72 if not locked else 0.30), 4.0, true)
+			draw_line(p0 + normal * 0.5, p1 + normal * 0.5, Color(1, 1, 1, 0.36 if not locked else 0.12), 1.2, true)
+
+	func _draw_two_atom(center: Vector2, order: int, color_a: Color, color_b: Color) -> void:
+		var a := center + Vector2(-22.0, 0)
+		var b := center + Vector2(22.0, 0)
+		_draw_bond(a + Vector2(14, 0), b - Vector2(14, 0), order)
+		_draw_atom(a, 14.0, color_a)
+		_draw_atom(b, 14.0, color_b)
+
+	func _draw_chain(center: Vector2, split: bool) -> void:
+		var points := [center + Vector2(-38, 8), center + Vector2(-12, -8), center + Vector2(14, 8), center + Vector2(40, -8)]
+		for i in points.size() - 1:
+			if split and i == 1:
+				continue
+			_draw_bond(points[i], points[i + 1], 1)
+		for point in points:
+			_draw_atom(point, 10.5, Color("78878a"))
+
+	func _draw_carboxyl(center: Vector2, scale: float) -> void:
+		var c := center
+		var o1 := center + Vector2(34, -18) * scale
+		var o2 := center + Vector2(36, 20) * scale
+		_draw_bond(c + Vector2(12, -6) * scale, o1 - Vector2(10, -5) * scale, 2)
+		_draw_bond(c + Vector2(12, 7) * scale, o2 - Vector2(10, 5) * scale, 1)
+		_draw_atom(c, 15.0 * scale, Color("78878a"))
+		_draw_atom(o1, 13.0 * scale, Color("e95058"))
+		_draw_atom(o2, 13.0 * scale, Color("e95058"))
+
+	func _draw_alpha_keto(center: Vector2, scale: float, with_n: bool) -> void:
+		var c1 := center + Vector2(-36, 12) * scale
+		var c2 := center
+		var c3 := center + Vector2(42, 10) * scale
+		_draw_bond(c1, c2, 1)
+		_draw_bond(c2, c3, 1)
+		_draw_bond(c2, c2 + Vector2(0, -44) * scale, 2)
+		_draw_atom(c1, 13.0 * scale, Color("78878a"))
+		_draw_atom(c2, 13.0 * scale, Color("78878a"))
+		_draw_carboxyl(c3, scale * 0.72)
+		_draw_atom(c2 + Vector2(0, -44) * scale, 11.5 * scale, Color("e95058"))
+		if with_n:
+			_draw_bond(c2, c2 + Vector2(-8, 44) * scale, 1)
+			_draw_atom(c2 + Vector2(-8, 44) * scale, 11.5 * scale, Color("4a90df"))
+
+	func _draw_arrow(a: Vector2, b: Vector2) -> void:
+		var color := Color("9df7ff", 0.78 if not locked else 0.28)
+		draw_line(a, b, Color(0, 0, 0, 0.5), 7.0, true)
+		draw_line(a, b, color, 4.0, true)
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var tip := b
+		var wing := 9.0
+		draw_colored_polygon(PackedVector2Array([tip, tip - dir * 15.0 + normal * wing, tip - dir * 15.0 - normal * wing]), color)
+
+	func _draw_scissors(center: Vector2) -> void:
+		var color := Color("f4fbff", 0.82 if not locked else 0.30)
+		draw_line(center + Vector2(-18, 18), center + Vector2(18, -20), color, 2.5, true)
+		draw_line(center + Vector2(-12, -18), center + Vector2(20, 18), color, 2.5, true)
+		draw_arc(center + Vector2(20, -22), 5.0, 0.0, TAU, 16, color, 2.0)
+		draw_arc(center + Vector2(24, 18), 5.0, 0.0, TAU, 16, color, 2.0)
+
+	func _draw_text_small(text_value: String, pos: Vector2, color: Color) -> void:
+		draw_string(ThemeDB.fallback_font, pos, text_value, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
 
 class DesignerTitleFrame:
 	extends Control
