@@ -452,7 +452,7 @@ func enzyme_tools() -> Array[Dictionary]:
 		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
 		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
 		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "C=O to C-N, removes O", "unlocked": true},
-		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C", "unlocked": false},
+		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C, spends ATP", "unlocked": false},
 		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
 
@@ -910,6 +910,8 @@ func _equilibrium_level(tool: String) -> float:
 	return 160.0
 
 func _resource_delta(tool: String) -> Dictionary:
+	if tool == "lyase":
+		return {RESOURCE_ATP: -1.0}
 	if tool == "reductase":
 		return {RESOURCE_NADH: -1.0}
 	if tool == "dehydrogenase":
