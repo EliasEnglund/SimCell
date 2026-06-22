@@ -27,12 +27,19 @@ func _init() -> void:
 	assert(sim.selected_molecule == glucose_id)
 	sim.deselect_molecule()
 	assert(sim.selected_molecule == "")
-	assert(sim.valid_targets("lyase", glucose_id).size() > 0)
+	assert(sim.enzyme_tool_unlocked("dehydrogenase") == true)
+	assert(sim.enzyme_tool_unlocked("reductase") == true)
+	assert(sim.enzyme_tool_unlocked("decarboxylase") == true)
+	assert(sim.enzyme_tool_unlocked("aminase") == true)
+	assert(sim.enzyme_tool_unlocked("lyase") == false)
+	assert(sim.valid_targets("lyase", glucose_id).size() == 0)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
-	for tool in ["dehydrogenase", "oxygenase", "decarboxylase", "aminase", "desaturase"]:
+	for tool in ["dehydrogenase", "decarboxylase"]:
 		assert(sim.valid_targets(tool, glucose_id).size() > 0)
 		var tool_target := int(sim.valid_targets(tool, glucose_id)[0])
 		assert(sim.preview_products(tool, glucose_id, tool_target).size() > 0)
+	assert(sim.valid_targets("oxygenase", glucose_id).size() == 0)
+	assert(sim.valid_targets("desaturase", glucose_id).size() == 0)
 	assert(float(sim.resources.get("NADH", 0.0)) > 0.0)
 	assert(float(sim.resources.get("N", 0.0)) > 0.0)
 	assert(float(sim.resources.get("ATP", 0.0)) > 0.0)
@@ -53,26 +60,40 @@ func _init() -> void:
 	sim.tick(0.3)
 	assert(float(sim.molecule_amounts.get(target_id, 0.0)) <= 0.001)
 	assert(float(sim.resources.get("Amino Acids", 0.0)) > starting_amino_acids)
-	var aminase_target := int(sim.valid_targets("aminase", glucose_id)[0])
-	var aminase_preview := sim.preview_products("aminase", glucose_id, aminase_target)
+	var pyruvate_id := ""
+	for id in sim.molecule_types.keys():
+		if sim.molecule_types[id].get("name", "") == "Pyruvate":
+			pyruvate_id = id
+			break
+	assert(pyruvate_id != "")
+	assert(sim.valid_targets("aminase", glucose_id).size() == 0)
+	var aminase_target := int(sim.valid_targets("aminase", pyruvate_id)[0])
+	var aminase_preview := sim.preview_products("aminase", pyruvate_id, aminase_target)
 	assert(str(aminase_preview[0].get("formula", "")).contains("N"))
 	var resource_sim = SimulationStateScript.new()
-	var resource_glucose_id: String = resource_sim.present_molecule_ids()[0]
 	var starting_n := float(resource_sim.resources.get("N", 0.0))
-	var resource_target := int(resource_sim.valid_targets("aminase", resource_glucose_id)[0])
-	assert(resource_sim.design_enzyme("aminase", resource_glucose_id, resource_target) == true)
+	var resource_pyruvate_id := ""
+	for id in resource_sim.molecule_types.keys():
+		if resource_sim.molecule_types[id].get("name", "") == "Pyruvate":
+			resource_pyruvate_id = id
+			break
+	assert(resource_pyruvate_id != "")
+	resource_sim.molecule_amounts[resource_pyruvate_id] = 24.0
+	resource_sim.molecule_rates[resource_pyruvate_id] = {"production": 0.0, "consumption": 0.0}
+	var resource_target := int(resource_sim.valid_targets("aminase", resource_pyruvate_id)[0])
+	assert(resource_sim.design_enzyme("aminase", resource_pyruvate_id, resource_target) == true)
 	for i in 40:
 		resource_sim.tick(0.1)
 	for i in 10:
 		resource_sim.tick(0.1)
 	assert(float(resource_sim.resources.get("N", 0.0)) < starting_n)
-	var target := int(sim.valid_targets("lyase", glucose_id)[0])
-	var preview := sim.preview_products("lyase", glucose_id, target)
-	assert(preview.size() == 2)
-	var preview_info := sim.product_preview_info("lyase", glucose_id, target)
-	assert(preview_info.size() == 2)
-	assert(int(sim.enzyme_preview_summary("lyase", glucose_id, target).get("gas_products", 0)) == 1)
-	assert(sim.design_enzyme("lyase", glucose_id, target) == true)
+	var target := int(sim.valid_targets("dehydrogenase", glucose_id)[0])
+	var preview := sim.preview_products("dehydrogenase", glucose_id, target)
+	assert(preview.size() == 1)
+	var preview_info := sim.product_preview_info("dehydrogenase", glucose_id, target)
+	assert(preview_info.size() == 1)
+	assert(float(sim.enzyme_preview_summary("dehydrogenase", glucose_id, target).get("equilibrium", 0.0)) > 0.0)
+	assert(sim.design_enzyme("dehydrogenase", glucose_id, target) == true)
 	assert(sim.protein_queue.size() == 1)
 	assert(sim.pathway_list().size() == 1)
 	var blueprint_id: String = sim.pathway_list()[0].get("id", "")

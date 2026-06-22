@@ -111,6 +111,7 @@ func _print_scenario_list() -> void:
 
 func _print_run_report_header(scenarios: Array) -> void:
 	var sim = SimulationStateScript.new()
+	sim.experimental_all_enzyme_tools_unlocked = true
 	print("\nSIMCELL GAMEPLAY PATH SIMULATION REPORT")
 	print("======================================")
 	print("Simulation count: %d" % scenarios.size())
@@ -151,6 +152,7 @@ func _print_run_report_header(scenarios: Array) -> void:
 func _run_scenario(scenario: Dictionary) -> void:
 	_events = []
 	var sim = SimulationStateScript.new()
+	sim.experimental_all_enzyme_tools_unlocked = true
 	sim.event_logged.connect(func(message: String): _events.append(message))
 	var actions: Array = scenario.get("actions", [])
 	actions.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -756,6 +758,7 @@ func _energy_design_read(result: Dictionary) -> String:
 
 func _run_balance_case(case: Dictionary) -> Dictionary:
 	var sim = SimulationStateScript.new()
+	sim.experimental_all_enzyme_tools_unlocked = true
 	_apply_balance_setup(sim, case)
 	var initial_resources: Dictionary = sim.resources.duplicate(true)
 	var initial_molecules: Dictionary = sim.molecule_amounts.duplicate(true)

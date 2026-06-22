@@ -67,7 +67,7 @@ var metabolism_molecule_buttons := {}
 var hovered_metabolism_molecule := ""
 var exploration_state := {}
 
-var designer_tool := "lyase"
+var designer_tool := "dehydrogenase"
 var designer_category := ""
 var designer_target := -1
 var designer_preview: HBoxContainer
@@ -1701,8 +1701,8 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 
 func _enzyme_categories() -> Array[Dictionary]:
 	return [
-		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Break, remove, or reshape carbon bonds", "color": Color("7fe6b7"), "tools": ["lyase", "decarboxylase", "desaturase"]},
-		{"id": "oxygen", "label": "OXYGEN / REDOX", "card": 2, "summary": "Add oxygen or change redox state", "color": Color("77dfff"), "tools": ["reductase", "dehydrogenase", "oxygenase"]},
+		{"id": "oxygen", "label": "OXYGEN / REDOX", "card": 2, "summary": "Oxidize C-O bonds or spend NADH with reduction", "color": Color("77dfff"), "tools": ["dehydrogenase", "reductase", "oxygenase"]},
+		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Harvest ATP from COOH ends, then unlock carbon reshaping", "color": Color("7fe6b7"), "tools": ["decarboxylase", "lyase", "desaturase"]},
 		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
 		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
 		{"id": "phosphate", "label": "PHOSPHATE", "card": 5, "summary": "Future ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
@@ -1728,11 +1728,13 @@ func _enzyme_tools_for_category(category_id: String) -> Array[Dictionary]:
 			allowed = category.get("tools", [])
 			break
 	var output: Array[Dictionary] = []
-	for tool in sim.enzyme_tools():
-		if allowed.has(str(tool.get("id", ""))):
-			var enriched := tool.duplicate(true)
-			enriched["card"] = _enzyme_tool_card_number(str(tool.get("id", "")))
-			output.append(enriched)
+	for tool_id in allowed:
+		for tool in sim.enzyme_tools():
+			if str(tool.get("id", "")) == str(tool_id):
+				var enriched := tool.duplicate(true)
+				enriched["card"] = _enzyme_tool_card_number(str(tool.get("id", "")))
+				output.append(enriched)
+				break
 	return output
 
 func _enzyme_tool_card_number(tool_id: String) -> int:
@@ -1751,7 +1753,11 @@ func _enzyme_category_button(category: Dictionary) -> Control:
 	var tool_count: int = category.get("tools", []).size()
 	var category_id := str(category.get("id", ""))
 	var is_active_category := _enzyme_category_for_tool(designer_tool) == category_id
-	var status := "%d reaction%s" % [tool_count, "" if tool_count == 1 else "s"] if tool_count > 0 else "Locked"
+	var starter_count := 0
+	for tool_id in category.get("tools", []):
+		if sim.enzyme_tool_unlocked(str(tool_id)):
+			starter_count += 1
+	var status := "%d starter / %d locked" % [starter_count, maxi(0, tool_count - starter_count)] if tool_count > 0 else "Locked"
 	if is_active_category:
 		status = "Selected: %s" % designer_tool.capitalize()
 	var wrapper := VBoxContainer.new()
@@ -1772,9 +1778,11 @@ func _enzyme_category_button(category: Dictionary) -> Control:
 		designer_category = category_id
 		if not is_active_category:
 			var tools: Array = category.get("tools", [])
-			if not tools.is_empty():
-				designer_tool = str(tools[0])
-				designer_target = -1
+			for tool_id in tools:
+				if sim.enzyme_tool_unlocked(str(tool_id)):
+					designer_tool = str(tool_id)
+					designer_target = -1
+					break
 		_open_enzyme_designer(sim.selected_molecule)
 	)
 	wrapper.add_child(button)
@@ -1792,28 +1800,35 @@ func _category_style(fill: Color, border: Color, active: bool) -> StyleBoxFlat:
 	return style
 
 func _tool_button(id: String, card_number: int, label_text: String, summary: String = "") -> Control:
+	var unlocked := sim.enzyme_tool_unlocked(id)
 	var wrapper := VBoxContainer.new()
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.add_theme_constant_override("separation", 4)
 	var button := EnzymeSelectorCardButton.new()
 	button.card_texture = _enzyme_selector_card_texture(card_number)
-	button.tooltip_text = "%s: %s" % [label_text, summary]
+	button.tooltip_text = "%s: %s" % [label_text, summary] if unlocked else "%s locked: unlock this reaction class later." % label_text
 	button.custom_minimum_size = Vector2(0, 86)
 	button.toggle_mode = true
-	button.button_pressed = designer_tool == id
+	button.button_pressed = designer_tool == id and unlocked
+	button.disabled = not unlocked
 	button.add_theme_font_size_override("font_size", 16)
-	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	button.add_theme_stylebox_override("normal", _tool_style(false))
-	button.add_theme_stylebox_override("hover", _tool_style(true))
-	button.add_theme_stylebox_override("pressed", _tool_style(true))
+	button.modulate = Color(1, 1, 1, 1) if unlocked else Color(0.48, 0.55, 0.58, 0.72)
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if unlocked else Control.CURSOR_ARROW
+	button.add_theme_stylebox_override("normal", _tool_style(false) if unlocked else _category_style(Color("172430"), Color("405865"), false))
+	button.add_theme_stylebox_override("hover", _tool_style(true) if unlocked else _category_style(Color("172430"), Color("405865"), false))
+	button.add_theme_stylebox_override("pressed", _tool_style(true) if unlocked else _category_style(Color("172430"), Color("405865"), false))
+	button.add_theme_stylebox_override("disabled", _category_style(Color("172430"), Color("405865"), false))
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	button.pressed.connect(func():
+		if not unlocked:
+			return
 		designer_tool = id
 		designer_target = -1
 		_refresh_designer()
 	)
 	wrapper.add_child(button)
-	wrapper.add_child(_selector_caption(label_text, summary, Color("73dfff") if designer_tool == id else Color("dbeff2")))
+	var caption_summary := summary if unlocked else "Locked"
+	wrapper.add_child(_selector_caption(label_text, caption_summary, Color("73dfff") if designer_tool == id and unlocked else (Color("76888c") if not unlocked else Color("dbeff2"))))
 	return wrapper
 
 func _selector_caption(title_text: String, subtitle: String, accent: Color) -> VBoxContainer:
@@ -1889,6 +1904,11 @@ func _refresh_designer() -> void:
 		float(summary.get("stability", 0.0)),
 		float(summary.get("build_time", 0.0))
 	]))
+	var equilibrium_label := Label.new()
+	equilibrium_label.text = "Equilibrium: slows as products approach %.0f molecules" % float(summary.get("equilibrium", 0.0))
+	equilibrium_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	equilibrium_label.modulate = Color("9fd8df")
+	summary_panel.add_child(equilibrium_label)
 	var resource_delta: Dictionary = summary.get("resource_delta", {})
 	if not resource_delta.is_empty():
 		var resource_label := Label.new()

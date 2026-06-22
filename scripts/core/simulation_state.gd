@@ -20,13 +20,14 @@ const STARTING_ATP := 80.0
 const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
+const STARTING_ENZYME_TOOLS := ["dehydrogenase", "reductase", "decarboxylase", "aminase"]
 
 var time_seconds := 0.0
 var paused := false
 var speed := 1.0
 var active_view := "metabolism"
 var selected_molecule := ""
-var selected_enzyme_tool := "lyase"
+var selected_enzyme_tool := "dehydrogenase"
 var tick_accumulator := 0.0
 
 var molecule_types: Dictionary = {}
@@ -42,6 +43,7 @@ var enzyme_blueprints: Dictionary = {}
 var active_enzymes: Dictionary = {}
 var protein_queue: Array[Dictionary] = []
 var reactions: Array[Dictionary] = []
+var experimental_all_enzyme_tools_unlocked := false
 var research_points := 0.0
 var dna_research: Dictionary = {}
 var toxicity := 0.0
@@ -57,7 +59,7 @@ func reset() -> void:
 	paused = false
 	speed = 1.0
 	active_view = "metabolism"
-	selected_enzyme_tool = "lyase"
+	selected_enzyme_tool = "dehydrogenase"
 	tick_accumulator = 0.0
 	molecule_types = {}
 	molecule_amounts = {}
@@ -79,6 +81,7 @@ func reset() -> void:
 	active_enzymes = {}
 	protein_queue = []
 	reactions = []
+	experimental_all_enzyme_tools_unlocked = false
 	research_points = 0.0
 	dna_research = {}
 	ensure_dna_research_defaults()
@@ -444,14 +447,19 @@ func pathway_arrows() -> Array[Dictionary]:
 
 func enzyme_tools() -> Array[Dictionary]:
 	return [
-		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C"},
-		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O/C=C to single"},
-		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O"},
-		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "Add O"},
-		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "Remove COO"},
-		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "Add N"},
-		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C"}
+		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O + NADH", "unlocked": true},
+		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O/C=C to single, spends NADH", "unlocked": true},
+		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
+		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "Alpha-keto acid + N + NADH", "unlocked": true},
+		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C", "unlocked": false},
+		{"id": "oxygenase", "label": "OXYGENASE", "icon": "O", "summary": "Future oxygen insertion chemistry", "unlocked": false},
+		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
+
+func enzyme_tool_unlocked(tool: String) -> bool:
+	if experimental_all_enzyme_tools_unlocked:
+		return true
+	return STARTING_ENZYME_TOOLS.has(tool)
 
 func membrane_transport_arrows() -> Array[Dictionary]:
 	var output: Array[Dictionary] = []
@@ -496,6 +504,7 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"km": 18.0,
 		"stability": 120.0,
+		"equilibrium": _equilibrium_level(tool),
 		"build_time": 3.0,
 		"build_cost": ENZYME_BUILD_COST.duplicate(true),
 		"resource_delta": _resource_delta(tool),
@@ -504,6 +513,9 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 	}
 
 func design_enzyme(tool: String, substrate_id: String, target_index: int) -> bool:
+	if not enzyme_tool_unlocked(tool):
+		emit_signal("event_logged", "%s is locked. Unlock this enzyme class in the DNA tree." % tool.capitalize())
+		return false
 	if not molecule_types.has(substrate_id):
 		return false
 	var substrate: Dictionary = molecule_types[substrate_id]
@@ -533,6 +545,7 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"km": 18.0,
 		"stability": 120.0,
+		"equilibrium": _equilibrium_level(tool),
 		"build_time": 3.0,
 		"build_cost": ENZYME_BUILD_COST.duplicate(true)
 	}
@@ -592,6 +605,8 @@ func preview_products(tool: String, substrate_id: String, target_index: int) -> 
 	return []
 
 func valid_targets(tool: String, molecule_id: String) -> Array[int]:
+	if not enzyme_tool_unlocked(tool):
+		return []
 	if not molecule_types.has(molecule_id):
 		return []
 	var graph: Dictionary = molecule_types[molecule_id]
@@ -647,6 +662,7 @@ func _tick_metabolism(dt: float) -> void:
 		var substrate_id: String = blueprint.get("substrate", "")
 		var substrate_amount := float(molecule_amounts.get(substrate_id, 0.0))
 		var demand := count * float(blueprint.get("kcat", 1.0)) * substrate_amount / (float(blueprint.get("km", 1.0)) + substrate_amount)
+		demand *= _equilibrium_factor(blueprint)
 		reaction_demands.append({"blueprint": blueprint, "demand": demand})
 		demand_by_substrate[substrate_id] = float(demand_by_substrate.get(substrate_id, 0.0)) + demand
 
@@ -680,7 +696,8 @@ func _tick_metabolism(dt: float) -> void:
 			"tool": blueprint.get("tool", ""),
 			"substrate": substrate_id,
 			"products": blueprint.get("products", []),
-			"rate": actual_rate
+			"rate": actual_rate,
+			"equilibrium_factor": _equilibrium_factor(blueprint)
 		})
 	_convert_target_molecules(dt)
 
@@ -776,6 +793,21 @@ func _limit_rate_by_resources(blueprint: Dictionary, requested_rate: float, dt: 
 		limited = minf(limited, available / maxf(dt * absf(per_reaction), 0.0001))
 	return limited
 
+func _equilibrium_factor(blueprint: Dictionary) -> float:
+	var products: Array = blueprint.get("products", [])
+	if products.is_empty():
+		return 1.0
+	var level := float(blueprint.get("equilibrium", 180.0))
+	if level <= 0.0:
+		return 1.0
+	var highest_product := 0.0
+	for product_id in products:
+		highest_product = maxf(highest_product, float(molecule_amounts.get(product_id, 0.0)))
+	var pressure := highest_product / level
+	if pressure >= 1.0:
+		return 0.0
+	return clampf(1.0 - pressure, 0.0, 1.0)
+
 func _apply_resource_delta(blueprint: Dictionary, reactions_done: float, dt: float) -> void:
 	var delta: Dictionary = blueprint.get("resource_delta", {})
 	for resource_id in delta.keys():
@@ -866,6 +898,17 @@ func _estimate_kcat(tool: String, substrate: Dictionary, target_index: int) -> f
 		return 0.65
 	return 0.5
 
+func _equilibrium_level(tool: String) -> float:
+	if tool == "decarboxylase":
+		return 999999.0
+	if tool == "dehydrogenase":
+		return 140.0
+	if tool == "reductase":
+		return 110.0
+	if tool == "aminase":
+		return 80.0
+	return 160.0
+
 func _resource_delta(tool: String) -> Dictionary:
 	if tool == "reductase":
 		return {RESOURCE_NADH: -1.0}
@@ -876,7 +919,7 @@ func _resource_delta(tool: String) -> Dictionary:
 	if tool == "decarboxylase":
 		return {RESOURCE_ATP: 1.0}
 	if tool == "aminase":
-		return {RESOURCE_NITROGEN: -1.0}
+		return {RESOURCE_NITROGEN: -1.0, RESOURCE_NADH: -1.0}
 	if tool == "desaturase":
 		return {RESOURCE_NADH: 1.0}
 	return {}
