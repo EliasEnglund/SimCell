@@ -20,7 +20,7 @@ const STARTING_ATP := 80.0
 const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
-const STARTING_ENZYME_TOOLS := ["dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase"]
+const STARTING_ENZYME_TOOLS := ["lyase", "dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase"]
 
 var time_seconds := 0.0
 var paused := false
@@ -452,7 +452,7 @@ func enzyme_tools() -> Array[Dictionary]:
 		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
 		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
 		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "C=O to C-N, removes O", "unlocked": true},
-		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C, spends ATP", "unlocked": false},
+		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C, spends ATP", "unlocked": true},
 		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
 

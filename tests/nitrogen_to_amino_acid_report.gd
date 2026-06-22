@@ -74,21 +74,20 @@ func _report_graph_route_with_cut() -> void:
 		if not target_flags.is_empty():
 			print("  Step 2 lyase target %d: %s -> %s" % [int(target_index), product_formulas, ", ".join(target_flags)])
 	if found_target:
-		print("  Result: nitrogen-to-amino-acid is chemically possible as aminase, then lyase cuts off the N-C-COOH end.")
-		print("  Design blocker: lyase is currently locked in the starting enzyme set, so the live starter cannot complete this route yet.")
+		print("  Result: nitrogen-to-amino-acid is chemically possible as aminase, then ATP-spending lyase cuts off the N-C-COOH end.")
+		print("  Design read: lyase is now available at start, so the live route is gated by ATP, N, and NADH rather than by enzyme unlock.")
 	else:
 		print("  Result: no lyase cut produced the amino acid target; the target matcher or cleavage rule needs adjustment.")
 
 func _report_live_route_with_atp_lyase() -> void:
 	var sim = SimulationStateScript.new()
-	sim.experimental_all_enzyme_tools_unlocked = true
 	var glucose_id := _glucose_id(sim)
 	var start_amino := float(sim.resources.get("Amino Acids", 0.0))
 	var start_atp := float(sim.resources.get("ATP", 0.0))
 	var start_n := float(sim.resources.get("N", 0.0))
 	var start_nadh := float(sim.resources.get("NADH", 0.0))
 	print("")
-	print("Live route with lyase temporarily unlocked")
+	print("Live route with starting lyase")
 	var aminase_targets := sim.valid_targets("aminase", glucose_id)
 	if aminase_targets.is_empty():
 		print("  Failed: no aminase target on starter.")
@@ -123,7 +122,6 @@ func _report_live_route_with_atp_lyase() -> void:
 
 func _report_self_funded_route() -> void:
 	var sim = SimulationStateScript.new()
-	sim.experimental_all_enzyme_tools_unlocked = true
 	var glucose_id := _glucose_id(sim)
 	var start_amino := float(sim.resources.get("Amino Acids", 0.0))
 	var start_atp := float(sim.resources.get("ATP", 0.0))
