@@ -26,6 +26,12 @@ Run the gameplay balance matrix:
 godot --headless --path . --script tests/gameplay_path_simulator.gd -- --balance-matrix
 ```
 
+Run the COOH/ATP/nitrogen economy test:
+
+```bash
+godot --headless --path . --script tests/gameplay_path_simulator.gd -- --energy-matrix
+```
+
 Current scenarios:
 
 - `baseline_import`: no enzymes, just glucose import.
@@ -46,6 +52,16 @@ The balance matrix compares enzyme on/off and tuning cases:
 - ATP-positive carbon-loss chemistry.
 
 For each case it reports measured glucose import, glucose consumption, glucose accumulation pressure, enzyme counts, `kcat`, `Km`, active pathway rates, utilization, final ATP/NADH/N/amino-acid values, NADH production and consumption, available DNA unlocks, a pass/fail/pressure verdict, ranked blockers, and the next unlock or design move.
+
+The energy matrix tests an early-game economy hypothesis:
+
+- ATP comes from decarboxylating COOH-like ends.
+- CO/aldehyde-like ends can be converted toward COOH by an aldehyde-dehydrogenase-like oxygenation step.
+- COOH preparation produces NADH, so it needs a reductive or fermentation-like sink.
+- Direct amination uses the internal `N` resource.
+- Imported nitrate currently does not feed amination without a future nitrate-assimilation or N-transfer enzyme.
+
+It is intentionally a design harness. Some cases override reaction resource deltas to test proposed rules before those rules are promoted into the main simulation constants.
 
 The output tracks:
 

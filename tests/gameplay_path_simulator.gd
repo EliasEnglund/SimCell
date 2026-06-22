@@ -19,6 +19,10 @@ func _init() -> void:
 		_run_balance_matrix()
 		quit(0)
 		return
+	if _arg_flag("--energy-matrix"):
+		_run_energy_matrix()
+		quit(0)
+		return
 	if scenario_name == "all":
 		var selected_scenarios := _scenarios()
 		_print_run_report_header(selected_scenarios)
@@ -103,6 +107,7 @@ func _print_scenario_list() -> void:
 		print("  %s - %s" % [scenario.get("id", ""), scenario.get("notes", "")])
 	print("\nBalance matrix:")
 	print("  --balance-matrix - Runs enzyme on/off and parameter cases for gameplay analysis.")
+	print("  --energy-matrix - Tests COOH/decarboxylase ATP economy and nitrogen entry options.")
 
 func _print_run_report_header(scenarios: Array) -> void:
 	var sim = SimulationStateScript.new()
@@ -568,6 +573,187 @@ func _balance_cases() -> Array[Dictionary]:
 		}
 	]
 
+func _run_energy_matrix() -> void:
+	var cases := _energy_cases()
+	print("\nSIMCELL COOH / ATP / NITROGEN ECONOMY TEST")
+	print("==========================================")
+	print("Simulation count: %d" % cases.size())
+	print("Hypothesis: early ATP comes only from decarboxylating COOH ends. CO -> COOH preparation creates NADH, so ATP production must be paired with a redox sink. Nitrogen entry can start as direct N-resource amination, while imported N-substrate ligation needs a new enzyme class.")
+	print("")
+	print("Biochemical mapping for the prototype:")
+	print("  CO -> COOH: aldehyde dehydrogenase / aldehyde oxidase style reaction. Game rule tested here: add O to a carbonyl-like end and produce NADH.")
+	print("  COOH -> CO2 + ATP: decarboxylase / substrate-level phosphorylation abstraction. Game rule tested here: lose carboxyl carbon and gain ATP.")
+	print("  NADH sink: reductase / fermentation-like reduction. Game rule tested here: consume NADH to reduce C=O or C=C.")
+	print("  Direct N attachment: aminase/transaminase abstraction using internal N resource.")
+	print("  Imported N attachment: would require nitrate/ammonia assimilation plus aminotransferase or ligase; current prototype does not yet support this as molecule-to-molecule chemistry.")
+	print("")
+	var results: Array[Dictionary] = []
+	for case in cases:
+		results.append(_run_balance_case(case))
+	_print_energy_table(results)
+	_print_energy_interpretation(results)
+
+func _energy_cases() -> Array[Dictionary]:
+	return [
+		{
+			"id": "cooh_decarb_only",
+			"name": "Existing COOH Decarboxylase",
+			"duration": 150.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "decarboxylase", "molecule": "glucose", "target": "first", "count": 4, "kcat": 0.70, "km": 16.0}
+			],
+			"design_goal": "Can the player get ATP immediately from existing COOH-like glucose ends?"
+		},
+		{
+			"id": "co_to_cooh_only",
+			"name": "CO To COOH Prep Only",
+			"duration": 150.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "oxygenase", "molecule": "glucose", "target": "first", "count": 3, "kcat": 0.75, "km": 18.0, "resource_delta": {"NADH": 1.0}}
+			],
+			"design_goal": "COOH preparation should create NADH pressure without directly producing ATP."
+		},
+		{
+			"id": "cooh_prep_then_decarb",
+			"name": "COOH Prep Then Decarb",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "oxygenase", "molecule": "glucose", "target": "first", "count": 3, "kcat": 0.75, "km": 18.0, "resource_delta": {"NADH": 1.0}},
+				{"time": 24.0, "type": "design", "tool": "decarboxylase", "molecule": "newest", "target": "first", "count": 3, "kcat": 0.70, "km": 16.0}
+			],
+			"design_goal": "Test the proposed ATP loop: make more COOH ends, then decarboxylate them."
+		},
+		{
+			"id": "cooh_prep_decarb_redox",
+			"name": "COOH Prep Decarb Redox Sink",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "oxygenase", "molecule": "glucose", "target": "first", "count": 2, "kcat": 0.75, "km": 18.0, "resource_delta": {"NADH": 1.0}},
+				{"time": 24.0, "type": "design", "tool": "decarboxylase", "molecule": "newest", "target": "first", "count": 3, "kcat": 0.70, "km": 16.0},
+				{"time": 40.0, "type": "design", "tool": "reductase", "molecule": "newest", "target": "first", "count": 3, "kcat": 0.80, "km": 18.0}
+			],
+			"design_goal": "Check whether a reduction branch can spend NADH produced by COOH preparation."
+		},
+		{
+			"id": "direct_n_amination_low_n",
+			"name": "Direct N Amination Low N",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 20.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2}
+			],
+			"design_goal": "Direct N-resource amination should work briefly, then reveal nitrogen starvation."
+		},
+		{
+			"id": "direct_n_amination_high_n",
+			"name": "Direct N Amination High N",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"resources": {"N": 60.0},
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 20.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2}
+			],
+			"design_goal": "Increasing internal N should reveal whether nitrogen supply alone solves amination flux."
+		},
+		{
+			"id": "imported_n_gap",
+			"name": "Imported N Substrate Gap",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "transporter", "direction": "import", "molecule": "Nitrate", "count": 3},
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 20.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2}
+			],
+			"design_goal": "Shows that importing nitrate does not yet feed N-resource amination without a nitrate assimilation enzyme."
+		}
+	]
+
+func _print_energy_table(results: Array[Dictionary]) -> void:
+	print("ENERGY / NITROGEN CASE SUMMARY")
+	print("------------------------------")
+	print("%-28s %-18s %-20s %-20s %-24s %s" % ["Case", "ATP outcome", "NADH outcome", "N outcome", "Active steps", "Design read"])
+	for result in results:
+		print("%-28s %-18s %-20s %-20s %-24s %s" % [
+			result.get("id", ""),
+			_resource_delta_from_start(result, "ATP"),
+			_resource_delta_from_start(result, "NADH"),
+			_resource_delta_from_start(result, "N"),
+			_short_pathway_rates(result.get("pathways", [])),
+			_energy_design_read(result)
+		])
+	print("")
+	print("DETAILS")
+	print("-------")
+	for result in results:
+		print("%s: %s" % [result.get("name", ""), result.get("goal", "")])
+		print("  Designed: %s" % _designed_detail(result.get("designed", [])))
+		print("  Pathways: %s" % _pathway_detail(result.get("pathways", [])))
+		print("  Resources: ATP %s | NADH %s | N %s | AA %s" % [
+			_resource_delta_from_start(result, "ATP"),
+			_resource_delta_from_start(result, "NADH"),
+			_resource_delta_from_start(result, "N"),
+			_resource_delta_from_start(result, "Amino Acids")
+		])
+		print("  Redox: %s" % _redox_detail(result))
+		print("  Interpretation: %s" % _energy_design_read(result))
+
+func _print_energy_interpretation(results: Array[Dictionary]) -> void:
+	print("")
+	print("DESIGN INTERPRETATION")
+	print("---------------------")
+	print("- Required starting ATP enzymes: a carboxyl-forming oxidase/dehydrogenase and a decarboxylase. The carboxyl-forming step should create NADH; decarboxylase should create ATP while losing carbon.")
+	print("- Real-world analogy: aldehyde dehydrogenase oxidizes an aldehyde toward carboxylic acid and reduces NAD+ to NADH. Decarboxylases remove carboxyl groups as CO2; in this game we can abstract a coupled ATP yield from that carbon-loss step.")
+	print("- Redox consequence: if COOH preparation creates NADH, an anaerobic player needs reductase/fermentation sinks. Otherwise NADH accumulates and oxidation should eventually stall or become inefficient.")
+	print("- Nitrogen option A: direct aminase/transaminase uses an internal N resource. This is easiest to teach and should be tier 1.")
+	print("- Nitrogen option B: nitrate/ammonia import needs an assimilation enzyme that converts imported N substrate into the N resource, or a ligase/transaminase that transfers N from an imported molecule onto carbon. That is a separate unlock, not supported by current generic graph chemistry.")
+	print("- Practical progression: Tier 1 can be COOH maker, decarboxylase, reductase sink, direct aminase. Tier 2 can add nitrate assimilation/imported-N ligases. Tier 3 can add more efficient redox/respiration to make oxidation-heavy routes scalable.")
+
+func _resource_delta_from_start(result: Dictionary, resource_id: String) -> String:
+	var initial: Dictionary = result.get("initial_resources", {})
+	var final: Dictionary = result.get("final_resources", {})
+	var start := float(initial.get(resource_id, 0.0))
+	var end := float(final.get(resource_id, 0.0))
+	return "%.1f (%+.1f)" % [end, end - start]
+
+func _short_pathway_rates(pathways: Array) -> String:
+	if pathways.is_empty():
+		return "none"
+	var parts: Array[String] = []
+	for pathway in pathways:
+		var tool := str(pathway.get("tool", pathway.get("name", "?")))
+		parts.append("%s %.2f/s" % [tool.substr(0, 5), float(pathway.get("rate", 0.0))])
+	return "; ".join(parts)
+
+func _energy_design_read(result: Dictionary) -> String:
+	var case_id := str(result.get("id", ""))
+	var initial: Dictionary = result.get("initial_resources", {})
+	var final: Dictionary = result.get("final_resources", {})
+	var atp_delta := float(final.get("ATP", 0.0)) - float(initial.get("ATP", 0.0))
+	var nadh_delta := float(final.get("NADH", 0.0)) - float(initial.get("NADH", 0.0))
+	var n_delta := float(final.get("N", 0.0)) - float(initial.get("N", 0.0))
+	if case_id == "cooh_decarb_only":
+		return "ATP works if COOH already exists; this gives an immediate but carbon-losing energy route." if atp_delta > 20.0 else "Too little ATP from existing COOH."
+	if case_id == "co_to_cooh_only":
+		return "COOH-prep creates NADH pressure without ATP, as intended." if nadh_delta > 20.0 and atp_delta <= 0.0 else "COOH-prep rule needs retuning."
+	if case_id == "cooh_prep_then_decarb":
+		return "Combines ATP gain with NADH buildup; needs a sink unlock." if atp_delta > 20.0 and nadh_delta > 20.0 else "Combined route did not create the intended ATP/redox pressure."
+	if case_id == "cooh_prep_decarb_redox":
+		return "Reductase helps but must be strong enough to match COOH-prep NADH output." if nadh_delta > 20.0 else "Redox sink can balance this route at current numbers."
+	if case_id == "direct_n_amination_low_n":
+		return "Direct amination is teachable but N-starved at starter pools." if n_delta <= -5.0 else "Direct amination did not create meaningful N pressure."
+	if case_id == "direct_n_amination_high_n":
+		return "Extra N improves uptime, but target amino-acid chemistry still needs a route to N-C-COOH." if n_delta < 0.0 else "High N did not engage the aminase route."
+	if case_id == "imported_n_gap":
+		return "Nitrate import alone does not feed aminase; add nitrate assimilation or N-transfer ligase."
+	return str(result.get("bottleneck", ""))
+
 func _run_balance_case(case: Dictionary) -> Dictionary:
 	var sim = SimulationStateScript.new()
 	_apply_balance_setup(sim, case)
@@ -630,7 +816,10 @@ func _apply_balance_setup(sim, case: Dictionary) -> void:
 			sim.transporters[transporter_id]["rate_per_transporter"] = import_rate / float(count)
 
 func _apply_balance_action(sim, action: Dictionary) -> Dictionary:
-	if str(action.get("type", "")) != "design":
+	var action_type := str(action.get("type", ""))
+	if action_type == "transporter":
+		return _apply_transporter_action(sim, action)
+	if action_type != "design":
 		return {}
 	var tool := str(action.get("tool", ""))
 	var molecule_id := _select_molecule(sim, str(action.get("molecule", "glucose")))
@@ -659,6 +848,35 @@ func _apply_balance_action(sim, action: Dictionary) -> Dictionary:
 		"km": float(blueprint.get("km", 0.0)),
 		"delta": blueprint.get("resource_delta", {}),
 		"status": "queued"
+	}
+
+func _apply_transporter_action(sim, action: Dictionary) -> Dictionary:
+	var molecule_id := _select_molecule(sim, str(action.get("molecule", "")))
+	if molecule_id.is_empty():
+		return {"tool": "transporter", "status": "failed: missing molecule"}
+	var direction := str(action.get("direction", "import"))
+	var count := maxi(1, int(action.get("count", 1)))
+	var id := "%s:%s" % [direction, molecule_id.md5_text()]
+	if not sim.transporters.has(id):
+		sim.transporters[id] = {
+			"id": id,
+			"direction": direction,
+			"molecule": molecule_id,
+			"count": 0,
+			"rate_per_transporter": sim.TRANSPORTER_RATE_PER_SECOND,
+			"visual_variant": 0
+		}
+	sim.transporters[id]["count"] = int(sim.transporters[id].get("count", 0)) + count
+	return {
+		"id": id,
+		"tool": "%s transporter" % direction,
+		"substrate": _molecule_label(sim, molecule_id),
+		"target": -1,
+		"count": count,
+		"kcat": 0.0,
+		"km": 0.0,
+		"delta": {},
+		"status": "active"
 	}
 
 func _empty_rate_tracker() -> Dictionary:
