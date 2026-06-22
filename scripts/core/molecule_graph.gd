@@ -31,12 +31,12 @@ static func initial_glucose_like() -> Dictionary:
 		{"element": CARBON, "pos": Vector2(22.0, -28.0)},
 		{"element": CARBON, "pos": Vector2(106.0, 20.0)},
 		{"element": CARBON, "pos": Vector2(190.0, -28.0)},
-		{"element": OXYGEN, "pos": Vector2(-226.0, 108.0)},
 		{"element": OXYGEN, "pos": Vector2(-148.0, -116.0)},
 		{"element": OXYGEN, "pos": Vector2(-60.0, 108.0)},
 		{"element": OXYGEN, "pos": Vector2(24.0, -116.0)},
 		{"element": OXYGEN, "pos": Vector2(108.0, 108.0)},
-		{"element": OXYGEN, "pos": Vector2(266.0, -72.0)}
+		{"element": OXYGEN, "pos": Vector2(264.0, -72.0)},
+		{"element": OXYGEN, "pos": Vector2(266.0, 30.0)}
 	]
 	var bonds: Array[Dictionary] = [
 		{"a": 0, "b": 1, "order": 1},
@@ -44,12 +44,12 @@ static func initial_glucose_like() -> Dictionary:
 		{"a": 2, "b": 3, "order": 1},
 		{"a": 3, "b": 4, "order": 1},
 		{"a": 4, "b": 5, "order": 1},
-		{"a": 0, "b": 6, "order": 1},
-		{"a": 1, "b": 7, "order": 1},
-		{"a": 2, "b": 8, "order": 1},
-		{"a": 3, "b": 9, "order": 1},
-		{"a": 4, "b": 10, "order": 1},
-		{"a": 5, "b": 11, "order": 2}
+		{"a": 1, "b": 6, "order": 1},
+		{"a": 2, "b": 7, "order": 1},
+		{"a": 3, "b": 8, "order": 1},
+		{"a": 4, "b": 9, "order": 2},
+		{"a": 5, "b": 10, "order": 2},
+		{"a": 5, "b": 11, "order": 1}
 	]
 	return normalize({"name": "Glucose", "atoms": atoms, "bonds": bonds})
 

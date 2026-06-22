@@ -36,8 +36,9 @@ func _init() -> void:
 	assert(sim.valid_targets("lyase", glucose_id).size() == 0)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
 	assert(sim.valid_targets("dehydrogenase", glucose_id).size() > 0)
-	assert(sim.valid_targets("decarboxylase", glucose_id).size() == 0)
+	assert(sim.valid_targets("decarboxylase", glucose_id).size() > 0)
 	assert(sim.valid_targets("oxygenase", glucose_id).size() > 0)
+	assert(sim.valid_targets("aminase", glucose_id).size() > 0)
 	var glucose_oxidation_target := int(sim.valid_targets("dehydrogenase", glucose_id)[0])
 	assert(sim.preview_products("dehydrogenase", glucose_id, glucose_oxidation_target).size() > 0)
 	assert(sim.valid_targets("desaturase", glucose_id).size() == 0)
@@ -73,7 +74,6 @@ func _init() -> void:
 	var reduced_id: String = reduced_pyruvate[0]["signature"]
 	sim.molecule_types[reduced_id] = reduced_pyruvate[0]
 	assert(sim.valid_targets("dehydrogenase", reduced_id).size() > 0)
-	assert(sim.valid_targets("aminase", glucose_id).size() == 0)
 	var aminase_target := int(sim.valid_targets("aminase", pyruvate_id)[0])
 	var aminase_preview := sim.preview_products("aminase", pyruvate_id, aminase_target)
 	assert(str(aminase_preview[0].get("formula", "")).contains("N"))
