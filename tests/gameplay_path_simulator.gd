@@ -16,12 +16,15 @@ func _init() -> void:
 		quit(0)
 		return
 	if scenario_name == "all":
-		for scenario in _scenarios():
+		var selected_scenarios := _scenarios()
+		_print_run_report_header(selected_scenarios)
+		for scenario in selected_scenarios:
 			_run_scenario(scenario)
 	else:
 		var found := false
 		for scenario in _scenarios():
 			if str(scenario.get("id", "")) == scenario_name:
+				_print_run_report_header([scenario])
 				_run_scenario(scenario)
 				found = true
 				break
@@ -95,6 +98,45 @@ func _print_scenario_list() -> void:
 	for scenario in _scenarios():
 		print("  %s - %s" % [scenario.get("id", ""), scenario.get("notes", "")])
 
+func _print_run_report_header(scenarios: Array) -> void:
+	var sim = SimulationStateScript.new()
+	print("\nSIMCELL GAMEPLAY PATH SIMULATION REPORT")
+	print("======================================")
+	print("Simulation count: %d" % scenarios.size())
+	print("Step dt: %.2fs" % STEP_DT)
+	print("Watched resources: %s" % ", ".join(WATCHED_RESOURCES))
+	print("Starting resources: %s" % _resource_amounts(sim))
+	print("Starting molecules: %s" % _molecule_summary(sim))
+	print("Starting transporters:")
+	for transporter in sim.transporter_list():
+		print("  %s %s count %d rate/transporter %.2f/s total %.2f/s" % [
+			str(transporter.get("direction", "")).capitalize(),
+			_molecule_label(sim, str(transporter.get("molecule", ""))),
+			int(transporter.get("count", 0)),
+			float(transporter.get("rate_per_transporter", 0.0)),
+			float(transporter.get("rate", 0.0))
+		])
+	print("Build assumptions:")
+	print("  Enzyme build cost: %s" % _resource_delta_text(sim.ENZYME_BUILD_COST))
+	print("  Transporter build cost: %s" % _resource_delta_text(sim.TRANSPORTER_BUILD_COST))
+	print("  Enzyme build time: 3.0s per queued protein blueprint")
+	print("First-target enzyme assumptions on starting glucose:")
+	var glucose_id := _select_molecule(sim, "glucose")
+	for tool in TOOL_ORDER:
+		var targets: Array = sim.valid_targets(tool, glucose_id)
+		if targets.is_empty():
+			print("  %-14s no valid target" % tool)
+			continue
+		var target := int(targets[0])
+		var summary: Dictionary = sim.enzyme_preview_summary(tool, glucose_id, target)
+		print("  %-14s target %-2d kcat %.2f/s Km %.1f resource delta %s" % [
+			tool,
+			target,
+			float(summary.get("kcat", 0.0)),
+			18.0,
+			_resource_delta_text(summary.get("resource_delta", {}))
+		])
+
 func _run_scenario(scenario: Dictionary) -> void:
 	_events = []
 	var sim = SimulationStateScript.new()
@@ -108,6 +150,11 @@ func _run_scenario(scenario: Dictionary) -> void:
 	var next_report := 0.0
 	print("\n=== %s ===" % scenario.get("name", scenario.get("id", "Scenario")))
 	print("Notes: %s" % scenario.get("notes", ""))
+	print("Inputs:")
+	print("  Duration: %.1fs" % duration)
+	print("  Initial resources: %s" % _resource_amounts(sim))
+	print("  Initial molecules: %s" % _molecule_summary(sim))
+	_print_action_plan(scenario)
 	_print_snapshot(sim, "start")
 	while sim.time_seconds <= duration + 0.0001:
 		while action_index < actions.size() and float(actions[action_index].get("time", 0.0)) <= sim.time_seconds + 0.0001:
@@ -152,11 +199,17 @@ func _design_action(sim, action: Dictionary) -> void:
 	var extra := int(action.get("queue_extra", 0))
 	if not blueprint_id.is_empty() and extra > 0:
 		sim.queue_enzyme_build(blueprint_id, extra)
-	print("  designed %s on %s target %d%s" % [
+	var blueprint: Dictionary = sim.enzyme_blueprints.get(blueprint_id, {})
+	print("  designed %s on %s target %d%s | kcat %.2f/s Km %.1f active now %d queued %d delta %s" % [
 		tool,
 		_molecule_label(sim, molecule_id),
 		target,
-		" (+%d extra builds)" % extra if extra > 0 else ""
+		" (+%d extra builds)" % extra if extra > 0 else "",
+		float(blueprint.get("kcat", 0.0)),
+		float(blueprint.get("km", 0.0)),
+		int(sim.active_enzymes.get(blueprint_id, 0)),
+		_count_queued_builds(sim, blueprint_id),
+		_resource_delta_text(blueprint.get("resource_delta", {}))
 	])
 
 func _print_candidate_scan(sim) -> void:
@@ -266,11 +319,16 @@ func _print_pathways(sim) -> void:
 		var products: Array[String] = []
 		for product_id in pathway.get("products", []):
 			products.append(_molecule_label(sim, str(product_id)))
-		print("    %-22s active %d queued %d rate %.2f/s -> %s" % [
+		var blueprint_id := str(pathway.get("id", pathway.get("blueprint_id", "")))
+		var blueprint: Dictionary = sim.enzyme_blueprints.get(blueprint_id, pathway)
+		print("    %-22s active %d queued %d kcat %.2f/s Km %.1f rate %.2f/s delta %s -> %s" % [
 			pathway.get("name", "Enzyme"),
 			int(pathway.get("active_count", 0)),
 			int(pathway.get("queued_count", 0)),
+			float(blueprint.get("kcat", 0.0)),
+			float(blueprint.get("km", 0.0)),
 			float(pathway.get("rate", 0.0)),
+			_resource_delta_text(blueprint.get("resource_delta", {})),
 			", ".join(products)
 		])
 
@@ -302,6 +360,37 @@ func _molecule_label(sim, molecule_id: String) -> String:
 	if not sim.molecule_types.has(molecule_id):
 		return molecule_id
 	return "%s[%s]" % [sim.molecule_types[molecule_id].get("formula", "?"), molecule_id.md5_text().substr(0, 6)]
+
+func _resource_amounts(sim) -> String:
+	var parts: Array[String] = []
+	for resource_id in WATCHED_RESOURCES:
+		parts.append("%s %.1f" % [resource_id, float(sim.resources.get(resource_id, 0.0))])
+	return "; ".join(parts)
+
+func _print_action_plan(scenario: Dictionary) -> void:
+	var actions: Array = scenario.get("actions", [])
+	if actions.is_empty():
+		print("  Actions: none")
+		return
+	print("  Actions:")
+	for action in actions:
+		if str(action.get("type", "")) == "design":
+			print("    t=%05.1fs design %-14s on %-12s target %-5s queued builds %d" % [
+				float(action.get("time", 0.0)),
+				str(action.get("tool", "")),
+				str(action.get("molecule", "")),
+				str(action.get("target", "")),
+				1 + int(action.get("queue_extra", 0))
+			])
+		else:
+			print("    t=%05.1fs %s" % [float(action.get("time", 0.0)), str(action.get("type", ""))])
+
+func _count_queued_builds(sim, blueprint_id: String) -> int:
+	var count := 0
+	for item in sim.protein_queue:
+		if str(item.get("id", "")) == blueprint_id:
+			count += 1
+	return count
 
 func _resource_delta_text(delta: Dictionary) -> String:
 	if delta.is_empty():

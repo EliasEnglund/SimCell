@@ -31,10 +31,17 @@ Current scenarios:
 
 The output tracks:
 
+- Number of simulations included in the run.
+- Step size used by the simulation loop.
+- Starting resources and molecule pools.
+- Starting transporter counts, per-transporter import/export rates, and total rates.
+- Build assumptions for enzymes and transporters.
+- First-target enzyme assumptions on glucose, including `kcat`, `Km`, and ATP/NADH/N/resource deltas.
+- Per-scenario inputs and scheduled player actions.
 - ATP, NADH, nitrogen, amino acids, and DNA points.
 - Net resource rates at report points.
 - Top molecule pools.
-- Active pathways and rates.
+- Active pathways, queued enzyme counts, `kcat`, `Km`, rates, and resource deltas.
 - Simple bottleneck warnings.
 
 This is not meant to be final balance. It is a design tool for testing whether a proposed progression creates useful pressure, viable routes, and understandable bottlenecks.
