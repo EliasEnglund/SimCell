@@ -494,6 +494,7 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 	return {
 		"name": _enzyme_name(tool, substrate),
 		"kcat": _estimate_kcat(tool, substrate, target_index),
+		"km": 18.0,
 		"stability": 120.0,
 		"build_time": 3.0,
 		"build_cost": ENZYME_BUILD_COST.duplicate(true),

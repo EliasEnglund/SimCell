@@ -15,6 +15,10 @@ func _init() -> void:
 		_print_scenario_list()
 		quit(0)
 		return
+	if _arg_flag("--balance-matrix"):
+		_run_balance_matrix()
+		quit(0)
+		return
 	if scenario_name == "all":
 		var selected_scenarios := _scenarios()
 		_print_run_report_header(selected_scenarios)
@@ -97,6 +101,8 @@ func _print_scenario_list() -> void:
 	print("Available gameplay simulation scenarios:")
 	for scenario in _scenarios():
 		print("  %s - %s" % [scenario.get("id", ""), scenario.get("notes", "")])
+	print("\nBalance matrix:")
+	print("  --balance-matrix - Runs enzyme on/off and parameter cases for gameplay analysis.")
 
 func _print_run_report_header(scenarios: Array) -> void:
 	var sim = SimulationStateScript.new()
@@ -133,7 +139,7 @@ func _print_run_report_header(scenarios: Array) -> void:
 			tool,
 			target,
 			float(summary.get("kcat", 0.0)),
-			18.0,
+			float(summary.get("km", 0.0)),
 			_resource_delta_text(summary.get("resource_delta", {}))
 		])
 
@@ -200,6 +206,9 @@ func _design_action(sim, action: Dictionary) -> void:
 	if not blueprint_id.is_empty() and extra > 0:
 		sim.queue_enzyme_build(blueprint_id, extra)
 	var blueprint: Dictionary = sim.enzyme_blueprints.get(blueprint_id, {})
+	if not blueprint_id.is_empty():
+		_apply_blueprint_overrides(sim, blueprint_id, action)
+		blueprint = sim.enzyme_blueprints.get(blueprint_id, {})
 	print("  designed %s on %s target %d%s | kcat %.2f/s Km %.1f active now %d queued %d delta %s" % [
 		tool,
 		_molecule_label(sim, molecule_id),
@@ -211,6 +220,18 @@ func _design_action(sim, action: Dictionary) -> void:
 		_count_queued_builds(sim, blueprint_id),
 		_resource_delta_text(blueprint.get("resource_delta", {}))
 	])
+
+func _apply_blueprint_overrides(sim, blueprint_id: String, action: Dictionary) -> void:
+	if not sim.enzyme_blueprints.has(blueprint_id):
+		return
+	var blueprint: Dictionary = sim.enzyme_blueprints[blueprint_id]
+	if action.has("kcat"):
+		blueprint["kcat"] = float(action["kcat"])
+	if action.has("km"):
+		blueprint["km"] = float(action["km"])
+	if action.has("resource_delta"):
+		blueprint["resource_delta"] = action["resource_delta"]
+	sim.enzyme_blueprints[blueprint_id] = blueprint
 
 func _print_candidate_scan(sim) -> void:
 	print("  valid first-step reaction candidates:")
@@ -399,6 +420,534 @@ func _resource_delta_text(delta: Dictionary) -> String:
 	for key in delta.keys():
 		parts.append("%s%+.1f" % [key, float(delta[key])])
 	return ", ".join(parts)
+
+func _run_balance_matrix() -> void:
+	var cases := _balance_cases()
+	print("\nSIMCELL ENZYME BALANCE MATRIX")
+	print("=============================")
+	print("Simulation count: %d" % cases.size())
+	print("Step dt: %.2fs" % STEP_DT)
+	print("Goal model: import glucose, build a handful of enzymes, convert carbon fragments toward amino acid resources, keep ATP/NADH/N from hard-blocking flux.")
+	print("Biochemistry anchor: glycolysis-like oxidation should create ATP and NADH; anaerobic play must spend NADH through reductive/fermentation-like sinks or it becomes a design pressure.")
+	print("")
+	var results: Array[Dictionary] = []
+	for case in cases:
+		results.append(_run_balance_case(case))
+	_print_balance_table(results)
+	_print_balance_interpretation(results)
+
+func _balance_cases() -> Array[Dictionary]:
+	return [
+		{
+			"id": "import_only",
+			"name": "Import Only",
+			"duration": 120.0,
+			"glucose_import_rate": 8.0,
+			"actions": [],
+			"design_goal": "Baseline: glucose source with no metabolism."
+		},
+		{
+			"id": "lyase_one",
+			"name": "One Lyase",
+			"duration": 120.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 1}
+			],
+			"design_goal": "Single early enzyme should visibly transform substrate near 1/s once built."
+		},
+		{
+			"id": "lyase_handful",
+			"name": "Handful Lyases",
+			"duration": 120.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 4}
+			],
+			"design_goal": "Checks whether a handful of enzymes can keep up with starter import."
+		},
+		{
+			"id": "slow_low_affinity",
+			"name": "Slow Low-Affinity Lyase",
+			"duration": 120.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 4, "kcat": 0.45, "km": 42.0}
+			],
+			"design_goal": "Bad enzyme numbers should create substrate buildup and teach why upgrades matter."
+		},
+		{
+			"id": "good_handful",
+			"name": "Good Handful Lyase",
+			"duration": 120.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 4, "kcat": 1.35, "km": 12.0}
+			],
+			"design_goal": "Good tier-1 enzyme should be a clear improvement without making import irrelevant."
+		},
+		{
+			"id": "amino_no_n_unlock",
+			"name": "Amino Attempt No N Unlock",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 16.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2},
+				{"time": 32.0, "type": "design", "tool": "oxygenase", "molecule": "newest", "target": "first", "count": 1}
+			],
+			"design_goal": "Expected blocker: nitrogen pool runs out before stable amino production."
+		},
+		{
+			"id": "amino_aminase_off",
+			"name": "Amino Route Without Aminase",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"resources": {"N": 40.0},
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 32.0, "type": "design", "tool": "oxygenase", "molecule": "newest", "target": "first", "count": 1}
+			],
+			"design_goal": "Controlled off-test: without aminase, nitrogen cannot enter the carbon product route."
+		},
+		{
+			"id": "amino_oxygenase_off",
+			"name": "Amino Route Without Oxygenase",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"resources": {"N": 40.0},
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 16.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2}
+			],
+			"design_goal": "Controlled off-test: with nitrogen but no oxygenation, the route should still miss N-C-COOH."
+		},
+		{
+			"id": "amino_with_n_pool",
+			"name": "Amino Attempt With N Pool",
+			"duration": 180.0,
+			"glucose_import_rate": 8.0,
+			"resources": {"N": 40.0},
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "lyase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 16.0, "type": "design", "tool": "aminase", "molecule": "newest", "target": "first", "count": 2},
+				{"time": 32.0, "type": "design", "tool": "oxygenase", "molecule": "newest", "target": "first", "count": 1}
+			],
+			"design_goal": "Tests whether nitrogen unlock alone solves amino production."
+		},
+		{
+			"id": "redox_source_only",
+			"name": "Redox Source Only",
+			"duration": 150.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "dehydrogenase", "molecule": "glucose", "target": "first", "count": 3}
+			],
+			"design_goal": "Expected pressure: NADH accumulates if oxidation has no sink."
+		},
+		{
+			"id": "redox_source_sink",
+			"name": "Redox Source And Sink",
+			"duration": 150.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "dehydrogenase", "molecule": "glucose", "target": "first", "count": 2},
+				{"time": 16.0, "type": "design", "tool": "reductase", "molecule": "newest", "target": "first", "count": 2}
+			],
+			"design_goal": "Fermentation-like pair: oxidation creates NADH, reduction spends it."
+		},
+		{
+			"id": "atp_carbon_loss",
+			"name": "ATP Carbon-Loss Branch",
+			"duration": 150.0,
+			"glucose_import_rate": 8.0,
+			"actions": [
+				{"time": 0.0, "type": "design", "tool": "decarboxylase", "molecule": "glucose", "target": "first", "count": 3}
+			],
+			"design_goal": "ATP-positive branch should help energy but leak carbon as CO2."
+		}
+	]
+
+func _run_balance_case(case: Dictionary) -> Dictionary:
+	var sim = SimulationStateScript.new()
+	_apply_balance_setup(sim, case)
+	var initial_resources: Dictionary = sim.resources.duplicate(true)
+	var initial_molecules: Dictionary = sim.molecule_amounts.duplicate(true)
+	var unlock_report := _unlock_report(sim)
+	var actions: Array = case.get("actions", [])
+	actions.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("time", 0.0)) < float(b.get("time", 0.0))
+	)
+	var duration := float(case.get("duration", DEFAULT_DURATION))
+	var action_index := 0
+	var max_rates := _empty_rate_tracker()
+	var glucose_flux := {"import_peak": 0.0, "consumption_peak": 0.0, "net_accumulation_peak": 0.0}
+	var designed: Array[Dictionary] = []
+	while sim.time_seconds <= duration + 0.0001:
+		while action_index < actions.size() and float(actions[action_index].get("time", 0.0)) <= sim.time_seconds + 0.0001:
+			var designed_item := _apply_balance_action(sim, actions[action_index])
+			if not designed_item.is_empty():
+				designed.append(designed_item)
+			action_index += 1
+		if duration <= 0.0:
+			break
+		sim.tick(STEP_DT)
+		_track_peak_rates(sim, max_rates)
+		_track_glucose_flux(sim, glucose_flux)
+	var result := {
+		"id": case.get("id", ""),
+		"name": case.get("name", ""),
+		"goal": case.get("design_goal", ""),
+		"duration": duration,
+		"glucose_import_rate": float(case.get("glucose_import_rate", 8.0)),
+		"designed": designed,
+		"initial_resources": initial_resources,
+		"initial_molecules": initial_molecules,
+		"available_unlocks": unlock_report,
+		"final_resources": sim.resources.duplicate(true),
+		"final_molecules": sim.molecule_amounts.duplicate(true),
+		"max_rates": max_rates,
+		"glucose_flux": glucose_flux,
+		"pathways": sim.pathway_list(),
+		"bottleneck": "",
+		"blockers": [],
+		"unlock": "",
+		"verdict": "",
+		"score": 0.0
+	}
+	_annotate_balance_result(result)
+	return result
+
+func _apply_balance_setup(sim, case: Dictionary) -> void:
+	for resource_id in Dictionary(case.get("resources", {})).keys():
+		sim.resources[resource_id] = float(case["resources"][resource_id])
+	var glucose_id := _select_molecule(sim, "glucose")
+	var import_rate := float(case.get("glucose_import_rate", 8.0))
+	if not glucose_id.is_empty():
+		var transporter_id := "import:%s" % glucose_id.md5_text()
+		if sim.transporters.has(transporter_id):
+			var count := maxi(1, int(sim.transporters[transporter_id].get("count", 1)))
+			sim.transporters[transporter_id]["rate_per_transporter"] = import_rate / float(count)
+
+func _apply_balance_action(sim, action: Dictionary) -> Dictionary:
+	if str(action.get("type", "")) != "design":
+		return {}
+	var tool := str(action.get("tool", ""))
+	var molecule_id := _select_molecule(sim, str(action.get("molecule", "glucose")))
+	if molecule_id.is_empty():
+		return {"tool": tool, "status": "failed: missing molecule"}
+	var target := _select_target(sim, tool, molecule_id, str(action.get("target", "first")))
+	if target < 0:
+		return {"tool": tool, "status": "failed: no valid target", "substrate": _molecule_label(sim, molecule_id)}
+	var before_blueprints: Array = sim.enzyme_blueprints.keys()
+	var ok: bool = sim.design_enzyme(tool, molecule_id, target)
+	if not ok:
+		return {"tool": tool, "status": "failed: design rejected", "substrate": _molecule_label(sim, molecule_id)}
+	var blueprint_id := _new_blueprint_id(sim, before_blueprints)
+	_apply_blueprint_overrides(sim, blueprint_id, action)
+	var count := maxi(1, int(action.get("count", 1)))
+	if count > 1:
+		sim.queue_enzyme_build(blueprint_id, count - 1)
+	var blueprint: Dictionary = sim.enzyme_blueprints.get(blueprint_id, {})
+	return {
+		"id": blueprint_id,
+		"tool": tool,
+		"substrate": _molecule_label(sim, molecule_id),
+		"target": target,
+		"count": count,
+		"kcat": float(blueprint.get("kcat", 0.0)),
+		"km": float(blueprint.get("km", 0.0)),
+		"delta": blueprint.get("resource_delta", {}),
+		"status": "queued"
+	}
+
+func _empty_rate_tracker() -> Dictionary:
+	var output := {}
+	for resource_id in WATCHED_RESOURCES:
+		output[resource_id] = {"production": 0.0, "consumption": 0.0, "net": 0.0}
+	return output
+
+func _track_peak_rates(sim, max_rates: Dictionary) -> void:
+	for resource_id in WATCHED_RESOURCES:
+		var rates: Dictionary = sim.resource_rates.get(resource_id, {})
+		var production := float(rates.get("production", 0.0))
+		var consumption := float(rates.get("consumption", 0.0))
+		var net := production - consumption
+		var entry: Dictionary = max_rates.get(resource_id, {"production": 0.0, "consumption": 0.0, "net": 0.0})
+		entry["production"] = maxf(float(entry.get("production", 0.0)), production)
+		entry["consumption"] = maxf(float(entry.get("consumption", 0.0)), consumption)
+		entry["net"] = maxf(float(entry.get("net", 0.0)), absf(net))
+		max_rates[resource_id] = entry
+
+func _track_glucose_flux(sim, glucose_flux: Dictionary) -> void:
+	var glucose_id := _select_molecule(sim, "glucose")
+	if glucose_id.is_empty():
+		return
+	var rates: Dictionary = sim.molecule_rates.get(glucose_id, {})
+	var outside_rates: Dictionary = sim.outside_rates.get(glucose_id, {})
+	var import_rate := float(outside_rates.get("consumption", 0.0))
+	var consumption := float(rates.get("consumption", 0.0))
+	var net_accumulation := import_rate - consumption
+	glucose_flux["import_peak"] = maxf(float(glucose_flux.get("import_peak", 0.0)), import_rate)
+	glucose_flux["consumption_peak"] = maxf(float(glucose_flux.get("consumption_peak", 0.0)), consumption)
+	glucose_flux["net_accumulation_peak"] = maxf(float(glucose_flux.get("net_accumulation_peak", 0.0)), net_accumulation)
+
+func _annotate_balance_result(result: Dictionary) -> void:
+	var final_resources: Dictionary = result.get("final_resources", {})
+	var initial_resources: Dictionary = result.get("initial_resources", {})
+	var max_rates: Dictionary = result.get("max_rates", {})
+	var amino_peak := float(Dictionary(max_rates.get("Amino Acids", {})).get("production", 0.0))
+	var nad_final := float(final_resources.get("NADH", 0.0))
+	var n_final := float(final_resources.get("N", 0.0))
+	var atp_final := float(final_resources.get("ATP", 0.0))
+	var amino_net := float(final_resources.get("Amino Acids", 0.0)) - float(initial_resources.get("Amino Acids", 0.0))
+	var avg_pathway_rate := _average_pathway_rate(result.get("pathways", []))
+	var glucose_flux: Dictionary = result.get("glucose_flux", {})
+	var import_rate := maxf(float(result.get("glucose_import_rate", 0.0)), 0.0001)
+	var glucose_coverage := float(glucose_flux.get("consumption_peak", 0.0)) / import_rate
+	var blockers: Array[String] = []
+	if str(result.get("id", "")).begins_with("amino") and amino_peak <= 0.01:
+		blockers.append("target-not-reached")
+	if n_final <= 0.1:
+		blockers.append("nitrogen-starved")
+	if nad_final <= 1.0:
+		blockers.append("nadh-depleted")
+	if nad_final >= 60.0:
+		blockers.append("nadh-overflow")
+	if atp_final <= 8.0:
+		blockers.append("atp-starved")
+	if avg_pathway_rate < 1.0 and not result.get("designed", []).is_empty():
+		blockers.append("enzyme-limited")
+	if glucose_coverage < 0.35 and not result.get("designed", []).is_empty():
+		blockers.append("import-underused")
+	if amino_net < 0.0 and str(result.get("id", "")).begins_with("amino"):
+		blockers.append("build-cost-not-repaid")
+	var blocker := "none"
+	var unlock := "Tune enzyme placement/counts after route is viable."
+	if amino_peak <= 0.01 and str(result.get("id", "")).begins_with("amino"):
+		blocker = "No amino acid sink flux; current generic reactions do not reach N-C-COOH in this tested path."
+		unlock = "Add target-aware carbon-shortening or carboxyl/amination reactions, then rerun with nitrogen import."
+	elif n_final <= 0.1:
+		blocker = "Nitrogen depleted."
+		unlock = "Unlock nitrate/ammonia import and nitrogen assimilation before amino-acid scaling."
+	elif nad_final <= 1.0:
+		blocker = "NADH depleted."
+		unlock = "Unlock oxidative routes that generate NADH or reduce NADH-consuming steps."
+	elif nad_final >= 60.0:
+		blocker = "NADH accumulating."
+		unlock = "Unlock fermentation-like reductase sinks or oxygen respiration to consume reducing power."
+	elif atp_final <= 8.0:
+		blocker = "ATP nearly depleted."
+		unlock = "Unlock substrate-level phosphorylation or ATP-positive carbon-loss branch."
+	elif avg_pathway_rate < 1.0 and not result.get("designed", []).is_empty():
+		blocker = "Flux below 1/s target for a functioning enzyme set."
+		unlock = "Increase kcat, lower Km, or require 2-4 enzyme copies for this step."
+	elif amino_net < 0.0 and str(result.get("id", "")).begins_with("amino"):
+		blocker = "Route spends amino acids on enzymes but does not repay the investment yet."
+		unlock = "Gate this route behind a missing enzyme unlock or add a clearer first amino-acid product path."
+	elif glucose_coverage < 0.35 and not result.get("designed", []).is_empty():
+		blocker = "Starter import is underused; enzymes are not consuming enough of the glucose supply."
+		unlock = "Increase active enzyme count, raise kcat, lower Km, or reduce starter import until the player expands metabolism."
+	result["bottleneck"] = blocker
+	result["blockers"] = blockers
+	result["unlock"] = unlock
+	result["score"] = _balance_score(result, amino_peak, avg_pathway_rate)
+	result["verdict"] = _goal_verdict(result, amino_peak, avg_pathway_rate)
+
+func _goal_verdict(result: Dictionary, amino_peak: float, avg_pathway_rate: float) -> String:
+	var case_id := str(result.get("id", ""))
+	if case_id.begins_with("amino"):
+		if amino_peak > 0.05:
+			return "PASS amino flux"
+		return "FAIL no amino flux"
+	if case_id == "import_only":
+		return "BASELINE"
+	if str(result.get("bottleneck", "")).contains("NADH accumulating"):
+		return "PRESSURE redox"
+	var glucose_flux: Dictionary = result.get("glucose_flux", {})
+	var coverage := float(glucose_flux.get("consumption_peak", 0.0)) / maxf(float(result.get("glucose_import_rate", 0.0)), 0.0001)
+	if coverage < 0.35 and not result.get("designed", []).is_empty():
+		return "FAIL low coverage"
+	if avg_pathway_rate >= 1.0:
+		return "PASS visible flux"
+	return "FAIL slow flux"
+
+func _balance_score(result: Dictionary, amino_peak: float, avg_pathway_rate: float) -> float:
+	var score := 0.0
+	score += minf(avg_pathway_rate, 4.0) * 10.0
+	score += minf(amino_peak, 4.0) * 12.0
+	var final_resources: Dictionary = result.get("final_resources", {})
+	if float(final_resources.get("ATP", 0.0)) > 10.0:
+		score += 8.0
+	if float(final_resources.get("NADH", 0.0)) >= 2.0 and float(final_resources.get("NADH", 0.0)) <= 50.0:
+		score += 8.0
+	if float(final_resources.get("N", 0.0)) > 1.0:
+		score += 6.0
+	return score
+
+func _average_pathway_rate(pathways: Array) -> float:
+	if pathways.is_empty():
+		return 0.0
+	var total := 0.0
+	var active := 0
+	for pathway in pathways:
+		var rate := float(pathway.get("rate", 0.0))
+		if rate > 0.0:
+			total += rate
+			active += 1
+	return total / maxf(1.0, float(active))
+
+func _print_balance_table(results: Array[Dictionary]) -> void:
+	print("CASE SUMMARY")
+	print("------------")
+	print("%-22s %-16s %-23s %-21s %-18s %-32s %s" % ["Case", "Verdict", "Glucose flux", "Final resources", "Utilization", "Peak resource rates", "Blockers"])
+	for result in results:
+		print("%-22s %-16s %-23s %-21s %-18s %-32s %s" % [
+			result.get("id", ""),
+			result.get("verdict", ""),
+			_compact_glucose_flux(result),
+			_compact_resource_result(result),
+			_compact_utilization(result.get("pathways", [])),
+			_compact_peak_rates(result),
+			_compact_blockers(result)
+		])
+	print("")
+	print("DETAILS")
+	print("-------")
+	for result in results:
+		print("%s: %s" % [result.get("name", ""), result.get("goal", "")])
+		print("  Verdict: %s" % result.get("verdict", ""))
+		print("  Designed: %s" % _designed_detail(result.get("designed", [])))
+		print("  Pathways: %s" % _pathway_detail(result.get("pathways", [])))
+		print("  Glucose import/consumption: %s" % _compact_glucose_flux(result))
+		print("  Redox: %s" % _redox_detail(result))
+		print("  Available unlocks at start: %s" % result.get("available_unlocks", "none"))
+		print("  Ranked blockers: %s" % _compact_blockers(result))
+		print("  Unlock/next design move: %s" % result.get("unlock", ""))
+
+func _compact_glucose_flux(result: Dictionary) -> String:
+	var flux: Dictionary = result.get("glucose_flux", {})
+	var import_peak := float(flux.get("import_peak", result.get("glucose_import_rate", 0.0)))
+	var consumption_peak := float(flux.get("consumption_peak", 0.0))
+	var accumulation_peak := float(flux.get("net_accumulation_peak", 0.0))
+	var ratio := consumption_peak / maxf(import_peak, 0.0001)
+	return "in %.1f use %.1f +%.1f/s %.0f%%" % [import_peak, consumption_peak, accumulation_peak, ratio * 100.0]
+
+func _compact_utilization(pathways: Array) -> String:
+	if pathways.is_empty():
+		return "none"
+	var values: Array[String] = []
+	for pathway in pathways:
+		var active := int(pathway.get("active_count", 0))
+		var kcat := float(pathway.get("kcat", 0.0))
+		var theoretical := float(active) * kcat
+		var actual := float(pathway.get("rate", 0.0))
+		var utilization := actual / maxf(theoretical, 0.0001)
+		values.append("%.0f%%" % (utilization * 100.0))
+	return ", ".join(values)
+
+func _compact_enzyme_summary(designed: Array) -> String:
+	if designed.is_empty():
+		return "none"
+	var parts: Array[String] = []
+	for item in designed:
+		parts.append("%sx%d" % [str(item.get("tool", "?")).substr(0, 4), int(item.get("count", 0))])
+	return ", ".join(parts)
+
+func _compact_resource_result(result: Dictionary) -> String:
+	var final_resources: Dictionary = result.get("final_resources", {})
+	return "ATP %.0f NADH %.1f N %.1f AA %.0f" % [
+		float(final_resources.get("ATP", 0.0)),
+		float(final_resources.get("NADH", 0.0)),
+		float(final_resources.get("N", 0.0)),
+		float(final_resources.get("Amino Acids", 0.0))
+	]
+
+func _compact_peak_rates(result: Dictionary) -> String:
+	var max_rates: Dictionary = result.get("max_rates", {})
+	var aa := float(Dictionary(max_rates.get("Amino Acids", {})).get("production", 0.0))
+	var nadh: Dictionary = max_rates.get("NADH", {})
+	var nadh_prod := float(nadh.get("production", 0.0))
+	var nadh_cons := float(nadh.get("consumption", 0.0))
+	var atp_prod := float(Dictionary(max_rates.get("ATP", {})).get("production", 0.0))
+	return "AA %.2f/s NADH +%.2f/-%.2f ATP %.2f/s" % [aa, nadh_prod, nadh_cons, atp_prod]
+
+func _redox_detail(result: Dictionary) -> String:
+	var max_rates: Dictionary = result.get("max_rates", {})
+	var nadh: Dictionary = max_rates.get("NADH", {})
+	var final_resources: Dictionary = result.get("final_resources", {})
+	var final_nadh := float(final_resources.get("NADH", 0.0))
+	return "peak production %.2f/s, peak consumption %.2f/s, final pool %.1f" % [
+		float(nadh.get("production", 0.0)),
+		float(nadh.get("consumption", 0.0)),
+		final_nadh
+	]
+
+func _compact_blockers(result: Dictionary) -> String:
+	var blockers: Array = result.get("blockers", [])
+	if blockers.is_empty():
+		return "none"
+	var output: Array[String] = []
+	for blocker in blockers:
+		output.append(str(blocker))
+	return ", ".join(output)
+
+func _designed_detail(designed: Array) -> String:
+	if designed.is_empty():
+		return "none"
+	var parts: Array[String] = []
+	for item in designed:
+		parts.append("%s x%d kcat %.2f Km %.1f delta %s" % [
+			item.get("tool", "?"),
+			int(item.get("count", 0)),
+			float(item.get("kcat", 0.0)),
+			float(item.get("km", 0.0)),
+			_resource_delta_text(item.get("delta", {}))
+		])
+	return "; ".join(parts)
+
+func _pathway_detail(pathways: Array) -> String:
+	if pathways.is_empty():
+		return "none"
+	var parts: Array[String] = []
+	for pathway in pathways:
+		parts.append("%s active %d rate %.2f/s" % [
+			pathway.get("name", "Enzyme"),
+			int(pathway.get("active_count", 0)),
+			float(pathway.get("rate", 0.0))
+		])
+	return "; ".join(parts)
+
+func _unlock_report(sim) -> String:
+	if not sim.has_method("dna_techs"):
+		return "none"
+	var affordable: Array[String] = []
+	var available_locked: Array[String] = []
+	var dna_points := float(sim.resources.get("DNA Points", 0.0))
+	for tech in sim.dna_techs():
+		var tech_id := str(tech.get("id", ""))
+		if tech_id == "origin" or bool(sim.dna_tech_state(tech_id).get("unlocked", false)):
+			continue
+		if sim.dna_tech_available(tech_id):
+			available_locked.append("%s %.0f DNA" % [tech.get("name", tech_id), float(tech.get("cost", 0.0))])
+			if float(tech.get("cost", 0.0)) <= dna_points:
+				affordable.append(str(tech.get("name", tech_id)))
+	if affordable.is_empty() and available_locked.is_empty():
+		return "none"
+	if affordable.is_empty():
+		return "available: %s" % "; ".join(available_locked)
+	return "affordable now: %s" % ", ".join(affordable)
+
+func _print_balance_interpretation(results: Array[Dictionary]) -> void:
+	print("")
+	print("GAMEPLAY INTERPRETATION")
+	print("-----------------------")
+	print("- Starter goal: make the first self-funding amino acid route. The current simulation shows glucose import and carbon cutting clearly, but the tested generic amino route does not yet reach the exact N-C-COOH target.")
+	print("- Starting barrier: nitrogen is intentionally scarce. Aminase routes consume N, so nitrate/ammonia transport or assimilation is the first meaningful unlock if amino-acid production is the first goal.")
+	print("- Redox barrier: dehydrogenase/desaturase create NADH; reductase/oxygenase consume it. Anaerobic progression should force the player to unlock a fermentation-style NADH sink before oxidation-heavy pathways can run continuously.")
+	print("- Energy rule proposal: carbon oxidation and decarboxylation branches can create ATP, while ligation/phosphorylation/protein building consume ATP. This makes carbon loss a real tradeoff instead of a free bonus.")
+	print("- Number target: with substrate pools above Km, 1 enzyme at kcat around 1.0/s gives about 0.6-1.0/s flux; 2-4 enzymes gives visible early-game throughput without needing dozens of copies.")
+	print("- Parameter target: tier-1 enzymes should start around kcat 0.6-1.0/s and Km 18-30; improved enzymes can move toward kcat 1.2-1.8/s and Km 8-15. Bad enzymes below kcat 0.5 or above Km 40 are useful as teaching examples, not core progression.")
 
 func _arg_value(name: String, default_value: String) -> String:
 	var args := OS.get_cmdline_user_args()
