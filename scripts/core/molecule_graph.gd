@@ -250,8 +250,6 @@ static func valid_lyase_targets(graph: Dictionary) -> Array[int]:
 			continue
 		if atoms[a].get("element", "") != CARBON or atoms[b].get("element", "") != CARBON:
 			continue
-		if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
-			continue
 		if bond_strength(graph, i) >= 90.0:
 			continue
 		targets.append(i)
@@ -272,6 +270,8 @@ static func bond_strength(graph: Dictionary, bond_index: int) -> float:
 	var strength := 85.0
 	if int(bond.get("order", 1)) >= 2:
 		strength += 10.0
+	if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
+		strength -= 20.0
 	var carbonyl_count := 0
 	if _has_double_oxygen_neighbor(graph, a):
 		carbonyl_count += 1

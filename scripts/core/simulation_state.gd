@@ -20,7 +20,8 @@ const STARTING_ATP := 80.0
 const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
-const STARTING_ENZYME_TOOLS := ["lyase", "dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase", "nitrate_reductase"]
+const REDOX_BALANCE_LIMIT := 12.0
+const STARTING_ENZYME_TOOLS := ["lyase", "dehydrogenase", "oxygenase", "reductase", "aminase", "nitrate_reductase"]
 
 var time_seconds := 0.0
 var paused := false
@@ -67,7 +68,7 @@ func reset() -> void:
 	resources = {
 		RESOURCE_ATP: STARTING_ATP,
 		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
-		RESOURCE_NADH: 8.0,
+		RESOURCE_NADH: 0.0,
 		RESOURCE_NITROGEN: 6.0,
 		RESOURCE_DNA_POINTS: STARTING_DNA_POINTS
 	}
@@ -126,7 +127,7 @@ func ensure_default_resources() -> void:
 	var defaults := {
 		RESOURCE_ATP: STARTING_ATP,
 		RESOURCE_AMINO_ACIDS: STARTING_AMINO_ACIDS,
-		RESOURCE_NADH: 8.0,
+		RESOURCE_NADH: 0.0,
 		RESOURCE_NITROGEN: 6.0,
 		RESOURCE_DNA_POINTS: STARTING_DNA_POINTS
 	}
@@ -235,11 +236,15 @@ func redox_balance() -> Dictionary:
 	var rates: Dictionary = resource_rates.get(RESOURCE_NADH, {"production": 0.0, "consumption": 0.0})
 	var production := float(rates.get("production", 0.0))
 	var consumption := float(rates.get("consumption", 0.0))
+	var balance := float(resources.get(RESOURCE_NADH, 0.0))
 	return {
+		"balance": balance,
+		"limit": REDOX_BALANCE_LIMIT,
+		"fraction": clampf((balance + REDOX_BALANCE_LIMIT) / (REDOX_BALANCE_LIMIT * 2.0), 0.0, 1.0),
 		"production": production,
 		"consumption": consumption,
 		"net": production - consumption,
-		"balanced": absf(production - consumption) < 0.05
+		"balanced": absf(balance) < REDOX_BALANCE_LIMIT * 0.18
 	}
 
 func tick(delta: float) -> void:
@@ -455,7 +460,6 @@ func enzyme_tools() -> Array[Dictionary]:
 		{"id": "dehydrogenase", "label": "DEHYDROGENASE", "icon": "⇧", "summary": "C-O to C=O + NADH", "unlocked": true},
 		{"id": "oxygenase", "label": "CARBOXYL OXIDASE", "icon": "O", "summary": "C=O to COOH + NADH", "unlocked": true},
 		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
-		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
 		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "C=O to C-N, removes O", "unlocked": true},
 		{"id": "nitrate_reductase", "label": "NITRATE REDUCTASE", "icon": "NO₃", "summary": "NO₃ to N pool, spends NADH", "unlocked": true},
 		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C; ATP depends on bond strength", "unlocked": true},
@@ -608,8 +612,6 @@ func preview_products(tool: String, substrate_id: String, target_index: int) -> 
 		return Graph.apply_dehydrogenase(graph, target_index)
 	if tool == "oxygenase":
 		return Graph.apply_oxygenase(graph, target_index)
-	if tool == "decarboxylase":
-		return Graph.apply_decarboxylase(graph, target_index)
 	if tool == "aminase":
 		return Graph.apply_aminase(graph, target_index)
 	if tool == "nitrate_reductase":
@@ -632,8 +634,6 @@ func valid_targets(tool: String, molecule_id: String) -> Array[int]:
 		return Graph.valid_dehydrogenase_targets(graph)
 	if tool == "oxygenase":
 		return Graph.valid_oxygenase_targets(graph)
-	if tool == "decarboxylase":
-		return Graph.valid_decarboxylase_targets(graph)
 	if tool == "aminase":
 		return Graph.valid_aminase_targets(graph)
 	if tool == "nitrate_reductase":
@@ -803,6 +803,11 @@ func _limit_rate_by_resources(blueprint: Dictionary, requested_rate: float, dt: 
 	var delta: Dictionary = blueprint.get("resource_delta", {})
 	for resource_id in delta.keys():
 		var per_reaction := float(delta[resource_id])
+		if resource_id == RESOURCE_NADH:
+			var balance := float(resources.get(RESOURCE_NADH, 0.0))
+			var remaining_redox_capacity := REDOX_BALANCE_LIMIT - balance if per_reaction > 0.0 else REDOX_BALANCE_LIMIT + balance
+			limited = minf(limited, maxf(0.0, remaining_redox_capacity) / maxf(dt * absf(per_reaction), 0.0001))
+			continue
 		if per_reaction >= 0.0:
 			continue
 		var available := float(resources.get(resource_id, 0.0))
@@ -830,7 +835,10 @@ func _apply_resource_delta(blueprint: Dictionary, reactions_done: float, dt: flo
 		var change := float(delta[resource_id]) * reactions_done
 		if is_zero_approx(change):
 			continue
-		resources[resource_id] = maxf(0.0, float(resources.get(resource_id, 0.0)) + change)
+		if resource_id == RESOURCE_NADH:
+			resources[resource_id] = clampf(float(resources.get(resource_id, 0.0)) + change, -REDOX_BALANCE_LIMIT, REDOX_BALANCE_LIMIT)
+		else:
+			resources[resource_id] = maxf(0.0, float(resources.get(resource_id, 0.0)) + change)
 		if not resource_rates.has(resource_id):
 			resource_rates[resource_id] = {"production": 0.0, "consumption": 0.0}
 		var rate := absf(change) / maxf(dt, 0.0001)

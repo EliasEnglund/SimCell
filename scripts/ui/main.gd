@@ -1087,24 +1087,24 @@ func _enzyme_selector_icon_region(card_number: int) -> Rect2:
 func _refresh() -> void:
 	if status_label == null:
 		return
-	status_label.text = "Time %.1fs | %s | %.2fx | ATP %.0f | AA %.0f | NADH %.1f | N %.1f | Molecules %d | Enzymes %d" % [
+	status_label.text = "Time %.1fs | %s | %.2fx | ATP %.0f | AA %.0f | Redox %s | N %.1f | Molecules %d | Enzymes %d" % [
 		sim.time_seconds,
 		"Paused" if sim.paused else "Running",
 		sim.speed,
 		float(sim.resources.get("ATP", 0.0)),
 		float(sim.resources.get("Amino Acids", 0.0)),
-		float(sim.resources.get("NADH", 0.0)),
+		_redox_meter_text(),
 		float(sim.resources.get("N", 0.0)),
 		sim.present_molecule_ids().size(),
 		sim.active_enzymes.size()
 	]
 	if view_title_label != null:
 		view_title_label.text = _view_title(sim.active_view)
-	if resource_summary_box != null:
-		_set_top_stat_group(resource_summary_box, [
-			["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
-			["res://assets/art_lab/icons/resources/nadh_simple.png", "%.1f" % float(sim.resources.get("NADH", 0.0)), Color("76f4ff"), "Electrons (NADH)"],
-			["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
+		if resource_summary_box != null:
+			_set_top_stat_group(resource_summary_box, [
+				["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
+				["res://assets/art_lab/icons/resources/nadh_simple.png", _redox_meter_text(), _redox_meter_color(), "Redox Balance"],
+				["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
 			["res://assets/art_lab/icons/elements/nitrogen_simple_clean.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"],
 			["res://assets/art_lab/icons/resources/dna_simple.png", "%.0f" % float(sim.resources.get("DNA Points", 0.0)), Color("76f4ff"), "DNA Points"]
 		])
@@ -1468,6 +1468,8 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_one.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	build_one.pressed.connect(func():
 		sim.queue_enzyme_build(blueprint_id, 1)
+		selected_pathway = blueprint_id
+		_refresh()
 	)
 	row.add_child(build_one)
 	var build_five := Button.new()
@@ -1479,6 +1481,8 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_five.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	build_five.pressed.connect(func():
 		sim.queue_enzyme_build(blueprint_id, 5)
+		selected_pathway = blueprint_id
+		_refresh()
 	)
 	row.add_child(build_five)
 	detail_panel.add_child(row)
@@ -1491,6 +1495,8 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	remove.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
 	remove.pressed.connect(func():
 		sim.destroy_active_enzyme(blueprint_id)
+		selected_pathway = blueprint_id
+		_refresh()
 	)
 	detail_panel.add_child(remove)
 	var hint := Label.new()
@@ -1707,7 +1713,7 @@ func _populate_enzyme_selector(tools: VBoxContainer) -> void:
 
 func _enzyme_categories() -> Array[Dictionary]:
 	return [
-		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Harvest ATP from COOH ends, then unlock carbon reshaping", "color": Color("7fe6b7"), "tools": ["decarboxylase", "lyase", "desaturase"]},
+		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Break weak C-C bonds for ATP, or spend ATP on tougher cuts", "color": Color("7fe6b7"), "tools": ["lyase", "desaturase"]},
 		{"id": "oxygen", "label": "OXYGEN", "card": 2, "summary": "C-O, C=O, and COOH redox chemistry", "color": Color("77dfff"), "tools": ["dehydrogenase", "oxygenase", "reductase"]},
 		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Assimilate nitrate, then install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["nitrate_reductase", "aminase"]},
 		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
@@ -1749,7 +1755,6 @@ func _enzyme_tool_card_number(tool_id: String) -> int:
 		"reductase": 7,
 		"dehydrogenase": 8,
 		"oxygenase": 9,
-		"decarboxylase": 10,
 		"aminase": 11,
 		"desaturase": 12,
 		"nitrate_reductase": 13
@@ -1901,6 +1906,7 @@ func _refresh_designer() -> void:
 	var molecule: Dictionary = sim.molecule_types[sim.selected_molecule]
 	designer_canvas.set_molecule(molecule)
 	designer_canvas.valid_targets = sim.valid_targets(designer_tool, sim.selected_molecule)
+	designer_canvas.bond_labels = _designer_bond_labels(molecule)
 	designer_canvas.selected_target = designer_target
 	designer_canvas.queue_redraw()
 	_refresh_designer_info(molecule)
@@ -1929,6 +1935,13 @@ func _refresh_designer() -> void:
 		resource_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		resource_label.modulate = Color("ffe064")
 		summary_panel.add_child(resource_label)
+	var bond_strength := float(summary.get("bond_strength", -1.0))
+	if bond_strength >= 0.0:
+		var strength_label := Label.new()
+		strength_label.text = "Bond strength: %.0f%%" % bond_strength
+		strength_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		strength_label.modulate = Color("76f4ff")
+		summary_panel.add_child(strength_label)
 	var build_cost: Dictionary = summary.get("build_cost", {})
 	if not build_cost.is_empty():
 		var build_cost_label := Label.new()
@@ -2021,6 +2034,36 @@ func _resource_delta_text(delta: Dictionary) -> String:
 		elif value < 0.0:
 			parts.append("-%.0f %s" % [absf(value), key])
 	return ", ".join(parts) if not parts.is_empty() else "none"
+
+func _designer_bond_labels(molecule: Dictionary) -> Dictionary:
+	var labels := {}
+	if designer_tool != "lyase":
+		return labels
+	for target_index in sim.valid_targets(designer_tool, sim.selected_molecule):
+		var strength := MoleculeGraphScript.bond_strength(molecule, int(target_index))
+		labels[int(target_index)] = "%.0f%%" % strength
+	return labels
+
+func _redox_meter_text() -> String:
+	var redox := sim.redox_balance()
+	var balance := float(redox.get("balance", 0.0))
+	var limit := maxf(1.0, float(redox.get("limit", 12.0)))
+	var slots := 9
+	var index := int(round(clampf((balance + limit) / (limit * 2.0), 0.0, 1.0) * float(slots - 1)))
+	var chars: Array[String] = []
+	for i in slots:
+		chars.append("I" if i == index else "-")
+	return "".join(chars)
+
+func _redox_meter_color() -> Color:
+	var redox := sim.redox_balance()
+	var balance := absf(float(redox.get("balance", 0.0)))
+	var limit := maxf(1.0, float(redox.get("limit", 12.0)))
+	if balance > limit * 0.78:
+		return Color("ff7a67")
+	if balance > limit * 0.52:
+		return Color("ffe064")
+	return Color("76f4ff")
 
 func _resource_cost_text(cost: Dictionary) -> String:
 	var parts: Array[String] = []

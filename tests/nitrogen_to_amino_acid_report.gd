@@ -127,12 +127,12 @@ func _report_self_funded_route() -> void:
 	var start_atp := float(sim.resources.get("ATP", 0.0))
 	print("")
 	print("Self-funded ATP branch plus amino release")
-	var decarb_targets := sim.valid_targets("decarboxylase", glucose_id)
 	var aminase_targets := sim.valid_targets("aminase", glucose_id)
-	if decarb_targets.is_empty() or aminase_targets.is_empty():
-		print("  Failed: starter lacks decarboxylase or aminase target.")
+	var atp_lyase_target := _atp_positive_lyase_target(sim, glucose_id)
+	if atp_lyase_target < 0 or aminase_targets.is_empty():
+		print("  Failed: starter lacks ATP-positive lyase or aminase target.")
 		return
-	assert(sim.design_enzyme("decarboxylase", glucose_id, int(decarb_targets[0])) == true)
+	assert(sim.design_enzyme("lyase", glucose_id, atp_lyase_target) == true)
 	assert(sim.queue_enzyme_build(str(sim.pathway_list()[0].get("id", "")), 2) == true)
 	for i in 40:
 		sim.tick(0.25)
@@ -160,7 +160,7 @@ func _report_self_funded_route() -> void:
 		float(sim.resources.get("ATP", 0.0)) - start_atp
 	])
 	print("  Active molecules: %s" % _top_molecule_text(sim))
-	print("  Read: decarboxylase can pay for lyase, but N/NADH still limit how much amino acid is made.")
+	print("  Read: weak COOH-adjacent lyase cuts can pay for tougher lyase cuts, but N/redox still limit amino acid production.")
 
 func _glucose_id(sim) -> String:
 	for id in sim.molecule_types.keys():
@@ -191,6 +191,14 @@ func _target_cut_to_amino_acid(sim, molecule_id: String) -> int:
 		for product in sim.preview_products("lyase", molecule_id, int(target_index)):
 			if sim.is_target_molecule(product):
 				return int(target_index)
+	return -1
+
+func _atp_positive_lyase_target(sim, molecule_id: String) -> int:
+	for target_index in sim.valid_targets("lyase", molecule_id):
+		var summary: Dictionary = sim.enzyme_preview_summary("lyase", molecule_id, int(target_index))
+		var delta: Dictionary = summary.get("resource_delta", {})
+		if float(delta.get("ATP", 0.0)) > 0.0:
+			return int(target_index)
 	return -1
 
 func _top_molecule_text(sim) -> String:

@@ -5,6 +5,7 @@ signal target_selected(target_index: int)
 
 var molecule: Dictionary = {}
 var valid_targets: Array[int] = []
+var bond_labels: Dictionary = {}
 var interactive := false
 var selected_target := -1
 var scale_to_fit := true
@@ -102,6 +103,7 @@ func _draw() -> void:
 	if selection_glow:
 		_draw_selection_glow(transform, zoom)
 	_draw_bonds(transform, zoom)
+	_draw_bond_labels(transform, zoom)
 	_draw_touch_feedback(transform, zoom)
 	_draw_atoms(transform, zoom)
 
@@ -138,6 +140,29 @@ func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 		var rest_length := maxf(1.0, rest_a.distance_to(rest_b) * zoom)
 		var tension := clampf((a.distance_to(b) - rest_length) / maxf(rest_length, 1.0), 0.0, 1.0)
 		_draw_bond(a, b, int(bond.get("order", 1)), highlight or touched, selected, zoom, tension, touched)
+
+func _draw_bond_labels(transform: Transform2D, zoom: float) -> void:
+	if bond_labels.is_empty():
+		return
+	var bonds: Array = molecule.get("bonds", [])
+	for key in bond_labels.keys():
+		var index := int(key)
+		if index < 0 or index >= bonds.size():
+			continue
+		var bond: Dictionary = bonds[index]
+		var a: Vector2 = _atom_screen_position(int(bond.get("a", 0)), transform)
+		var b: Vector2 = _atom_screen_position(int(bond.get("b", 0)), transform)
+		var dir := (b - a).normalized()
+		var normal := Vector2(-dir.y, dir.x)
+		var pos := (a + b) * 0.5 + normal * 22.0 * zoom
+		var label := str(bond_labels[key])
+		var font := ThemeDB.fallback_font
+		var font_size := int(maxf(12.0, 14.0 * zoom))
+		var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		var rect := Rect2(pos - text_size * 0.5 - Vector2(6.0, 4.0), text_size + Vector2(12.0, 8.0))
+		draw_rect(rect, Color(0.02, 0.06, 0.07, 0.82), true)
+		draw_rect(rect, Color("76f4ff"), false, 1.0)
+		draw_string(font, rect.position + Vector2(6.0, rect.size.y - 6.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color("dffcff"))
 
 func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 	var atoms: Array = molecule.get("atoms", [])
