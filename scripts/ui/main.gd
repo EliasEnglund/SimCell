@@ -31,7 +31,6 @@ var molecule_summary_box: HBoxContainer
 var top_stat_popup: PanelContainer
 var molecule_list: VBoxContainer
 var detail_panel: VBoxContainer
-var pathway_box: VBoxContainer
 var map_layer: Control
 var metabolism_workspace: Control
 var queue_box: VBoxContainer
@@ -373,16 +372,6 @@ func _build_metabolism_view() -> void:
 	detail_panel.add_theme_constant_override("separation", 10)
 	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail_scroll.add_child(detail_panel)
-	side.add_child(_section_label("Pathways"))
-	var pathway_scroll := ScrollContainer.new()
-	pathway_scroll.custom_minimum_size = Vector2(0, 160)
-	pathway_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	pathway_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	side.add_child(pathway_scroll)
-	pathway_box = VBoxContainer.new()
-	pathway_box.add_theme_constant_override("separation", 8)
-	pathway_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	pathway_scroll.add_child(pathway_box)
 
 	map_layer = Control.new()
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1535,89 +1524,6 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.modulate = Color(0.68, 0.78, 0.76)
 	detail_panel.add_child(hint)
-
-func _refresh_pathways() -> void:
-	_clear(pathway_box)
-	var pathways := sim.pathway_list()
-	if pathways.is_empty():
-		pathway_box.add_child(_title("No enzyme pathway", "Click glucose, choose an enzyme class, select a highlighted bond, then queue the blueprint."))
-		return
-	for pathway in pathways:
-		pathway_box.add_child(_pathway_card(pathway))
-
-func _pathway_card(pathway: Dictionary) -> VBoxContainer:
-	var box := GlowVBox.new()
-	box.fill = Color("1b3440") if selected_pathway == str(pathway.get("id", "")) else Color("142531")
-	box.border = Color("76f4ff") if selected_pathway == str(pathway.get("id", "")) else Color("2f7080")
-	box.border_width = 1.2
-	box.add_theme_constant_override("separation", 2)
-	var name := Label.new()
-	name.text = pathway.get("name", "Enzyme")
-	name.add_theme_font_size_override("font_size", 16)
-	name.modulate = Color("76f4ff")
-	box.add_child(name)
-	var product_labels: Array[String] = []
-	for product_id in pathway.get("products", []):
-		if sim.molecule_types.has(product_id):
-			product_labels.append(sim.molecule_types[product_id].get("formula", "Product"))
-	var status := Label.new()
-	status.text = "%s | %s -> %s" % [
-		pathway.get("status", "Designed"),
-		sim.molecule_types[pathway.get("substrate", "")].get("formula", "Substrate") if sim.molecule_types.has(pathway.get("substrate", "")) else "Substrate",
-		" + ".join(product_labels)
-	]
-	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status.modulate = Color(0.78, 0.88, 0.86)
-	box.add_child(status)
-	var details := Label.new()
-	var build_text := ""
-	if int(pathway.get("queued_count", 0)) > 0:
-		build_text = " | build %.1fs" % float(pathway.get("next_build_remaining", 0.0))
-	details.text = "Rate %.2f/s | Enzymes %d%s" % [
-		float(pathway.get("rate", 0.0)),
-		int(pathway.get("active_count", 0)),
-		build_text
-	]
-	details.modulate = Color(0.68, 0.78, 0.76)
-	box.add_child(details)
-	var resource_delta: Dictionary = pathway.get("resource_delta", {})
-	if not resource_delta.is_empty():
-		var resources := Label.new()
-		resources.text = _resource_delta_text(resource_delta)
-		resources.modulate = Color("ffe064")
-		box.add_child(resources)
-	var select := Button.new()
-	select.text = "Manage"
-	select.custom_minimum_size = Vector2(0, 32)
-	select.add_theme_stylebox_override("normal", _build_importer_button_style(false))
-	select.add_theme_stylebox_override("hover", _build_importer_button_style(true))
-	select.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
-	select.pressed.connect(func():
-		_handle_pathway_click(str(pathway.get("id", "")))
-	)
-	box.add_child(select)
-	var quick_row := HBoxContainer.new()
-	quick_row.add_theme_constant_override("separation", 8)
-	var quick_one := Button.new()
-	quick_one.text = "+1 Enzyme"
-	quick_one.custom_minimum_size = Vector2(0, 32)
-	quick_one.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	quick_one.add_theme_stylebox_override("normal", _build_importer_button_style(false))
-	quick_one.add_theme_stylebox_override("hover", _build_importer_button_style(true))
-	quick_one.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
-	quick_one.pressed.connect(func(): _queue_selected_enzyme_build(str(pathway.get("id", "")), 1))
-	quick_row.add_child(quick_one)
-	var quick_five := Button.new()
-	quick_five.text = "+5"
-	quick_five.custom_minimum_size = Vector2(0, 32)
-	quick_five.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	quick_five.add_theme_stylebox_override("normal", _build_importer_button_style(false))
-	quick_five.add_theme_stylebox_override("hover", _build_importer_button_style(true))
-	quick_five.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
-	quick_five.pressed.connect(func(): _queue_selected_enzyme_build(str(pathway.get("id", "")), 5))
-	quick_row.add_child(quick_five)
-	box.add_child(quick_row)
-	return box
 
 func _queue_selected_enzyme_build(blueprint_id: String, count: int) -> void:
 	if blueprint_id.is_empty():
