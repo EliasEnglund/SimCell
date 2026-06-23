@@ -373,7 +373,16 @@ func _build_metabolism_view() -> void:
 	detail_panel.add_theme_constant_override("separation", 10)
 	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail_scroll.add_child(detail_panel)
+	side.add_child(_section_label("Pathways"))
+	var pathway_scroll := ScrollContainer.new()
+	pathway_scroll.custom_minimum_size = Vector2(0, 160)
+	pathway_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pathway_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	side.add_child(pathway_scroll)
 	pathway_box = VBoxContainer.new()
+	pathway_box.add_theme_constant_override("separation", 8)
+	pathway_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pathway_scroll.add_child(pathway_box)
 
 	map_layer = Control.new()
 	map_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1466,11 +1475,7 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_one.add_theme_stylebox_override("normal", _build_importer_button_style(false))
 	build_one.add_theme_stylebox_override("hover", _build_importer_button_style(true))
 	build_one.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
-	build_one.pressed.connect(func():
-		sim.queue_enzyme_build(blueprint_id, 1)
-		selected_pathway = blueprint_id
-		_refresh()
-	)
+	build_one.pressed.connect(func(): _queue_selected_enzyme_build(blueprint_id, 1))
 	row.add_child(build_one)
 	var build_five := Button.new()
 	build_five.text = "+ Build 5"
@@ -1479,11 +1484,7 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 	build_five.add_theme_stylebox_override("normal", _build_importer_button_style(false))
 	build_five.add_theme_stylebox_override("hover", _build_importer_button_style(true))
 	build_five.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
-	build_five.pressed.connect(func():
-		sim.queue_enzyme_build(blueprint_id, 5)
-		selected_pathway = blueprint_id
-		_refresh()
-	)
+	build_five.pressed.connect(func(): _queue_selected_enzyme_build(blueprint_id, 5))
 	row.add_child(build_five)
 	detail_panel.add_child(row)
 	var remove := Button.new()
@@ -1565,7 +1566,38 @@ func _pathway_card(pathway: Dictionary) -> VBoxContainer:
 		_handle_pathway_click(str(pathway.get("id", "")))
 	)
 	box.add_child(select)
+	var quick_row := HBoxContainer.new()
+	quick_row.add_theme_constant_override("separation", 8)
+	var quick_one := Button.new()
+	quick_one.text = "+1 Enzyme"
+	quick_one.custom_minimum_size = Vector2(0, 32)
+	quick_one.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quick_one.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	quick_one.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	quick_one.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
+	quick_one.pressed.connect(func(): _queue_selected_enzyme_build(str(pathway.get("id", "")), 1))
+	quick_row.add_child(quick_one)
+	var quick_five := Button.new()
+	quick_five.text = "+5"
+	quick_five.custom_minimum_size = Vector2(0, 32)
+	quick_five.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quick_five.add_theme_stylebox_override("normal", _build_importer_button_style(false))
+	quick_five.add_theme_stylebox_override("hover", _build_importer_button_style(true))
+	quick_five.add_theme_stylebox_override("pressed", _build_importer_button_style(true))
+	quick_five.pressed.connect(func(): _queue_selected_enzyme_build(str(pathway.get("id", "")), 5))
+	quick_row.add_child(quick_five)
+	box.add_child(quick_row)
 	return box
+
+func _queue_selected_enzyme_build(blueprint_id: String, count: int) -> void:
+	if blueprint_id.is_empty():
+		return
+	selected_pathway = blueprint_id
+	var queued := sim.queue_enzyme_build(blueprint_id, count)
+	if queued:
+		_handle_pathway_click(blueprint_id)
+	else:
+		_refresh()
 
 func _pathway_by_id(blueprint_id: String) -> Dictionary:
 	for pathway in sim.pathway_list():

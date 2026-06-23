@@ -271,7 +271,7 @@ static func bond_strength(graph: Dictionary, bond_index: int) -> float:
 	if int(bond.get("order", 1)) >= 2:
 		strength += 10.0
 	if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
-		strength -= 20.0
+		strength -= 38.0
 	var carbonyl_count := 0
 	if _has_double_oxygen_neighbor(graph, a):
 		carbonyl_count += 1

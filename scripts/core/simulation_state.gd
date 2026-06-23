@@ -666,6 +666,7 @@ func _tick_metabolism(dt: float) -> void:
 	for id in resources.keys():
 		resource_rates[id] = {"production": 0.0, "consumption": 0.0}
 	_apply_membrane_transport(dt)
+	_tick_spontaneous_bond_breaks(dt)
 	var previous_amounts := molecule_amounts.duplicate(true)
 
 	var demand_by_substrate := {}
@@ -716,6 +717,46 @@ func _tick_metabolism(dt: float) -> void:
 			"equilibrium_factor": _equilibrium_factor(blueprint)
 		})
 	_convert_target_molecules(dt)
+
+func _tick_spontaneous_bond_breaks(dt: float) -> void:
+	var candidates: Array[Dictionary] = []
+	for molecule_id in molecule_types.keys():
+		var amount := float(molecule_amounts.get(molecule_id, 0.0))
+		if amount <= 0.001:
+			continue
+		var graph: Dictionary = molecule_types[molecule_id]
+		for target_index in Graph.valid_lyase_targets(graph):
+			var strength := Graph.bond_strength(graph, int(target_index))
+			if strength >= 20.0:
+				continue
+			var rate := (20.0 - strength) / 20.0 * 0.22 * amount / (18.0 + amount)
+			if rate <= 0.0:
+				continue
+			candidates.append({
+				"molecule_id": molecule_id,
+				"target_index": int(target_index),
+				"rate": rate
+			})
+	for item in candidates:
+		var molecule_id := str(item.get("molecule_id", ""))
+		if not molecule_types.has(molecule_id):
+			continue
+		var consumed := minf(float(item.get("rate", 0.0)) * dt, float(molecule_amounts.get(molecule_id, 0.0)))
+		if consumed <= 0.0:
+			continue
+		var products := Graph.apply_lyase(molecule_types[molecule_id], int(item.get("target_index", -1)))
+		if products.is_empty():
+			continue
+		molecule_amounts[molecule_id] = float(molecule_amounts.get(molecule_id, 0.0)) - consumed
+		molecule_rates[molecule_id]["consumption"] = float(molecule_rates[molecule_id].get("consumption", 0.0)) + consumed / maxf(dt, 0.0001)
+		for graph in products:
+			if _escapes_as_carbon_dioxide(graph):
+				continue
+			var product_id := _register_molecule(graph)
+			molecule_amounts[product_id] = float(molecule_amounts.get(product_id, 0.0)) + consumed
+			if not molecule_rates.has(product_id):
+				molecule_rates[product_id] = {"production": 0.0, "consumption": 0.0}
+			molecule_rates[product_id]["production"] = float(molecule_rates[product_id].get("production", 0.0)) + consumed / maxf(dt, 0.0001)
 
 func _tick_protein_queue(dt: float) -> void:
 	for i in range(protein_queue.size() - 1, -1, -1):
