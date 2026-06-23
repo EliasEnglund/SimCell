@@ -1443,6 +1443,12 @@ func _refresh_pathway_detail(blueprint_id: String) -> void:
 		float(pathway.get("kcat", 0.0)),
 		float(pathway.get("stability", 0.0))
 	]
+	var resource_delta: Dictionary = pathway.get("resource_delta", {})
+	if not resource_delta.is_empty():
+		metrics.text += "\nPer reaction: %s" % _resource_delta_text(resource_delta)
+	var bond_strength := float(pathway.get("bond_strength", -1.0))
+	if bond_strength >= 0.0:
+		metrics.text += "\nTarget bond strength: %.0f%%" % bond_strength
 	detail_panel.add_child(metrics)
 	var build_cost: Dictionary = pathway.get("build_cost", {})
 	if not build_cost.is_empty():
@@ -1703,7 +1709,7 @@ func _enzyme_categories() -> Array[Dictionary]:
 	return [
 		{"id": "carbon", "label": "CARBON", "card": 1, "summary": "Harvest ATP from COOH ends, then unlock carbon reshaping", "color": Color("7fe6b7"), "tools": ["decarboxylase", "lyase", "desaturase"]},
 		{"id": "oxygen", "label": "OXYGEN", "card": 2, "summary": "C-O, C=O, and COOH redox chemistry", "color": Color("77dfff"), "tools": ["dehydrogenase", "oxygenase", "reductase"]},
-		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["aminase"]},
+		{"id": "nitrogen", "label": "NITROGEN", "card": 3, "summary": "Assimilate nitrate, then install nitrogen groups for amino products", "color": Color("7ca7ff"), "tools": ["nitrate_reductase", "aminase"]},
 		{"id": "sulfur", "label": "SULFUR", "card": 4, "summary": "Future sulfur chemistry", "color": Color("ffe36b"), "tools": []},
 		{"id": "phosphate", "label": "PHOSPHATE", "card": 5, "summary": "Future ATP and nucleotide chemistry", "color": Color("c67cff"), "tools": []}
 	]
@@ -1745,7 +1751,8 @@ func _enzyme_tool_card_number(tool_id: String) -> int:
 		"oxygenase": 9,
 		"decarboxylase": 10,
 		"aminase": 11,
-		"desaturase": 12
+		"desaturase": 12,
+		"nitrate_reductase": 13
 	}
 	return int(cards.get(tool_id, 0))
 
@@ -3971,6 +3978,12 @@ class EnzymeSelectorCardButton:
 			"aminase":
 				_draw_alpha_keto(Vector2(left, y), 0.58, false)
 				_draw_alpha_keto(Vector2(right, y), 0.58, true)
+			"nitrate_reductase":
+				_draw_atom(Vector2(left - 16.0, y), 15.0, Color("4a90df"))
+				_draw_atom(Vector2(left + 10.0, y - 18.0), 10.0, Color("e95058"))
+				_draw_atom(Vector2(left + 12.0, y + 17.0), 10.0, Color("e95058"))
+				_draw_atom(Vector2(left + 32.0, y), 10.0, Color("e95058"))
+				_draw_text_small("N pool", Vector2(right - 6.0, y + 5.0), Color("7ca7ff"))
 			_:
 				_draw_chain(Vector2(left, y), false)
 				_draw_chain(Vector2(right, y), false)

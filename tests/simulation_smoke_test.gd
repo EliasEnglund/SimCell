@@ -32,6 +32,7 @@ func _init() -> void:
 	assert(sim.enzyme_tool_unlocked("reductase") == true)
 	assert(sim.enzyme_tool_unlocked("decarboxylase") == true)
 	assert(sim.enzyme_tool_unlocked("aminase") == true)
+	assert(sim.enzyme_tool_unlocked("nitrate_reductase") == true)
 	assert(sim.enzyme_tool_unlocked("lyase") == true)
 	assert(sim.valid_targets("lyase", glucose_id).size() > 0)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
@@ -39,6 +40,13 @@ func _init() -> void:
 	assert(sim.valid_targets("decarboxylase", glucose_id).size() > 0)
 	assert(sim.valid_targets("oxygenase", glucose_id).size() == 0)
 	assert(sim.valid_targets("aminase", glucose_id).size() > 0)
+	var nitrate_id := ""
+	for id in sim.molecule_types.keys():
+		if sim.molecule_types[id].get("name", "") == "Nitrate":
+			nitrate_id = id
+			break
+	assert(nitrate_id != "")
+	assert(sim.valid_targets("nitrate_reductase", nitrate_id).size() == 1)
 	for target in sim.valid_targets("decarboxylase", glucose_id):
 		assert(not sim.valid_targets("lyase", glucose_id).has(target))
 	var glucose_oxidation_target := int(sim.valid_targets("dehydrogenase", glucose_id)[0])

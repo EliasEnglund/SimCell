@@ -20,7 +20,7 @@ const STARTING_ATP := 80.0
 const STARTING_DNA_POINTS := 260.0
 const ENZYME_BUILD_COST := {RESOURCE_AMINO_ACIDS: 2.0, RESOURCE_ATP: 1.0}
 const TRANSPORTER_BUILD_COST := {RESOURCE_AMINO_ACIDS: 1.0, RESOURCE_ATP: 1.0}
-const STARTING_ENZYME_TOOLS := ["lyase", "dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase"]
+const STARTING_ENZYME_TOOLS := ["lyase", "dehydrogenase", "oxygenase", "reductase", "decarboxylase", "aminase", "nitrate_reductase"]
 
 var time_seconds := 0.0
 var paused := false
@@ -441,7 +441,12 @@ func pathway_arrows() -> Array[Dictionary]:
 			"rate": float(pathway.get("rate", 0.0)),
 			"active_count": int(pathway.get("active_count", 0)),
 			"queued_count": int(pathway.get("queued_count", 0)),
-			"status": pathway.get("status", "Designed")
+			"status": pathway.get("status", "Designed"),
+			"kcat": float(pathway.get("kcat", 0.0)),
+			"km": float(pathway.get("km", 0.0)),
+			"stability": float(pathway.get("stability", 0.0)),
+			"resource_delta": pathway.get("resource_delta", {}),
+			"bond_strength": float(pathway.get("bond_strength", -1.0))
 		})
 	return output
 
@@ -452,7 +457,8 @@ func enzyme_tools() -> Array[Dictionary]:
 		{"id": "reductase", "label": "REDUCTASE", "icon": "−", "summary": "C=O to C-O, spends NADH", "unlocked": true},
 		{"id": "decarboxylase", "label": "DECARBOXYLASE", "icon": "CO₂", "summary": "COOH to CO₂ + ATP", "unlocked": true},
 		{"id": "aminase", "label": "AMINATION", "icon": "N", "summary": "C=O to C-N, removes O", "unlocked": true},
-		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C, spends ATP", "unlocked": true},
+		{"id": "nitrate_reductase", "label": "NITRATE REDUCTASE", "icon": "NO₃", "summary": "NO₃ to N pool, spends NADH", "unlocked": true},
+		{"id": "lyase", "label": "LYASE", "icon": "✂", "summary": "Break C-C; ATP depends on bond strength", "unlocked": true},
 		{"id": "desaturase", "label": "DESATURASE", "icon": "=", "summary": "C-C to C=C", "unlocked": false}
 	]
 
@@ -499,6 +505,8 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 			gas_products += 1
 		else:
 			kept_products.append(product.get("formula", "Product"))
+	if kept_products.is_empty() and tool == "nitrate_reductase":
+		kept_products.append("N pool")
 	return {
 		"name": _enzyme_name(tool, substrate),
 		"kcat": _estimate_kcat(tool, substrate, target_index),
@@ -507,9 +515,10 @@ func enzyme_preview_summary(tool: String, substrate_id: String, target_index: in
 		"equilibrium": _equilibrium_level(tool),
 		"build_time": 3.0,
 		"build_cost": ENZYME_BUILD_COST.duplicate(true),
-		"resource_delta": _resource_delta(tool),
+		"resource_delta": _resource_delta(tool, substrate, target_index),
 		"products": kept_products,
-		"gas_products": gas_products
+		"gas_products": gas_products,
+		"bond_strength": Graph.bond_strength(substrate, target_index) if tool == "lyase" else -1.0
 	}
 
 func design_enzyme(tool: String, substrate_id: String, target_index: int) -> bool:
@@ -520,7 +529,9 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		return false
 	var substrate: Dictionary = molecule_types[substrate_id]
 	var products := preview_products(tool, substrate_id, target_index)
-	if products.is_empty():
+	var resource_delta := _resource_delta(tool, substrate, target_index)
+	var resource_only := _resource_only_tool(tool)
+	if products.is_empty() and not resource_only:
 		emit_signal("event_logged", "No valid product for enzyme design.")
 		return false
 	var product_ids: Array[String] = []
@@ -530,7 +541,7 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 			continue
 		var product_id := _register_molecule(graph)
 		product_ids.append(product_id)
-	if product_ids.is_empty():
+	if product_ids.is_empty() and not resource_only:
 		emit_signal("event_logged", "Reaction product escaped the cell as gas.")
 		return false
 	var blueprint_id := "%s:%s:%d" % [tool, substrate_id.md5_text(), target_index]
@@ -541,13 +552,14 @@ func design_enzyme(tool: String, substrate_id: String, target_index: int) -> boo
 		"substrate": substrate_id,
 		"target_index": target_index,
 		"products": product_ids,
-		"resource_delta": _resource_delta(tool),
+		"resource_delta": resource_delta,
 		"kcat": _estimate_kcat(tool, substrate, target_index),
 		"km": 18.0,
 		"stability": 120.0,
 		"equilibrium": _equilibrium_level(tool),
 		"build_time": 3.0,
-		"build_cost": ENZYME_BUILD_COST.duplicate(true)
+		"build_cost": ENZYME_BUILD_COST.duplicate(true),
+		"bond_strength": Graph.bond_strength(substrate, target_index) if tool == "lyase" else -1.0
 	}
 	enzyme_blueprints[blueprint_id] = blueprint
 	if not _queue_protein_build(blueprint_id):
@@ -600,6 +612,8 @@ func preview_products(tool: String, substrate_id: String, target_index: int) -> 
 		return Graph.apply_decarboxylase(graph, target_index)
 	if tool == "aminase":
 		return Graph.apply_aminase(graph, target_index)
+	if tool == "nitrate_reductase":
+		return []
 	if tool == "desaturase":
 		return Graph.apply_desaturase(graph, target_index)
 	return []
@@ -622,6 +636,8 @@ func valid_targets(tool: String, molecule_id: String) -> Array[int]:
 		return Graph.valid_decarboxylase_targets(graph)
 	if tool == "aminase":
 		return Graph.valid_aminase_targets(graph)
+	if tool == "nitrate_reductase":
+		return Graph.valid_nitrate_reductase_targets(graph)
 	if tool == "desaturase":
 		return Graph.valid_desaturase_targets(graph)
 	return []
@@ -874,6 +890,7 @@ func _enzyme_name(tool: String, substrate: Dictionary) -> String:
 		"oxygenase": "Oxygenase",
 		"decarboxylase": "Decarboxylase",
 		"aminase": "Amination Enzyme",
+		"nitrate_reductase": "Nitrate Reductase",
 		"desaturase": "Desaturase"
 	}
 	var enzyme_name: String = names.get(tool, "Enzyme")
@@ -883,7 +900,8 @@ func _enzyme_name(tool: String, substrate: Dictionary) -> String:
 
 func _estimate_kcat(tool: String, substrate: Dictionary, target_index: int) -> float:
 	if tool == "lyase":
-		return 1.0
+		var strength := Graph.bond_strength(substrate, target_index)
+		return clampf(1.35 - strength / 120.0, 0.28, 1.0)
 	if tool == "reductase":
 		return 0.7
 	if tool == "dehydrogenase":
@@ -894,6 +912,8 @@ func _estimate_kcat(tool: String, substrate: Dictionary, target_index: int) -> f
 		return 0.45
 	if tool == "aminase":
 		return 0.5
+	if tool == "nitrate_reductase":
+		return 0.45
 	if tool == "desaturase":
 		return 0.65
 	return 0.5
@@ -907,10 +927,18 @@ func _equilibrium_level(tool: String) -> float:
 		return 110.0
 	if tool == "aminase":
 		return 80.0
+	if tool == "nitrate_reductase":
+		return 999999.0
 	return 160.0
 
-func _resource_delta(tool: String) -> Dictionary:
+func _resource_delta(tool: String, substrate: Dictionary = {}, target_index: int = -1) -> Dictionary:
 	if tool == "lyase":
+		if not substrate.is_empty() and target_index >= 0:
+			var strength := Graph.bond_strength(substrate, target_index)
+			if strength < 50.0:
+				return {RESOURCE_ATP: 1.0}
+			if strength < 70.0:
+				return {}
 		return {RESOURCE_ATP: -1.0}
 	if tool == "reductase":
 		return {RESOURCE_NADH: -1.0}
@@ -922,6 +950,11 @@ func _resource_delta(tool: String) -> Dictionary:
 		return {RESOURCE_ATP: 1.0}
 	if tool == "aminase":
 		return {RESOURCE_NITROGEN: -1.0, RESOURCE_NADH: -1.0}
+	if tool == "nitrate_reductase":
+		return {RESOURCE_NADH: -2.0, RESOURCE_NITROGEN: 1.0}
 	if tool == "desaturase":
 		return {RESOURCE_NADH: 1.0}
 	return {}
+
+func _resource_only_tool(tool: String) -> bool:
+	return tool == "nitrate_reductase"

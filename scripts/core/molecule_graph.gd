@@ -252,8 +252,52 @@ static func valid_lyase_targets(graph: Dictionary) -> Array[int]:
 			continue
 		if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
 			continue
+		if bond_strength(graph, i) >= 90.0:
+			continue
 		targets.append(i)
 	return targets
+
+static func bond_strength(graph: Dictionary, bond_index: int) -> float:
+	var bonds: Array = graph.get("bonds", [])
+	var atoms: Array = graph.get("atoms", [])
+	if bond_index < 0 or bond_index >= bonds.size():
+		return 100.0
+	var bond: Dictionary = bonds[bond_index]
+	var a := int(bond.get("a", -1))
+	var b := int(bond.get("b", -1))
+	if a < 0 or b < 0 or a >= atoms.size() or b >= atoms.size():
+		return 100.0
+	if atoms[a].get("element", "") != CARBON or atoms[b].get("element", "") != CARBON:
+		return 100.0
+	var strength := 85.0
+	if int(bond.get("order", 1)) >= 2:
+		strength += 10.0
+	var carbonyl_count := 0
+	if _has_double_oxygen_neighbor(graph, a):
+		carbonyl_count += 1
+	if _has_double_oxygen_neighbor(graph, b):
+		carbonyl_count += 1
+	strength -= carbonyl_count * 20.0
+	if carbonyl_count >= 2:
+		strength -= 15.0
+	if _has_carboxyl_neighbor(graph, a) or _has_carboxyl_neighbor(graph, b):
+		strength -= 10.0
+	if _has_beta_keto_acid_context(graph, a, b):
+		strength -= 25.0
+	if _has_phosphate_context(graph, a):
+		strength -= 15.0
+	if _has_phosphate_context(graph, b):
+		strength -= 15.0
+	if _has_sulfur_neighbor(graph, a) or _has_sulfur_neighbor(graph, b):
+		strength -= 20.0
+	strength += max(0, _carbon_neighbor_count(graph, a) - 2) * 8.0
+	strength += max(0, _carbon_neighbor_count(graph, b) - 2) * 8.0
+	return clampf(strength, 5.0, 100.0)
+
+static func valid_nitrate_reductase_targets(graph: Dictionary) -> Array[int]:
+	if str(graph.get("name", "")).to_lower() == "nitrate" or str(graph.get("formula", "")) == "NO₃":
+		return [0]
+	return []
 
 static func valid_reductase_targets(graph: Dictionary) -> Array[int]:
 	var targets: Array[int] = []
@@ -646,6 +690,42 @@ static func _has_carboxyl_neighbor(graph: Dictionary, atom_index: int) -> bool:
 		if _is_carboxyl_carbon(graph, int(neighbor)):
 			return true
 	return false
+
+static func _has_beta_keto_acid_context(graph: Dictionary, a: int, b: int) -> bool:
+	return (_has_double_oxygen_neighbor(graph, a) and _has_carboxyl_neighbor(graph, b)) or (_has_double_oxygen_neighbor(graph, b) and _has_carboxyl_neighbor(graph, a))
+
+static func _has_phosphate_context(graph: Dictionary, atom_index: int) -> bool:
+	var atoms: Array = graph.get("atoms", [])
+	if atom_index < 0 or atom_index >= atoms.size():
+		return false
+	for neighbor in _neighbors(graph, atom_index):
+		var neighbor_index := int(neighbor)
+		if atoms[neighbor_index].get("element", "") == "P":
+			return true
+		if atoms[neighbor_index].get("element", "") == OXYGEN:
+			for second_neighbor in _neighbors(graph, neighbor_index):
+				if int(second_neighbor) != atom_index and atoms[int(second_neighbor)].get("element", "") == "P":
+					return true
+	return false
+
+static func _has_sulfur_neighbor(graph: Dictionary, atom_index: int) -> bool:
+	var atoms: Array = graph.get("atoms", [])
+	if atom_index < 0 or atom_index >= atoms.size():
+		return false
+	for neighbor in _neighbors(graph, atom_index):
+		if atoms[int(neighbor)].get("element", "") == "S":
+			return true
+	return false
+
+static func _carbon_neighbor_count(graph: Dictionary, atom_index: int) -> int:
+	var atoms: Array = graph.get("atoms", [])
+	if atom_index < 0 or atom_index >= atoms.size():
+		return 0
+	var count := 0
+	for neighbor in _neighbors(graph, atom_index):
+		if atoms[int(neighbor)].get("element", "") == CARBON:
+			count += 1
+	return count
 
 static func _is_terminal_carbon(graph: Dictionary, atom_index: int) -> bool:
 	var atoms: Array = graph.get("atoms", [])

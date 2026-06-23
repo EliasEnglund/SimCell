@@ -28,6 +28,7 @@ var _dragging_source := false
 var _drag_molecule_id := ""
 var _drag_goal_id := ""
 var _drag_route_key := ""
+var _drag_route_blueprint_id := ""
 var _drag_source_key := ""
 var _drag_grab_offset_world := Vector2.ZERO
 var _last_mouse := Vector2.ZERO
@@ -85,6 +86,8 @@ func _input(event: InputEvent) -> void:
 			_drag_goal_id = goal_id
 			_drag_source_key = source_id
 			_drag_route_key = str(route.get("key", ""))
+			var route_reaction: Dictionary = route.get("reaction", {})
+			_drag_route_blueprint_id = str(route_reaction.get("blueprint_id", ""))
 			if _dragging_molecule and _layout_positions.has(_drag_molecule_id):
 				_drag_grab_offset_world = (local_press - pan_offset) / zoom - _layout_positions[_drag_molecule_id]
 			elif _dragging_goal and _manual_goal_positions.has(_drag_goal_id):
@@ -99,7 +102,10 @@ func _input(event: InputEvent) -> void:
 			if _press_started_in_workspace and _drag_distance <= 6.0 and get_global_rect().has_point(event.position):
 				var molecule_id := _molecule_at(event.position - global_position)
 				var pathway_id := _pathway_at(event.position - global_position)
-				if _dragging_route or _dragging_source:
+				if _dragging_route:
+					if not _drag_route_blueprint_id.is_empty():
+						emit_signal("pathway_requested", _drag_route_blueprint_id)
+				elif _dragging_source:
 					pass
 				elif not pathway_id.is_empty():
 					emit_signal("pathway_requested", pathway_id)
@@ -173,6 +179,7 @@ func _finish_drag(rebuild_after: bool = true) -> void:
 	_drag_goal_id = ""
 	_drag_source_key = ""
 	_drag_route_key = ""
+	_drag_route_blueprint_id = ""
 	_drag_grab_offset_world = Vector2.ZERO
 	_press_started_in_workspace = false
 	mouse_default_cursor_shape = Control.CURSOR_DRAG
@@ -1523,7 +1530,7 @@ class ReactionHoverPopup:
 		draw_string(ThemeDB.fallback_font, Vector2(16.0, 28.0), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("f4fbff"))
 		draw_string(ThemeDB.fallback_font, Vector2(16.0, 50.0), _reaction_route_label(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.80, 0.94, 0.94, 0.84))
 		draw_string(ThemeDB.fallback_font, Vector2(16.0, size.y - 36.0), "%s | %.2f/s | active %d | queued %d" % [tool, float(reaction.get("rate", 0.0)), int(reaction.get("active_count", 0)), int(reaction.get("queued_count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("dbeff2"))
-		draw_string(ThemeDB.fallback_font, Vector2(16.0, size.y - 14.0), "Future stats: costs, stability, redox balance", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.80, 0.90, 0.88, 0.70))
+		draw_string(ThemeDB.fallback_font, Vector2(16.0, size.y - 14.0), _reaction_stats_label(), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.80, 0.90, 0.88, 0.70))
 
 	func _reaction_route_label() -> String:
 		if simulation == null:
@@ -1539,6 +1546,22 @@ class ReactionHoverPopup:
 				products.append(str(simulation.molecule_types[id].get("formula", "Product")))
 		var product_text := "products" if products.is_empty() else " + ".join(products)
 		return "%s -> %s" % [substrate, product_text]
+
+	func _reaction_stats_label() -> String:
+		var parts: Array[String] = []
+		var bond_strength := float(reaction.get("bond_strength", -1.0))
+		if bond_strength >= 0.0:
+			parts.append("bond %.0f%%" % bond_strength)
+		var delta: Dictionary = reaction.get("resource_delta", {})
+		for key in delta.keys():
+			var value := float(delta[key])
+			if value > 0.0:
+				parts.append("+%.0f %s" % [value, key])
+			elif value < 0.0:
+				parts.append("-%.0f %s" % [absf(value), key])
+		if parts.is_empty():
+			return "Click the arrow to select this pathway and manage enzymes"
+		return "%s | click arrow to manage" % " | ".join(parts)
 
 	func _draw_popup_panel(rect: Rect2, border: Color) -> void:
 		draw_rect(rect, Color(0.05, 0.09, 0.11, 0.96), true)
