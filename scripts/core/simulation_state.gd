@@ -437,12 +437,16 @@ func pathway_list() -> Array[Dictionary]:
 func pathway_arrows() -> Array[Dictionary]:
 	var output: Array[Dictionary] = []
 	for pathway in pathway_list():
+		var arrow_products: Array = pathway.get("products", []).duplicate()
+		var delta: Dictionary = pathway.get("resource_delta", {})
+		if float(delta.get(RESOURCE_NITROGEN, 0.0)) > 0.0:
+			arrow_products.append("resource:%s" % RESOURCE_NITROGEN)
 		output.append({
 			"blueprint_id": pathway.get("id", ""),
 			"name": pathway.get("name", "Enzyme"),
 			"tool": pathway.get("tool", ""),
 			"substrate": pathway.get("substrate", ""),
-			"products": pathway.get("products", []),
+			"products": arrow_products,
 			"rate": float(pathway.get("rate", 0.0)),
 			"active_count": int(pathway.get("active_count", 0)),
 			"queued_count": int(pathway.get("queued_count", 0)),

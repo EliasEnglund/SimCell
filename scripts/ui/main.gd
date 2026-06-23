@@ -1111,12 +1111,42 @@ func _refresh() -> void:
 		view_title_label.text = _view_title(sim.active_view)
 		if resource_summary_box != null:
 			_set_top_stat_group(resource_summary_box, [
-				["res://assets/art_lab/icons/resources/atp_simple.png", "%.0f" % float(sim.resources.get("ATP", 0.0)), Color("8cff6a"), "Energy (ATP)"],
-				["res://assets/art_lab/icons/resources/nadh_simple.png", _redox_meter_text(), _redox_meter_color(), "Redox Balance"],
-				["res://assets/art_lab/icons/resources/amino_acids_simple.png", "%.0f" % float(sim.resources.get("Amino Acids", 0.0)), Color("8cff6a"), "Amino Acids"],
-			["res://assets/art_lab/icons/elements/nitrogen_simple_clean.png", "%.1f" % float(sim.resources.get("N", 0.0)), Color("76a8ff"), "Nitrogen"],
-			["res://assets/art_lab/icons/resources/dna_simple.png", "%.0f" % float(sim.resources.get("DNA Points", 0.0)), Color("76f4ff"), "DNA Points"]
-		])
+				[
+					"res://assets/art_lab/icons/resources/atp_simple.png",
+					"%.0f" % float(sim.resources.get("ATP", 0.0)),
+					Color("8cff6a"),
+					"Energy (ATP)",
+					["Builds enzymes and transporters.", _resource_rate_line("ATP")]
+				],
+				[
+					"res://assets/art_lab/icons/resources/nadh_simple.png",
+					_redox_meter_text(),
+					_redox_meter_color(),
+					"Redox Balance",
+					_redox_tooltip_lines()
+				],
+				[
+					"res://assets/art_lab/icons/resources/amino_acids_simple.png",
+					"%.0f" % float(sim.resources.get("Amino Acids", 0.0)),
+					Color("8cff6a"),
+					"Amino Acids",
+					["Protein building material.", _resource_rate_line("Amino Acids")]
+				],
+				[
+					"res://assets/art_lab/icons/elements/nitrogen_simple_clean.png",
+					"%.1f" % float(sim.resources.get("N", 0.0)),
+					Color("76a8ff"),
+					"Bioavailable Nitrogen",
+					["Used by aminase reactions.", "NO3 reductase feeds this pool.", _resource_rate_line("N")]
+				],
+				[
+					"res://assets/art_lab/icons/resources/dna_simple.png",
+					"%.0f" % float(sim.resources.get("DNA Points", 0.0)),
+					Color("76f4ff"),
+					"DNA Points",
+					["Spent in the DNA tech tree.", _resource_rate_line("DNA Points")]
+				]
+			])
 	if molecule_summary_box != null:
 		var glucose_id := _glucose_molecule_id()
 		var glucose_amount := float(sim.molecule_amounts.get(glucose_id, 0.0)) if not glucose_id.is_empty() else 0.0
@@ -2088,23 +2118,54 @@ func _designer_bond_strengths(molecule: Dictionary) -> Dictionary:
 func _redox_meter_text() -> String:
 	var redox := sim.redox_balance()
 	var balance := float(redox.get("balance", 0.0))
-	var limit := maxf(1.0, float(redox.get("limit", 12.0)))
-	var slots := 9
-	var index := int(round(clampf((balance + limit) / (limit * 2.0), 0.0, 1.0) * float(slots - 1)))
-	var chars: Array[String] = []
-	for i in slots:
-		chars.append("I" if i == index else "-")
-	return "".join(chars)
+	return "%+.1f" % balance
 
 func _redox_meter_color() -> Color:
 	var redox := sim.redox_balance()
-	var balance := absf(float(redox.get("balance", 0.0)))
+	var raw_balance := float(redox.get("balance", 0.0))
+	var balance := absf(raw_balance)
 	var limit := maxf(1.0, float(redox.get("limit", 12.0)))
 	if balance > limit * 0.78:
-		return Color("ff7a67")
+		return Color("ff7a67") if raw_balance < 0.0 else Color("8c7bff")
 	if balance > limit * 0.52:
-		return Color("ffe064")
+		return Color("ffe064") if raw_balance < 0.0 else Color("76a8ff")
 	return Color("76f4ff")
+
+func _redox_tooltip_lines() -> Array[String]:
+	var redox := sim.redox_balance()
+	var balance := float(redox.get("balance", 0.0))
+	var limit := maxf(1.0, float(redox.get("limit", 12.0)))
+	var state := "Balanced"
+	if balance > limit * 0.52:
+		state = "NADH excess"
+	elif balance < -limit * 0.52:
+		state = "NADH demand"
+	return [
+		_stateful_redox_bar(balance, limit),
+		"Balance: %.1f / ±%.1f NADH" % [balance, limit],
+		"Produced: %.2f/s" % float(redox.get("production", 0.0)),
+		"Consumed: %.2f/s" % float(redox.get("consumption", 0.0)),
+		"Net: %+.2f/s | %s" % [float(redox.get("net", 0.0)), state]
+	]
+
+func _stateful_redox_bar(balance: float, limit: float) -> String:
+	var slots := 13
+	var index := int(round(clampf((balance + limit) / (limit * 2.0), 0.0, 1.0) * float(slots - 1)))
+	var chars: Array[String] = []
+	for i in slots:
+		if i == int(slots / 2):
+			chars.append("|")
+		elif i == index:
+			chars.append("I")
+		else:
+			chars.append("-")
+	if index == int(slots / 2):
+		chars[index] = "I"
+	return "".join(chars)
+
+func _resource_rate_line(resource_id: String) -> String:
+	var rates: Dictionary = sim.resource_rates.get(resource_id, {"production": 0.0, "consumption": 0.0})
+	return "+%.2f/s  -%.2f/s" % [float(rates.get("production", 0.0)), float(rates.get("consumption", 0.0))]
 
 func _resource_cost_text(cost: Dictionary) -> String:
 	var parts: Array[String] = []
@@ -2143,7 +2204,8 @@ func _set_top_stat_group(container: HBoxContainer, items: Array) -> void:
 				str(item[0]),
 				str(item[1]),
 				item[2] if item.size() > 2 else Color("dbeff2"),
-				str(item[3]) if item.size() > 3 else "Resource"
+				str(item[3]) if item.size() > 3 else "Resource",
+				item[4] if item.size() > 4 else []
 			))
 		return
 	for i in items.size():
@@ -2152,12 +2214,17 @@ func _set_top_stat_group(container: HBoxContainer, items: Array) -> void:
 		row.set_meta("icon_path", str(item[0]))
 		row.set_meta("stat_name", str(item[3]) if item.size() > 3 else "Resource")
 		row.set_meta("stat_value", str(item[1]))
+		row.set_meta("stat_details", item[4] if item.size() > 4 else [])
+		row.set_meta("stat_color", item[2] if item.size() > 2 else Color("dbeff2"))
+		var icon := row.get_node_or_null("Icon") as TextureRect
+		if icon != null:
+			icon.self_modulate = item[2] if item.size() > 2 else Color.WHITE
 		var label := row.get_node_or_null("ValueLabel") as Label
 		if label != null:
 			label.text = str(item[1])
 			label.modulate = item[2] if item.size() > 2 else Color("dbeff2")
 
-func _top_stat_item(icon_path: String, value: String, color: Color, stat_name: String) -> Control:
+func _top_stat_item(icon_path: String, value: String, color: Color, stat_name: String, details: Array = []) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -2165,15 +2232,19 @@ func _top_stat_item(icon_path: String, value: String, color: Color, stat_name: S
 	row.set_meta("icon_path", icon_path)
 	row.set_meta("stat_name", stat_name)
 	row.set_meta("stat_value", value)
+	row.set_meta("stat_details", details)
+	row.set_meta("stat_color", color)
 	row.mouse_entered.connect(func():
 		_show_top_stat_popup(row)
 	)
 	row.mouse_exited.connect(_hide_top_stat_popup)
 	var icon := TextureRect.new()
+	icon.name = "Icon"
 	icon.texture = _texture_from_png(icon_path)
 	icon.custom_minimum_size = Vector2(24, 24)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.self_modulate = color
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(icon)
 	var label := Label.new()
@@ -2189,7 +2260,8 @@ func _show_top_stat_popup(source: Control) -> void:
 	_hide_top_stat_popup()
 	top_stat_popup = PanelContainer.new()
 	top_stat_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top_stat_popup.add_theme_stylebox_override("panel", _glow_panel_style(Color("10242c"), Color("76f4ff"), 1.2, 7))
+	var accent: Color = source.get_meta("stat_color", Color("76f4ff"))
+	top_stat_popup.add_theme_stylebox_override("panel", _glow_panel_style(Color("10242c"), accent, 1.2, 7))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	top_stat_popup.add_child(row)
@@ -2198,6 +2270,7 @@ func _show_top_stat_popup(source: Control) -> void:
 	icon.custom_minimum_size = Vector2(48, 48)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.self_modulate = accent
 	row.add_child(icon)
 	var text_box := VBoxContainer.new()
 	text_box.add_theme_constant_override("separation", 2)
@@ -2210,8 +2283,18 @@ func _show_top_stat_popup(source: Control) -> void:
 	var value_label := Label.new()
 	value_label.text = str(source.get_meta("stat_value", "0"))
 	value_label.add_theme_font_size_override("font_size", 22)
-	value_label.modulate = Color("76f4ff")
+	value_label.modulate = accent
 	text_box.add_child(value_label)
+	var details: Array = source.get_meta("stat_details", [])
+	for detail in details:
+		var detail_text := str(detail)
+		if detail_text.is_empty():
+			continue
+		var detail_label := Label.new()
+		detail_label.text = detail_text
+		detail_label.add_theme_font_size_override("font_size", 12)
+		detail_label.modulate = Color(0.78, 0.92, 0.92, 0.86)
+		text_box.add_child(detail_label)
 	add_child(top_stat_popup)
 	top_stat_popup.position = source.get_global_rect().position - global_position + Vector2(0, source.size.y + 8.0)
 

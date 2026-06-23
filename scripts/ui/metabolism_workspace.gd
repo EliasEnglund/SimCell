@@ -529,6 +529,8 @@ func _goal_rect_lookup() -> Dictionary:
 func _product_goal_rect(product_id: String, goal_lookup: Dictionary) -> Rect2:
 	if goal_lookup.has("amino_acids") and simulation != null and simulation.has_method("is_target_molecule_id") and simulation.is_target_molecule_id(product_id):
 		return goal_lookup["amino_acids"]
+	if product_id == "resource:N" and goal_lookup.has("nitrogen"):
+		return goal_lookup["nitrogen"]
 	return Rect2()
 
 func _primary_axis(delta: Vector2) -> Vector2:
@@ -1144,6 +1146,8 @@ func _goal_layout() -> Array[Dictionary]:
 		_manual_goal_positions["dna"] = base_world + Vector2(GRID_CELL * 3.0, 0.0)
 	elif Vector2(_manual_goal_positions["dna"]).distance_to(old_base_world + Vector2(GRID_CELL * 3.0, 0.0)) < 1.0 or Vector2(_manual_goal_positions["dna"]).distance_to(previous_base_world + Vector2(GRID_CELL * 3.0, 0.0)) < 1.0:
 		_manual_goal_positions["dna"] = base_world + Vector2(GRID_CELL * 3.0, 0.0)
+	if not _manual_goal_positions.has("nitrogen"):
+		_manual_goal_positions["nitrogen"] = base_world + Vector2(GRID_CELL * 6.0, 0.0)
 	var size_px := GOAL_CARD_SIZE * zoom
 	return [
 		{
@@ -1159,6 +1163,13 @@ func _goal_layout() -> Array[Dictionary]:
 			"subtitle": "",
 			"color": Color("76f4ff"),
 			"rect": Rect2(Vector2(_manual_goal_positions["dna"]) * zoom + pan_offset, size_px)
+		},
+		{
+			"id": "nitrogen",
+			"title": "N POOL",
+			"subtitle": "",
+			"color": Color("76a8ff"),
+			"rect": Rect2(Vector2(_manual_goal_positions["nitrogen"]) * zoom + pan_offset, size_px)
 		}
 	]
 
@@ -1542,7 +1553,9 @@ class ReactionHoverPopup:
 		var products: Array[String] = []
 		for product_id in reaction.get("products", []):
 			var id := str(product_id)
-			if simulation.molecule_types.has(id):
+			if id == "resource:N":
+				products.append("N pool")
+			elif simulation.molecule_types.has(id):
 				products.append(str(simulation.molecule_types[id].get("formula", "Product")))
 		var product_text := "products" if products.is_empty() else " + ".join(products)
 		return "%s -> %s" % [substrate, product_text]
@@ -1578,6 +1591,8 @@ class GoalHoverPopup:
 
 	func _ready() -> void:
 		var canvas = MoleculeCanvasLocal.new()
+		if goal_id == "nitrogen":
+			return
 		canvas.position = Vector2(18.0, 64.0)
 		canvas.size = Vector2(size.x - 36.0, 92.0)
 		canvas.custom_minimum_size = canvas.size
@@ -1600,6 +1615,13 @@ class GoalHoverPopup:
 			draw_string(ThemeDB.fallback_font, Vector2(16.0, 30.0), "Amino Acid Sink", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("f4fbff"))
 			draw_string(ThemeDB.fallback_font, Vector2(16.0, 52.0), "Target formula: N-C-COOH", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
 			draw_string(ThemeDB.fallback_font, Vector2(16.0, size.y - 22.0), "Converts completed target molecules into amino acid resource.", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.72, 0.90, 0.90, 0.72))
+		elif goal_id == "nitrogen":
+			draw_string(ThemeDB.fallback_font, Vector2(16.0, 30.0), "Bioavailable Nitrogen Pool", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("f4fbff"))
+			draw_string(ThemeDB.fallback_font, Vector2(16.0, 58.0), "NO3 reductase routes nitrate into this resource.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
+			draw_circle(Vector2(size.x * 0.5, 128.0), 36.0, Color("76a8ff"))
+			draw_circle(Vector2(size.x * 0.5, 128.0), 28.0, Color("3b61c8"))
+			draw_string(ThemeDB.fallback_font, Vector2(size.x * 0.5 - 18.0, 139.0), "N", HORIZONTAL_ALIGNMENT_CENTER, 36.0, 28, Color("f4fbff"))
+			draw_string(ThemeDB.fallback_font, Vector2(16.0, size.y - 22.0), "Aminase consumes this pool when adding nitrogen to carbon skeletons.", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.72, 0.90, 0.90, 0.72))
 		else:
 			draw_string(ThemeDB.fallback_font, Vector2(16.0, 30.0), "DNA Point Sink", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("f4fbff"))
 			draw_string(ThemeDB.fallback_font, Vector2(16.0, 52.0), "Prototype target: C5NO3 ring", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dbeff2"))
@@ -1732,6 +1754,8 @@ class GoalSinkNode:
 		var symbol_center := center + Vector2(0.0, -radius * 0.08)
 		if str(goal.get("id", "")) == "amino_acids":
 			_draw_amino_symbol(symbol_center, radius * 0.55)
+		elif str(goal.get("id", "")) == "nitrogen":
+			_draw_nitrogen_symbol(symbol_center, radius * 0.58)
 		else:
 			_draw_dna_symbol(symbol_center, radius * 0.56)
 		var label_pos := Vector2(0.0, center.y + radius + 22.0)
@@ -1765,6 +1789,12 @@ class GoalSinkNode:
 			draw_line(left, right, Color(0.76, 1.0, 0.94, 0.42), 2.0, true)
 			draw_circle(left, radius * 0.12, Color("76f4ff"))
 			draw_circle(right, radius * 0.12, Color("8cff6a"))
+
+	func _draw_nitrogen_symbol(center: Vector2, radius: float) -> void:
+		draw_circle(center, radius * 0.62, Color("76a8ff"))
+		draw_circle(center, radius * 0.48, Color("3b61c8"))
+		draw_circle(center + Vector2(radius * 0.18, -radius * 0.22), radius * 0.16, Color(1, 1, 1, 0.55))
+		draw_string(ThemeDB.fallback_font, center - Vector2(radius * 0.42, -radius * 0.17), "N", HORIZONTAL_ALIGNMENT_CENTER, radius * 0.84, maxf(14.0, radius * 0.54), Color("f4fbff"))
 
 	func _draw_goal_bond(a: Vector2, b: Vector2) -> void:
 		var dir := (b - a).normalized()
