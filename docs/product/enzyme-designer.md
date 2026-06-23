@@ -29,6 +29,17 @@ The player should understand:
 - how long the enzyme lasts,
 - whether it can be built with current resources.
 
+## Lyase Bond Strength
+
+Lyase targets use a 0-100% bond-strength score. A plain C-C bond should be effectively stable at 100% and unavailable to early lyases. The score is lowered only by destabilizing chemistry:
+
+- Direct C-COOH bonds are weak but controlled, roughly 40-45%.
+- C=O-COOH bonds are very weak enzymatic targets, roughly 30%.
+- Nearby carbonyls, phosphate, sulfur, and beta-keto-acid context can lower strength further, but these effects should not double-count the same structural feature.
+- Bonds below 20% are considered unstable enough to break spontaneously. This should be rare and should not happen to the starting glucose-like molecule.
+
+Weak lyase bonds should be visibly different in the designer: warmer color, stronger glow, and more electric stress. Stronger bonds should look cooler and more stable.
+
 ## Interaction Feel
 
 The molecule should feel physical at designer scale. Atoms and bonds can be grabbed. Bonds should show resistance and electric feedback when pulled.

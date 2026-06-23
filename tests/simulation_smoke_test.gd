@@ -14,9 +14,9 @@ func _init() -> void:
 	assert(is_equal_approx(sim.transporter_rate("import", glucose_id), 8.0))
 	var starting_glucose := float(sim.molecule_amounts[glucose_id])
 	sim.tick(1.0)
-	assert(float(sim.molecule_amounts[glucose_id]) > starting_glucose)
+	assert(absf(float(sim.molecule_amounts[glucose_id]) - starting_glucose - 8.0) < 0.01)
 	assert(float(sim.molecule_rates[glucose_id].get("production", 0.0)) >= 7.9)
-	assert(sim.present_molecule_ids().size() >= 1)
+	assert(sim.present_molecule_ids().size() == 1)
 	assert(sim.build_transporter("import", glucose_id) == true)
 	assert(sim.transporter_count("import", glucose_id) == 4)
 	assert(sim.transporter_queued_count("import", glucose_id) == 1)
@@ -38,12 +38,13 @@ func _init() -> void:
 	assert(sim.enzyme_tool_unlocked("nitrate_reductase") == true)
 	assert(sim.enzyme_tool_unlocked("lyase") == true)
 	assert(sim.valid_targets("lyase", glucose_id).size() > 0)
-	var weak_lyase_target_found := false
+	var weak_enzymatic_lyase_target_found := false
 	for target_index in sim.valid_targets("lyase", glucose_id):
-		if MoleculeGraphScript.bond_strength(sim.molecule_types[glucose_id], int(target_index)) < 20.0:
-			weak_lyase_target_found = true
-			break
-	assert(weak_lyase_target_found)
+		var strength := MoleculeGraphScript.bond_strength(sim.molecule_types[glucose_id], int(target_index))
+		assert(strength >= 20.0)
+		if strength <= 45.0:
+			weak_enzymatic_lyase_target_found = true
+	assert(weak_enzymatic_lyase_target_found)
 	assert(sim.valid_targets("reductase", glucose_id).size() > 0)
 	assert(sim.valid_targets("dehydrogenase", glucose_id).size() > 0)
 	assert(sim.valid_targets("oxygenase", glucose_id).size() == 0)

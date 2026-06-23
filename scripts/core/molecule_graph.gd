@@ -267,29 +267,32 @@ static func bond_strength(graph: Dictionary, bond_index: int) -> float:
 		return 100.0
 	if atoms[a].get("element", "") != CARBON or atoms[b].get("element", "") != CARBON:
 		return 100.0
-	var strength := 85.0
+	var strength := 100.0
 	if int(bond.get("order", 1)) >= 2:
 		strength += 10.0
-	if _is_carboxyl_carbon(graph, a) or _is_carboxyl_carbon(graph, b):
-		strength -= 38.0
+	var a_carboxyl := _is_carboxyl_carbon(graph, a)
+	var b_carboxyl := _is_carboxyl_carbon(graph, b)
+	if a_carboxyl or b_carboxyl:
+		strength -= 55.0
 	var carbonyl_count := 0
-	if _has_double_oxygen_neighbor(graph, a):
+	if _has_double_oxygen_neighbor(graph, a) and not a_carboxyl:
 		carbonyl_count += 1
-	if _has_double_oxygen_neighbor(graph, b):
+	if _has_double_oxygen_neighbor(graph, b) and not b_carboxyl:
 		carbonyl_count += 1
-	strength -= carbonyl_count * 20.0
+	strength -= carbonyl_count * 15.0
 	if carbonyl_count >= 2:
-		strength -= 15.0
-	if _has_carboxyl_neighbor(graph, a) or _has_carboxyl_neighbor(graph, b):
 		strength -= 10.0
-	if _has_beta_keto_acid_context(graph, a, b):
-		strength -= 25.0
+	var direct_carboxyl_bond := a_carboxyl or b_carboxyl
+	if not direct_carboxyl_bond and (_has_carboxyl_neighbor(graph, a) or _has_carboxyl_neighbor(graph, b)):
+		strength -= 12.0
+	if not direct_carboxyl_bond and _has_beta_keto_acid_context(graph, a, b):
+		strength -= 12.0
 	if _has_phosphate_context(graph, a):
 		strength -= 15.0
 	if _has_phosphate_context(graph, b):
 		strength -= 15.0
 	if _has_sulfur_neighbor(graph, a) or _has_sulfur_neighbor(graph, b):
-		strength -= 20.0
+		strength -= 15.0
 	strength += max(0, _carbon_neighbor_count(graph, a) - 2) * 8.0
 	strength += max(0, _carbon_neighbor_count(graph, b) - 2) * 8.0
 	return clampf(strength, 5.0, 100.0)

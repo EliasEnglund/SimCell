@@ -6,6 +6,7 @@ signal target_selected(target_index: int)
 var molecule: Dictionary = {}
 var valid_targets: Array[int] = []
 var bond_labels: Dictionary = {}
+var bond_strengths: Dictionary = {}
 var interactive := false
 var selected_target := -1
 var scale_to_fit := true
@@ -139,7 +140,8 @@ func _draw_bonds(transform: Transform2D, zoom: float) -> void:
 		var rest_b: Vector2 = atoms[atom_b].get("pos", Vector2.ZERO)
 		var rest_length := maxf(1.0, rest_a.distance_to(rest_b) * zoom)
 		var tension := clampf((a.distance_to(b) - rest_length) / maxf(rest_length, 1.0), 0.0, 1.0)
-		_draw_bond(a, b, int(bond.get("order", 1)), highlight or touched, selected, zoom, tension, touched)
+		var strength := float(bond_strengths.get(i, -1.0))
+		_draw_bond(a, b, int(bond.get("order", 1)), highlight or touched, selected, zoom, tension, touched, strength)
 
 func _draw_bond_labels(transform: Transform2D, zoom: float) -> void:
 	if bond_labels.is_empty():
@@ -177,23 +179,26 @@ func _draw_atoms(transform: Transform2D, zoom: float) -> void:
 			draw_circle(pos, radius + 5.0 * zoom, Color(0.45, 1.0, 0.9, 0.18))
 		_draw_atom(pos, radius, base)
 
-func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float, tension: float = 0.0, touched: bool = false) -> void:
+func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: bool, zoom: float, tension: float = 0.0, touched: bool = false, strength: float = -1.0) -> void:
 	var dir := (b - a).normalized()
 	var normal := Vector2(-dir.y, dir.x)
 	var color := Color("dbeff2").lerp(Color("ffe064"), tension)
 	var outline := Color("02070b")
 	var inner := Color("f4fbff").lerp(Color("fff1a8"), tension)
 	var width := (8.0 + tension * 3.0) * zoom * bond_scale
+	var weakness := 0.0
+	if strength >= 0.0:
+		weakness = clampf((70.0 - strength) / 50.0, 0.0, 1.0)
 	if highlight:
-		color = Color("73e6ff").lerp(Color("ffe064"), tension)
-		inner = Color("c8fbff")
-		width = 9.0 * zoom * bond_scale
+		color = Color("73e6ff").lerp(Color("ffdf62"), weakness)
+		inner = Color("c8fbff").lerp(Color("fff1a8"), weakness)
+		width = (8.5 + weakness * 2.4) * zoom * bond_scale
 	if touched:
 		width = (11.0 + tension * 4.0) * zoom * bond_scale
 	if selected:
-		color = Color("8cff6a").lerp(Color("ffe064"), tension * 0.5)
-		inner = Color("e7ffd8")
-		width = 10.0 * zoom * bond_scale
+		color = Color("8cff6a").lerp(Color("ffb15e"), weakness)
+		inner = Color("e7ffd8").lerp(Color("fff0bf"), weakness)
+		width = (10.0 + weakness * 2.5) * zoom * bond_scale
 	var offsets := [0.0]
 	if order == 2:
 		offsets = [-double_bond_gap * zoom * bond_scale, double_bond_gap * zoom * bond_scale]
@@ -201,11 +206,14 @@ func _draw_bond(a: Vector2, b: Vector2, order: int, highlight: bool, selected: b
 		var trim := 28.0 * zoom * atom_scale * bond_trim_scale
 		var start: Vector2 = a + dir * trim + normal * offset
 		var end: Vector2 = b - dir * trim + normal * offset
+		if highlight and weakness > 0.05:
+			draw_line(start, end, Color(1.0, 0.84, 0.28, 0.14 + weakness * 0.22), width + (10.0 + weakness * 10.0) * zoom * bond_scale, true)
 		draw_line(start, end, outline, width + bond_outline_extra * zoom * bond_scale, true)
 		draw_line(start, end, color.darkened(0.08), width + bond_core_extra * zoom * bond_scale, true)
 		draw_line(start + normal * 0.7 * zoom, end + normal * 0.7 * zoom, inner, maxf(1.0, width * 0.32), true)
-		if tension > 0.08:
-			_draw_electric_bond(start, end, normal, zoom, tension, offset)
+		var visual_tension := maxf(tension, weakness * 0.35 if highlight else 0.0)
+		if visual_tension > 0.08:
+			_draw_electric_bond(start, end, normal, zoom, visual_tension, offset)
 
 func _draw_electric_bond(start: Vector2, end: Vector2, normal: Vector2, zoom: float, tension: float, offset: float) -> void:
 	var dir := (end - start).normalized()

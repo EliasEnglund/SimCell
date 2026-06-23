@@ -1939,6 +1939,7 @@ func _refresh_designer() -> void:
 	designer_canvas.set_molecule(molecule)
 	designer_canvas.valid_targets = sim.valid_targets(designer_tool, sim.selected_molecule)
 	designer_canvas.bond_labels = _designer_bond_labels(molecule)
+	designer_canvas.bond_strengths = _designer_bond_strengths(molecule)
 	designer_canvas.selected_target = designer_target
 	designer_canvas.queue_redraw()
 	_refresh_designer_info(molecule)
@@ -2075,6 +2076,14 @@ func _designer_bond_labels(molecule: Dictionary) -> Dictionary:
 		var strength := MoleculeGraphScript.bond_strength(molecule, int(target_index))
 		labels[int(target_index)] = "%.0f%%" % strength
 	return labels
+
+func _designer_bond_strengths(molecule: Dictionary) -> Dictionary:
+	var strengths := {}
+	if designer_tool != "lyase":
+		return strengths
+	for target_index in sim.valid_targets(designer_tool, sim.selected_molecule):
+		strengths[int(target_index)] = MoleculeGraphScript.bond_strength(molecule, int(target_index))
+	return strengths
 
 func _redox_meter_text() -> String:
 	var redox := sim.redox_balance()
